@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      1.0
+// @version      1.1
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia) dla wybranego produktu i eksportuje do CSV
 // @match        https://erp.savpol.pl/*
 // @run-at       document-idle
@@ -9,6 +9,8 @@
 
 (function () {
   'use strict';
+
+  console.log('[Savpol Historia Faktur] Skrypt załadowany. URL:', location.href);
 
   const TARGET_URL_FRAGMENT = 'erp.savpol.pl/pl/katalog/csitems/';
   const BUTTON_ID = 'savpol-invoice-history-btn';
@@ -64,7 +66,6 @@
     if (!allLabel) throw new Error('Nie znaleziono przełącznika "Wszystkie".');
     allLabel.click();
 
-    // Dać czas na przeładowanie listy po zmianie filtrów
     await sleep(800);
   }
 
@@ -201,12 +202,17 @@
   }
 
   // ---------- Wstrzyknięcie przycisku ----------
+  function getVisibleToolbar() {
+    return Array.from(document.querySelectorAll('#ToolBarPanel'))
+      .find(t => t.offsetParent !== null);
+  }
+
   function insertButtonIfNeeded() {
     if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
-    if (document.getElementById(BUTTON_ID)) return;
 
-    const toolbar = document.getElementById('ToolBarPanel');
+    const toolbar = getVisibleToolbar();
     if (!toolbar) return;
+    if (toolbar.querySelector('#' + BUTTON_ID)) return;
 
     const btn = document.createElement('div');
     btn.id = BUTTON_ID;
