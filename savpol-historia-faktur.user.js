@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      1.1
+// @version      1.2
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia) dla wybranego produktu i eksportuje do CSV
 // @match        https://erp.savpol.pl/*
 // @run-at       document-idle
+// @grant        unsafeWindow
 // ==/UserScript==
 
 (function () {
@@ -51,13 +52,13 @@
     if (!dateGroup || !radioGroup) throw new Error('Nie znaleziono grup filtrów (data/radio).');
 
     const dateInput = dateGroup.querySelector('input[placeholder="Od"]');
-    const dp = jQuery(dateInput).data('kendoDatePicker');
+    const dp = unsafeWindow.jQuery(dateInput).data('kendoDatePicker');
     if (!dp) throw new Error('Brak instancji kendoDatePicker.');
 
     const firstDayThisYear = new Date(new Date().getFullYear(), 0, 1);
     dp.value(firstDayThisYear);
     dp.trigger('change');
-    jQuery(dateInput).trigger('blur');
+    unsafeWindow.jQuery(dateInput).trigger('blur');
 
     const allLabel = await waitFor(() =>
       Array.from(radioGroup.querySelectorAll('.csDBRadioGroupItemLabel'))
