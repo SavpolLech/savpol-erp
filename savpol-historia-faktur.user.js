@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      1.3
+// @version      1.4
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia) dla wybranego produktu i eksportuje do CSV
 // @match        https://erp.savpol.pl/*
 // @grant        unsafeWindow
@@ -80,7 +80,14 @@
 
     await sleep(300);
     allLabel.click();
-    await sleep(800);
+
+    // Czekaj aż lista faktycznie się odświeży (zamiast sztywnego sleep)
+    await waitFor(() => {
+        const rows = Array.from(document.querySelectorAll('tr.cs-grid-data-row'))
+        .filter(row => row.offsetParent !== null);
+        return rows.length > 0;
+    }, 40, 300);
+    await sleep(500); // dodatkowy zapas na pełne wyrenderowanie
   }
 
   // ---------- Krok 2: iteracja po fakturach FA ----------
@@ -91,9 +98,10 @@
 
   function getVisibleInvoiceGrid() {
     return Array.from(document.querySelectorAll('.cs-grid-data-table'))
-      .find(t => t.offsetParent !== null
-        && t.querySelectorAll('tr.cs-grid-data-row').length > 0
-        && t.querySelector('td[data-datafield="Item"]'));
+    .find(t => t.offsetParent !== null
+      && t.querySelectorAll('tr.cs-grid-data-row').length > 0
+      && t.querySelector('td[data-datafield="Item"]')
+      && t.querySelector('td[data-datafield="PositionItemDesc"]'));
   }
 
   function extractInvoiceRows(docNumber) {
