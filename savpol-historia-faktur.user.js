@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      1.2
+// @version      1.3
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia) dla wybranego produktu i eksportuje do CSV
 // @match        https://erp.savpol.pl/*
-// @run-at       document-idle
 // @grant        unsafeWindow
+// @run-at       document-idle
 // ==/UserScript==
 
 (function () {
@@ -27,31 +27,49 @@
     return null;
   }
 
-  // ---------- Krok 1: otwórz "Historia produktu" ----------
-  function openHistoryMenuItem() {
+  // ---------- Krok 0: otwórz "Historia produktu" ----------
+  function openHistory() {
     const el = document.querySelector('[title="Historia produktu"]');
-    if (el) el.click();
-    return !!el;
+    if (el) { el.click(); return true; }
+    return false;
   }
 
-  // ---------- Krok 2: ustaw filtry (data + "Wszystkie") ----------
-  function visibleSearchPanel() {
-    return Array.from(document.querySelectorAll('.cs-layout-search-panel'))
-      .find(el => el.offsetParent !== null);
+  // ---------- SKU głównego produktu (z inputa "Produkt" w filtrach) ----------
+  function getMainProductSku() {
+    const panels = Array.from(document.querySelectorAll('.cs-layout-search-panel'))
+      .filter(el => el.offsetParent !== null);
+
+    for (const panel of panels) {
+      const input = panel.querySelector('input[placeholder="Produkt"]');
+      if (input) {
+        const sku = input.getAttribute('title') || input.value;
+        if (sku) return sku.trim();
+      }
+    }
+    return null;
+  }
+
+  // ---------- Krok 1: znajdź panel filtrów (odporne na duplikaty) ----------
+  function findFilterPanel() {
+    const panels = Array.from(document.querySelectorAll('.cs-layout-search-panel'))
+      .filter(el => el.offsetParent !== null);
+
+    for (const panel of panels) {
+      const dateInput = panel.querySelector('input[placeholder="Od"]');
+      const allLabel = Array.from(panel.querySelectorAll('.csDBRadioGroupItemLabel'))
+        .find(l => l.textContent.trim() === 'Wszystkie');
+      if (dateInput && allLabel) {
+        return { panel, dateInput, allLabel };
+      }
+    }
+    return null;
   }
 
   async function setFilters() {
-    const searchPanel = await waitFor(visibleSearchPanel);
-    if (!searchPanel) throw new Error('Nie znaleziono panelu filtrów.');
+    const found = await waitFor(findFilterPanel);
+    if (!found) throw new Error('Nie znaleziono panelu z filtrami daty i radio.');
 
-    const groupBoxes = Array.from(searchPanel.children)
-      .filter(el => el.classList.contains('csGroupBox'));
-
-    const dateGroup = groupBoxes[2];
-    const radioGroup = groupBoxes[3];
-    if (!dateGroup || !radioGroup) throw new Error('Nie znaleziono grup filtrów (data/radio).');
-
-    const dateInput = dateGroup.querySelector('input[placeholder="Od"]');
+    const { dateInput, allLabel } = found;
     const dp = unsafeWindow.jQuery(dateInput).data('kendoDatePicker');
     if (!dp) throw new Error('Brak instancji kendoDatePicker.');
 
@@ -60,17 +78,12 @@
     dp.trigger('change');
     unsafeWindow.jQuery(dateInput).trigger('blur');
 
-    const allLabel = await waitFor(() =>
-      Array.from(radioGroup.querySelectorAll('.csDBRadioGroupItemLabel'))
-        .find(l => l.textContent.trim() === 'Wszystkie')
-    );
-    if (!allLabel) throw new Error('Nie znaleziono przełącznika "Wszystkie".');
+    await sleep(300);
     allLabel.click();
-
     await sleep(800);
   }
 
-  // ---------- Krok 3: iteracja po fakturach FA ----------
+  // ---------- Krok 2: iteracja po fakturach FA ----------
   function visibleGridRows() {
     return Array.from(document.querySelectorAll('tr.cs-grid-data-row'))
       .filter(row => row.offsetParent !== null);
@@ -116,11 +129,10 @@
     });
   }
 
-  async function collectAllInvoices(maxCount = 20, onProgress) {
+  async function collectAllInvoices(maxCount, onProgress) {
     const results = [];
     const initialFaRows = getFaRows();
     const total = Math.min(initialFaRows.length, maxCount);
-
     if (onProgress) onProgress(`Znaleziono ${initialFaRows.length} faktur FA. Przetwarzam ${total}...`);
 
     for (let i = 0; i < total; i++) {
@@ -144,9 +156,8 @@
 
       const docNumber = getActiveTabDocNumber() || listDocNumber;
       const invoiceRows = extractInvoiceRows(docNumber);
-      results.push(...invoiceRows);
-
       if (onProgress) onProgress(`[${i + 1}/${total}] ${docNumber}: ${invoiceRows.length} pozycji`);
+      results.push(...invoiceRows);
 
       const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
       if (closeBtn) closeBtn.click();
@@ -158,8 +169,8 @@
     return results;
   }
 
-  // ---------- Krok 4: CSV ----------
-  function downloadCSV(data) {
+  // ---------- Krok 3: CSV ----------
+  function downloadCSV(data, mainSku) {
     const header = 'Numer dokumentu;Produkt;SKU;Ilość\n';
     const body = data.map(r =>
       `"${r.doc}";"${r.product}";"${r.sku}";"${r.qty}"`
@@ -170,7 +181,7 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'historia_faktur.csv';
+    a.download = `historia_faktur_${mainSku || 'produkt'}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -180,8 +191,11 @@
     const originalText = button.textContent;
     try {
       button.textContent = 'Otwieram historię...';
-      const opened = openHistoryMenuItem();
+      const opened = openHistory();
       if (!opened) throw new Error('Nie znaleziono przycisku "Historia produktu". Czy produkt jest zaznaczony?');
+      await sleep(500);
+
+      const mainSku = await waitFor(getMainProductSku);
 
       button.textContent = 'Ustawiam filtry...';
       await setFilters();
@@ -193,7 +207,15 @@
       });
 
       button.textContent = `Gotowe: ${data.length} pozycji. Zapisuję CSV...`;
-      downloadCSV(data);
+      downloadCSV(data, mainSku);
+
+      // Zamknij zakładkę zestawienia
+      const summaryCloseBtn = document.querySelector('li.k-state-active .csCloseButton_span');
+      if (summaryCloseBtn) {
+        await sleep(300);
+        summaryCloseBtn.click();
+      }
+
       button.textContent = originalText;
     } catch (err) {
       console.error('[Savpol Historia Faktur] Błąd:', err);
