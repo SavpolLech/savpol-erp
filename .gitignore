@@ -1,0 +1,8 @@
+# Lokalne ustawienia Claude Code — zawierają ścieżki specyficzne dla maszyny
+# (katalog użytkownika, scratchpad sesji), więc nie wchodzą do repo.
+# Skille w .claude/skills/ są wersjonowane celowo.
+.claude/settings.local.json
+
+# Historie faktur z ERP — dane handlowe, trzymane lokalnie w Downloads
+historia_faktur_*.csv
+cross_sell_*.csv
