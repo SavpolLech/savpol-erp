@@ -97,6 +97,7 @@ Reguły zostały dostrojone na dwóch anchorach:
 | `0031629` | Krem pistacjowy z Kadayif — ZENTIS | 80 | 1480 | 538 | 14 | 41% |
 | `0021269` | Orzech laskowy prażony Piemonte IGP 1kg | 100 | 1031 | 452 | 8 | **11%** |
 | `0018835` | Orzech laskowy blanszowany prażony 1kg | 100 | 1326 | 582 | 10 | 15% |
+| `0023103` | Krem orzechowo-mleczny Milky Hazelnut 4kg — ALFAPRO | 100 | 1568 | 534 | 10 | 20% |
 
 Dwa warianty orzecha laskowego (`0021269` i `0018835`) mają wspólne tylko **34%**
 partnerów — mimo niemal identycznej nazwy produktu. Podobieństwo nazwy anchora
@@ -176,8 +177,16 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
 - **`\b` nie działa na polskich znakach** — patrz `wordRegex()`.
 - **Znany przeciek, nierozwiązany:** „Kulinarna kremowa 18% 5kg — FIGAND" to
   śmietanka kulinarna (chłodnia), ale nazwa nie zawiera ani `śmietan`, ani `ser`,
-  ani `krem`+`roślinn`. Wystąpiła 1× w trzech plikach, więc jest poniżej progu
+  ani `krem`+`roślinn`. Wystąpiła 1× w czterech plikach, więc jest poniżej progu
   i nie wpływa dziś na wynik. Wyłapie ją grupa `Nabiał` po podłączeniu katalogu.
+- **OTWARTE — jaja gotowane OVOVITA.** „Jaja gotowane w zalewie II gatunek wiadro
+  7kg" i „Jaja gotowane wiaderko 1,8kg (36 szt.)", po 4 faktury przy anchorze
+  `0023103`. Reguła `jajow` łapie „masa jajowa pasteryzowana", ale nie „Jaja
+  gotowane". **Przy progu `MIN_COUNT: 4` mogą wejść do czwórki**, więc to nie jest
+  przeciek teoretyczny. Pytanie o status chłodniczy zadane, bez odpowiedzi.
+- **Do sprawdzenia:** „Marcepan 50% blok 5kg — BARIMA" przechodzi, a grupa
+  `Dekorowanie\Dekoracje marcepanowe` jest na denyliście. Blok marcepanu to
+  surowiec, nie dekoracja, więc prawdopodobnie słusznie — ale warto potwierdzić.
 - Produkty mrożone, których nazwa nie zawiera „mrożon": croissanty
   (VANDEMOORTELE, EUROPASTRY). Wyłapane osobną regułą.
 
@@ -233,7 +242,17 @@ anchor 0018835 (Orzech laskowy blanszowany prażony):
   0020669  14%  Olej rzepakowy 5L
   0006418  12%  Cukier puder 10kg - A&W
   0005223  11%  Mleko Polfink skond słodz. 1000g pusz.
+
+anchor 0023103 (Krem orzechowo-mleczny Milky Hazelnut):
+  0021899  20%  Krem o smaku orzechowym Nutty Cream 4kg - ALFAPRO
+  0020669  18%  Olej rzepakowy 5L
+  0032222  14%  Czekolada biała Namur White 29% 10kg - ChocConcept
+  0006418  13%  Cukier puder 10kg - A&W
 ```
+
+Powtarzalne pozycje między anchorami: `0020669` (olej rzepakowy) w 3 z 5,
+`0006418` (cukier puder) w 4 z 5. To dobra wiadomość dla cache katalogu —
+kandydaci się powtarzają, więc cache szybko się nasyci.
 
 ### Wpływ `ONE_PER_FAMILY` — zmierzony
 
@@ -247,10 +266,41 @@ Sprawdzone na czterech anchorach przez porównanie z flagą `true` i `false`:
 | `0018835` | bez zmian |
 
 Obawa, że rodzina `orzech` sklei różne orzechy (włoski / arachidowy / nerkowca /
-pistacjowy) i zububoży listę dla anchora orzechowego, **nie potwierdziła się**:
+pistacjowy) i zubozy listę dla anchora orzechowego, **nie potwierdziła się**:
 pozostałe orzechy mają 5-9 wspólnych faktur i tak siedzą poniżej czwórki.
-Reguła działa więc tam, gdzie miała (warianty gramatury tego samego surowca),
-i nie szkodzi tam, gdzie się jej bano.
+
+#### OTWARTE: rodzina `krem` jest za szeroka
+
+Anchor `0023103` (Krem orzechowo-mleczny) ujawnił problem, którego nie było
+w poprzednich czterech. Rodzina `krem` skleiła **6 różnych kremów smakowych**:
+
+| odrzucony | faktur |
+|---|---|
+| Krem o smaku orzechowym z chrupkami Crocco Cream Nut 6kg | 15 |
+| Krem biały mleczny z chrupkami Crocco Cream White 6kg | 13 |
+| Krem o smaku solonego karmelu Salted Carmello 4kg | 9 |
+| Krem do nadziewania pistacjowy 15% 4kg | 8 |
+| Krem z białą czekoladą, ziarnami kakaowymi i waflami | 7 |
+| Krem o smaku ciemnej czekolady Crocco Cream | 5 |
+
+To nie warianty gramatury jednego produktu (jak cukier kryształ / puder), a różne
+smaki, czyli osobne produkty. Ta sama wątpliwość dotyczy rodzin `polewa`,
+`delipasta` i `czekolada` — w nich pierwszy wyraz nazwy jest **typem produktu**,
+nie tożsamością produktu.
+
+Skutek na tym anchorze jest jednak obronny, bo dedup wpuścił w zwolnione miejsca
+pozycje z innych kategorii:
+
+```
+z dedupem:  Nutty Cream (20), Olej (18), Czekolada biała (14), Cukier puder (13)
+bez dedupu: Nutty Cream (20), Olej (18), Crocco Nut (15),      Czekolada biała (14)
+```
+
+**Decyzja do podjęcia przez właściciela produktu** (pytanie zadane, bez odpowiedzi):
+zostawić 1 na rodzinę, wprowadzić listę `FAMILY_NO_DEDUP` dla rodzin będących
+typem produktu, czy podnieść limit do 2 na rodzinę. To decyzja marketingowa
+(czy 4 kremy w sekcji „Często kupowane razem" to bogata oferta czy powtórzenie),
+nie statystyczna — dane jej nie rozstrzygną.
 
 `0000263` (proszek 5kg) przechodzi próg gramatury, ale mediana zakupu to 5 worków
 (25kg) — to opakowanie przemysłowe. W katalogu istnieje `0008137`, ten sam proszek
