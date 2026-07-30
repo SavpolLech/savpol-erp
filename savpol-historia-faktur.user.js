@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.3
+// @version      2.4
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, analizuje co-occurrence i eksportuje kandydatów do cross-sellingu do CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -114,6 +114,12 @@
       'panesco',
 
       'jajow',      // masa jajowa pasteryzowana
+
+      // Jaja gotowane OVOVITA (w zalewie / wiaderko) = chłodnia.
+      // Wyjątek na "proszk" chroni "Jaja kurze w proszku worek 10kg - OVOPOL",
+      // które są shelf-stable — analogicznie do mleka w proszku.
+      { frag: 'jaja', unless: ['proszk'] },
+
       'twarog',     // nadzienie twarogowe / prod. twarogowy (odmiana bez "ó")
       'serow',      // nadzienia i produkty cukiernicze serowe (Sermiks, Sernik Wiedeński, ProSer)
       'serek',      // serek kremowy/homogenizowany — nabiał świeży, "ser" po granicy słowa go nie łapie
@@ -145,7 +151,12 @@
       // Kremy roślinne do bicia (Decor Up) = chłodnia. Warunek na "roślinn"
       // jest konieczny — samo "krem" wyrzuciłoby połowę asortymentu
       // (kremy pistacjowe, orzechowe, budyniowe), w tym typowe anchory.
-      ['krem', 'roślinn']
+      ['krem', 'roślinn'],
+      // Białko płynne pasteryzowane (BALTICOVO) = chłodnia, ta sama półka
+      // co masa jajowa. Warunek na "płynn" chroni białko w proszku i albuminę.
+      // UWAGA: wywnioskowane z decyzji o masie jajowej i jajach gotowanych,
+      // nie potwierdzone wprost — patrz CROSS-SELL.md.
+      ['białko', 'płynn']
     ],
 
     // Dopasowanie na granicy słowa — "ser" nie łapie "deser"/"serwetki".

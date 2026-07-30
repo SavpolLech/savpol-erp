@@ -189,11 +189,16 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
   śmietanka kulinarna (chłodnia), ale nazwa nie zawiera ani `śmietan`, ani `ser`,
   ani `krem`+`roślinn`. Wystąpiła 1× w czterech plikach, więc jest poniżej progu
   i nie wpływa dziś na wynik. Wyłapie ją grupa `Nabiał` po podłączeniu katalogu.
-- **OTWARTE — jaja gotowane OVOVITA.** „Jaja gotowane w zalewie II gatunek wiadro
-  7kg" i „Jaja gotowane wiaderko 1,8kg (36 szt.)", po 4 faktury przy anchorze
-  `0023103`. Reguła `jajow` łapie „masa jajowa pasteryzowana", ale nie „Jaja
-  gotowane". **Przy progu `MIN_COUNT: 4` mogą wejść do czwórki**, więc to nie jest
-  przeciek teoretyczny. Pytanie o status chłodniczy zadane, bez odpowiedzi.
+- **Produkty jajeczne wymagają trzech osobnych reguł**, bo dzielą się na
+  chłodnicze i shelf-stable wzdłuż innej linii niż nazwa:
+  `jajow` (masa jajowa pasteryzowana), `{ frag: 'jaja', unless: ['proszk'] }`
+  (jaja gotowane OVOVITA — chłodnia; ale „Jaja kurze **w proszku** worek 10kg
+  — OVOPOL" jest shelf-stable, analogicznie do mleka w proszku) oraz
+  `allOf: ['białko','płynn']` (białko płynne BALTICOVO — chłodnia; białko
+  w proszku i albumina przechodzą). Białko płynne miało 5 faktur przy anchorze
+  `0021269`, czyli **powyżej progu** — nie był to przeciek teoretyczny.
+  Status białka płynnego wywnioskowany z decyzji o masie jajowej i jajach
+  gotowanych, nie potwierdzony wprost.
 - **Do sprawdzenia:** „Marcepan 50% blok 5kg — BARIMA" przechodzi, a grupa
   `Dekorowanie\Dekoracje marcepanowe` jest na denyliście. Blok marcepanu to
   surowiec, nie dekoracja, więc prawdopodobnie słusznie — ale warto potwierdzić.
@@ -306,11 +311,32 @@ z dedupem:  Nutty Cream (20), Olej (18), Czekolada biała (14), Cukier puder (13
 bez dedupu: Nutty Cream (20), Olej (18), Crocco Nut (15),      Czekolada biała (14)
 ```
 
-**Decyzja do podjęcia przez właściciela produktu** (pytanie zadane, bez odpowiedzi):
-zostawić 1 na rodzinę, wprowadzić listę `FAMILY_NO_DEDUP` dla rodzin będących
-typem produktu, czy podnieść limit do 2 na rodzinę. To decyzja marketingowa
-(czy 4 kremy w sekcji „Często kupowane razem" to bogata oferta czy powtórzenie),
-nie statystyczna — dane jej nie rozstrzygną.
+#### ROZSTRZYGNIĘTE: zostaje 1 na rodzinę
+
+Cel biznesowy: **80% wzrost AOV klienta e-commerce, 20% klienta B2B**, który
+korzysta z platformy, ale ma już swojego handlowca. To rozstrzyga sprawę:
+
+- Sekcja „Często kupowane razem" jest slotem na **komplementy**. Pokazanie
+  alternatyw (kolejnych kremów) zaprasza do ponownego rozważenia wyboru, który
+  klient właśnie zrobił — to ryzyko dla konwersji, nie wzrost AOV. Warianty
+  smakowe należą do osobnej sekcji „Podobne produkty".
+- Klient e-commerce (80%) to mała cukiernia w self-service, która nie zna
+  pełnego asortymentu. AOV rośnie u niej przez **przypomnienie o innej potrzebie**
+  — oleju, białej czekoladzie, cukrze pudrze — czyli o pozycjach, o których
+  zapomni albo kupi je gdzie indziej. Każda to dodatkowa linia w koszyku.
+- Klient B2B (20%) asortyment zna, a do przypominania mu o smakach ma handlowca.
+
+Obecne zachowanie samo z siebie daje **1 slot na rodzinę anchora** (najmocniejszy
+przedstawiciel) i 3 na inne kategorie — czyli proporcję bliską zamierzonej,
+bez żadnej dodatkowej konfiguracji.
+
+Odrzucone: `FAMILY_NO_DEDUP` (idzie w stronę większej liczby alternatyw) oraz
+limit 2 na rodzinę (oddaje połowę sekcji na warianty, przeserwowując te 20%).
+
+**Do rozważenia na przyszłość:** `droppedByFamily` jest już wyliczane i zawiera
+dokładnie te warianty smakowe. To gotowy, darmowy wsad do osobnej sekcji
+„Inne smaki" / „Podobne produkty", która obsłuży klienta B2B bez rozcieńczania
+sekcji komplementów.
 
 `0000263` (proszek 5kg) przechodzi próg gramatury, ale mediana zakupu to 5 worków
 (25kg) — to opakowanie przemysłowe. W katalogu istnieje `0008137`, ten sam proszek
