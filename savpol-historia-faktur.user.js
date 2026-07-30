@@ -53,6 +53,31 @@
   // więc kategoria jest zgadywana z nazwy. Tam gdzie nazwa nie wystarcza,
   // używaj list skuDeny/skuAllow — decyzja per SKU zawsze wygrywa z heurystyką.
   const EXCLUSIONS = {
+    // ---- Grupy produktów z ERP (kolumna "GRUPA PRODUKTU" w katalogu) ----
+    //
+    // UWAGA: te grupy zawierają NAJWIĘCEJ produktów niewysyłkowych, ale nie
+    // wyłącznie takie. Odrzucenie całej grupy odcina też pozycje, które wysłać
+    // można — znane przypadki opisane w CROSS-SELL.md. Wyjątki dopisuj do
+    // skuAllow, które wygrywa z tą listą.
+    //
+    // Dopasowanie po PREFIKSIE ścieżki, więc "B2B\Kategorie\Nabiał" łapie także
+    // wszystkie podgrupy poniżej, a "...\Lodziarskie produkty\Wafle" tylko ten liść.
+    //
+    // NIEAKTYWNE: grupa nie jest dostępna w widoku historii faktur, tylko
+    // w katalogu produktów. Aktywuje się po dopisaniu odczytu katalogu
+    // (patrz CROSS-SELL.md, roadmapa krok 1-2).
+    groupDeny: [
+      'B2B\\Kategorie\\Dekorowanie\\Dekoracje cukrowe',
+      'B2B\\Kategorie\\Dekorowanie\\Dekoracje marcepanowe',
+      'B2B\\Kategorie\\Dekorowanie\\Dekoracje opłatkowe',
+      'B2B\\Kategorie\\Nabiał',
+      'B2B\\Kategorie\\Lodziarskie produkty\\Wafle',
+      'B2B\\Kategorie\\Dodatki spożywcze\\Drożdże',
+      'B2B\\Kategorie\\Pieczywo, ciasta',
+      'B2B\\Kategorie\\Mięso, wędliny, ryby',
+      'B2B\\Kategorie\\Gastronomiczne produkty\\Farsze'
+    ],
+
     // Zawsze wykluczaj te SKU (chłodnia/mrożonka/wycofane, czego nazwa nie zdradza).
     // Format: '0005261': 'Serowe prod. Wykwintny — chłodnia'
     skuDeny: {},
@@ -369,6 +394,30 @@
       ));
     }
     return wordRegexCache.get(word);
+  }
+
+  // Grupa produktu z siatki katalogu przychodzi zawinięta w komórce — bywa
+  // rozbita na wiele linii, a nazwa liścia potrafi się powtórzyć pod ścieżką.
+  // Dlatego przed dopasowaniem sklejamy białe znaki.
+  function normalizeGroupPath(group) {
+    return (group || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pl-PL');
+  }
+
+  // Dopasowanie po prefiksie: grupa nadrzędna łapie wszystkie podgrupy.
+  // Zwraca dopasowany prefiks albo null.
+  function findGroupExclusion(group) {
+    const path = normalizeGroupPath(group);
+    if (!path) return null;
+    for (const denied of EXCLUSIONS.groupDeny) {
+      const prefix = normalizeGroupPath(denied);
+      if (!path.startsWith(prefix)) continue;
+      // Po prefiksie musi stać separator ścieżki, spacja (powtórzona nazwa
+      // liścia w zawiniętej komórce) albo koniec — inaczej "Nabiał" złapałby
+      // "Nabiałowe zamienniki".
+      const next = path.charAt(prefix.length);
+      if (next === '' || next === '\\' || next === ' ') return denied;
+    }
+    return null;
   }
 
   // Zwraca nazwę dopasowanej reguły (do logu) albo null, jeśli produkt przechodzi.

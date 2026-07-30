@@ -45,17 +45,25 @@ Odczyt na żywo, bez cache — stan zmienia się codziennie.
 Uwzględnij flagę „Towar nisko rotujący" jako sygnał deprioryzujący (zapytaj mnie,
 czy ma odrzucać, czy tylko obniżać pozycję).
 
-## Zadanie 3 — kategorie zamiast regex-ów
+## Zadanie 3 — grupy produktów zamiast regex-ów
 
-`GRUPA PRODUKTU` zawiera sensowne kategorie (drożdże i mrożonki mają własne).
-Chcę zamienić zgadywanie z nazwy na denylistę kategorii — jedna decyzja per gałąź.
+Lista grup jest już w `EXCLUSIONS.groupDeny`, razem z gotowym dopasowaniem po
+prefiksie ścieżki (`findGroupExclusion()`, przetestowane). Trzeba ją tylko podłączyć
+do `analyzeCrossSell()` — grupa ma wygrywać z regułami nazwowymi, a `skuAllow`
+z grupą.
 
-Wypisz mi najpierw wartości `GRUPA PRODUKTU`, jakie faktycznie występują wśród
-produktów pojawiających się w rekomendacjach, żebym mógł odhaczyć, które nie jadą
-kurierem. Nie zakładaj z góry, że kategoria = warunki transportu.
+**Zanim to zrobisz, przeczytaj w `CROSS-SELL.md` sekcję o nadmiernym wykluczaniu.**
+Te grupy zawierają najwięcej produktów niewysyłkowych, ale nie wyłącznie takie —
+np. cała grupa `Drożdże` odetnie drożdże suche, które celowo przepuszczamy,
+a `Nabiał` odetnie mleko w proszku.
 
-Reguł nazwowych z `EXCLUSIONS` **nie usuwaj** — mają zostać jako druga warstwa.
-Dodaj do logu listę kategorii, które wystąpiły wśród kandydatów, a których nie ma
+Dlatego zmierz najpierw wpływ, zanim cokolwiek włączysz na stałe: dla anchorów
+`0022850` i `0031629` pokaż mi, **które produkty z obecnego rankingu wypadną przez
+grupę** i jaka jest ich grupa. Wtedy zdecyduję, czy wpisać wyjątki do `skuAllow`,
+czy zawęzić denylistę do liści (np. `Nabiał\Śmietana` zamiast całego `Nabiał`).
+
+Reguł nazwowych z `EXCLUSIONS` **nie usuwaj** — zostają jako druga warstwa.
+Dodaj do logu listę grup, które wystąpiły wśród kandydatów, a których nie ma
 na denyliście (inaczej brakująca gałąź chłodnicza przejdzie po cichu).
 
 ## Zadanie 4 — persystencja

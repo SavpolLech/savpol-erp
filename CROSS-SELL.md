@@ -205,18 +205,65 @@ Rekomendowanie produktu bez stanu magazynowego jest gorsze niż rekomendowanie w
 
 Stan **nie może być cache'owany** — zmienia się codziennie.
 
-### 3. Kategorie zamiast regex-ów
+### 3. Grupy produktów zamiast regex-ów
 
-`GRUPA PRODUKTU` zawiera sensowne kategorie (potwierdzone: drożdże mają własną
-kategorię, mrożonki własną). To pozwala zamienić polowanie na formy odmienione na
-**jedną decyzję per kategoria**.
+Lista grup jest już w konfiguracji (`EXCLUSIONS.groupDeny`) razem z dopasowaniem
+po prefiksie ścieżki (`findGroupExclusion()`), ale **nieaktywna** — grupa nie jest
+dostępna w widoku historii faktur, tylko w katalogu. Aktywuje się po kroku 1-2.
 
-Reguły nazwowe zostają jako druga warstwa — dla SKU, których nie ma jeszcze w cache.
+Grupy podane przez właściciela produktu jako te, w których jest **najwięcej**
+produktów niewysyłkowych:
 
-**Uwaga na denylistę:** wszystko, czego nie ma na liście odrzuconych kategorii,
-domyślnie jedzie kurierem. Dlatego trzeba logować **kategorie występujące wśród
-kandydatów, których nie ma na denyliście** — inaczej brakująca gałąź chłodnicza
-przejdzie po cichu.
+```
+B2B\Kategorie\Dekorowanie\Dekoracje cukrowe
+B2B\Kategorie\Dekorowanie\Dekoracje marcepanowe
+B2B\Kategorie\Dekorowanie\Dekoracje opłatkowe
+B2B\Kategorie\Nabiał
+B2B\Kategorie\Lodziarskie produkty\Wafle
+B2B\Kategorie\Dodatki spożywcze\Drożdże
+B2B\Kategorie\Pieczywo, ciasta
+B2B\Kategorie\Mięso, wędliny, ryby
+B2B\Kategorie\Gastronomiczne produkty\Farsze
+```
+
+Dopasowanie po prefiksie, więc `...\Nabiał` łapie wszystkie podgrupy poniżej,
+a `...\Lodziarskie produkty\Wafle` tylko ten liść. Normalizacja białych znaków
+jest konieczna, bo komórka siatki zawija ścieżkę i potrafi powtórzyć nazwę liścia
+pod spodem.
+
+#### To NIE jest lista „wszystko tu jest niewysyłkowe"
+
+Właściciel produktu określił te grupy jako zawierające **najwięcej** takich
+produktów, nie wyłącznie takie. Odrzucenie całej grupy nadmiernie wyklucza.
+Znane przypadki, sprzeczne z decyzjami podjętymi wcześniej:
+
+| grupa | co zostanie błędnie odcięte | dlaczego to problem |
+|---|---|---|
+| `...\Dodatki spożywcze\Drożdże` | drożdże suche i instant | shelf-stable; reguła `allOf: drożdż+śwież` celowo je przepuszczała |
+| `...\Nabiał` | mleko w proszku pełne i odtłuszczone, mleko skondensowane | świadomie zostawione w rankingu (`allOf: mleko+uht` celowo wymaga „uht") |
+| `...\Dekorowanie\Dekoracje cukrowe` | posypki, dekoracje czekoladowe, lentilki | trwałe i drobne; występowały wśród realnych kandydatów |
+
+Dlatego:
+
+1. `skuAllow` wygrywa z `groupDeny` — to miejsce na te wyjątki.
+2. Do logu trzeba dopisać, **co i przez którą grupę** zostało odrzucone, żeby dało
+   się wyłapać cenne pozycje ginące hurtowo.
+3. Docelowo lepszym rozwiązaniem może być denylista na **liściach**, nie na
+   gałęziach nadrzędnych (np. `Nabiał\Śmietana` zamiast całego `Nabiał`) —
+   do rozważenia, gdy będzie widać pełne drzewo podgrup.
+
+#### Denylista działa w dwie strony
+
+Nadmierne wykluczanie opisano wyżej. Odwrotne ryzyko: wszystko, czego **nie ma**
+na liście, domyślnie jedzie kurierem — więc brakująca gałąź chłodnicza przejdzie
+po cichu, bez żadnego sygnału.
+
+Dlatego log musi zawierać **grupy występujące wśród kandydatów, których nie ma
+na denyliście**. Wtedy przy każdym przebiegu widać listę gałęzi do przejrzenia,
+a denylista rośnie świadomie.
+
+Reguł nazwowych z `EXCLUSIONS` **nie usuwać** — zostają jako druga warstwa dla SKU,
+których nie ma jeszcze w cache, i jako zabezpieczenie przed dziurami w denyliście.
 
 ### 4. Podstawianie wariantów
 
