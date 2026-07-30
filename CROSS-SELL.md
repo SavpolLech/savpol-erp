@@ -62,8 +62,8 @@ Wszystko na górze pliku.
 
 | pole | wartość | uzasadnienie |
 |---|---|---|
-| `MIN_COUNT` | 3 | chroni przy małym `N`; przy `N=100` nigdy się nie aktywuje |
-| `MIN_SHARE` | 10 | patrz „Kalibracja" niżej — 25% było nieosiągalne |
+| `MIN_COUNT` | 4 | **główny próg** — patrz „Kalibracja" |
+| `MIN_SHARE` | 5 | tylko podłoga szumu; wiąże mocniej niż `MIN_COUNT` przy `N < 80` |
 | `TOP_N` | 4 | tyle slotów ma sekcja na stronie produktowej |
 | `MAX_PACK_KG` | 10 | worek 25kg to czyste B2B; 10kg (cukier puder) jeszcze ujdzie |
 | `ONE_PER_FAMILY` | true | bez tego lista to jedna rekomendacja powtórzona 3× |
@@ -91,23 +91,33 @@ Kolejność sprawdzania: `skuDeny` → `skuAllow` → `substring` → `prefix` �
 
 Reguły zostały dostrojone na dwóch anchorach:
 
-| anchor | produkt | faktur | pozycji | unikalnych partnerów | mediana pozycji/fakturę |
-|---|---|---|---|---|---|
-| `0022850` | Delipasta PISTACJA PURE — FABBRI | 100 | 1089 | 408 | 9 |
-| `0031629` | Krem pistacjowy z Kadayif — ZENTIS | 80 | 1480 | 538 | 14 |
+| anchor | produkt | faktur | pozycji | unikalnych partnerów | mediana pozycji/fakturę | lider |
+|---|---|---|---|---|---|---|
+| `0022850` | Delipasta PISTACJA PURE — FABBRI | 100 | 1089 | 408 | 9 | 31% |
+| `0031629` | Krem pistacjowy z Kadayif — ZENTIS | 80 | 1480 | 538 | 14 | 41% |
+| `0021269` | Orzech laskowy prażony Piemonte IGP 1kg | 100 | 1031 | 452 | 8 | **11%** |
 
-### Dlaczego `MIN_SHARE` to 10, a nie 25
+### Dlaczego głównym progiem jest `MIN_COUNT`, a nie `MIN_SHARE`
 
-Pierwotna specyfikacja zakładała 25%. Na realnych danych przepuszczało to
-**jeden produkt** — cukier kryształ, czyli surowiec uniwersalny występujący obok
-wszystkiego. Rozkład co-occurrence to jeden lider i długi cienki ogon
-(31% → 16% → 15% → 15% → 13%), bo przy 400-500 różnych partnerach żaden
-konkretny produkt nie osiągnie wysokiego udziału.
+Historia zmian tego progu jest pouczająca i warto jej nie powtarzać:
 
-Próg 15% też dawał 4 pozycje, ale trafiał **dokładnie** w wartość 4. i 5. kandydata,
-więc przy innym produkcie łatwo spadłby do dwóch. Przy 10% kwalifikuje się ~9 pozycji
-w obu przypadkach, a `TOP_N` i tak obcina do 4 — próg pełni więc rolę podłogi jakości,
-nie selektora.
+- **25%** (pierwotna specyfikacja) → 1 kandydat. Przy 400-500 różnych partnerach
+  żaden konkretny produkt nie osiąga wysokiego udziału; przechodził tylko cukier
+  kryształ, czyli surowiec uniwersalny występujący obok wszystkiego.
+- **10%** → 4 kandydatów dla obu pastyowych anchorów, ale **2 dla orzecha**.
+- **`MIN_COUNT: 4` + `MIN_SHARE: 5`** → 4 dla wszystkich trzech.
+
+Przyczyna jest strukturalna: **koncentracja koszyka zależy od roli produktu
+w produkcji.** Krem pistacjowy ma wąskie zastosowanie, więc jego lider ma 41%.
+Orzech laskowy jest wsadem do wielu różnych receptur, więc sygnał się rozprasza
+i lider ma tylko 11%. Żadna stała wartość procentowa nie obsłuży obu przypadków.
+
+Liczba wspólnych faktur jest stabilniejsza między produktami niż udział procentowy.
+`MIN_SHARE` zostaje jako podłoga szumu — przy `N < 80` zaczyna wiązać mocniej niż
+`MIN_COUNT` i chroni przed rekomendacjami z próby 20 faktur.
+
+Odrzucone warianty: próg relatywny („≥25% udziału lidera") przepuszczał 32 pozycje
+dla orzecha — za luźny, bo skaluje się razem z rozproszeniem, którego miał pilnować.
 
 ### Dlaczego gramatura mierzona jest z nazwy
 
@@ -146,6 +156,11 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
   wyjątki `delipasta` i `polewa`.
 - **Nie matchuj po nazwach owoców.** „Delipasta Malinowa" nie jest mrożonką.
   Jedyny pewny keyword to rdzeń `mrożon`.
+- **Liczba mnoga potrzebuje osobnego rdzenia.** `prefix: 'wafel'` nie łapało
+  „Wafle płaskie… HANMART", bo `wafl` **nie jest** prefiksem `wafel` (między
+  „waf" i „l" stoi „e"). Żaden z tych rdzeni nie zawiera drugiego — muszą być oba.
+- **`serek` to nie `ser`.** „Serek kremowy 5kg — Piątnica" (nabiał świeży)
+  przechodził, bo `ser` po granicy słowa go nie łapie, a `serow` też nie.
 - **`\b` nie działa na polskich znakach** — patrz `wordRegex()`.
 - Produkty mrożone, których nazwa nie zawiera „mrożon": croissanty
   (VANDEMOORTELE, EUROPASTRY). Wyłapane osobną regułą.
@@ -163,6 +178,10 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
 
 ## Aktualny wynik
 
+Wyniki dla `0022850` i `0031629` policzone przy starych progach
+(`MIN_COUNT: 3`, `MIN_SHARE: 10`) — po zmianie na 4/5 mogą dojść pozycje z ogona.
+Wynik dla `0021269` jest już z aktualnymi progami.
+
 ```
 anchor 0022850 (Delipasta PISTACJA):
   0004446  16%  Polewa TOPPING Czekoladowa - FABBRI
@@ -175,6 +194,12 @@ anchor 0031629 (Krem pistacjowy Kadayif):
   0006418  15%  Cukier puder 10kg - A&W
   0000263  11%  Proszek do pieczenia - worek 5kg - BOWIKA   <-- sporne, patrz niżej
   0022485  10%  Brzoskwinia kostka w syropie 4200g - ALFAPRO
+
+anchor 0021269 (Orzech laskowy prażony):
+  0007650  11%  Migdały płatki 1kg
+  0010839  10%  Pomidory suszone połówki w oleju 1600g/900g
+  0007726   9%  Siemię lniane a 5kg
+  0006418   8%  Cukier puder 10kg - A&W
 ```
 
 `0000263` (proszek 5kg) przechodzi próg gramatury, ale mediana zakupu to 5 worków

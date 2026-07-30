@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      1.9
+// @version      2.0
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, analizuje co-occurrence i eksportuje kandydatów do cross-sellingu do CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -26,11 +26,15 @@
 
   // ---------- Konfiguracja analizy cross-sell ----------
   const CROSS_SELL = {
-    MIN_COUNT: 3,       // minimalna liczba wspólnych faktur (chroni przy małym N)
-    // 25% okazało się nieosiągalne przy szerokim asortymencie: na 100 fakturach
-    // anchor 0022850 miał 408 różnych partnerów i mediana 9 pozycji na fakturze,
-    // więc próg przepuszczał tylko jeden uniwersalny surowiec (cukier).
-    MIN_SHARE: 10,      // minimalny udział procentowy
+    // MIN_COUNT jest głównym progiem, MIN_SHARE tylko podłogą przy małym N.
+    //
+    // Dlaczego nie odwrotnie: koncentracja koszyka zależy od roli produktu.
+    // Krem pistacjowy ma lidera 41% (wąskie zastosowanie), orzech laskowy
+    // tylko 11% (wsad do wielu receptur, sygnał się rozprasza). Sztywny próg
+    // procentowy nie może obsłużyć obu — 25% dawało 1 kandydata, 10% dawało
+    // 2 dla orzecha i 4 dla kremu. Liczba wspólnych faktur jest stabilniejsza.
+    MIN_COUNT: 4,
+    MIN_SHARE: 5,       // podłoga szumu; przy N<80 zaczyna wiązać mocniej niż MIN_COUNT
     TOP_N: 4,           // ile kandydatów w finalnej liście
 
     // Maksymalna gramatura opakowania (kg lub L) dopuszczalna w sprzedaży
@@ -96,6 +100,7 @@
       'jajow',      // masa jajowa pasteryzowana
       'twarog',     // nadzienie twarogowe / prod. twarogowy (odmiana bez "ó")
       'serow',      // nadzienia i produkty cukiernicze serowe (Sermiks, Sernik Wiedeński, ProSer)
+      'serek',      // serek kremowy/homogenizowany — nabiał świeży, "ser" po granicy słowa go nie łapie
 
       // Rdzeń "śmietan-" łapie wszystkie zaobserwowane formy: Śmietana, Śmietanka,
       // "Śmietano pod. Kremówka", Śmietankowa. Wyjątki to produkty shelf-stable,
@@ -105,7 +110,11 @@
 
     // Nazwa MUSI się zaczynać od podanego fragmentu.
     prefix: [
-      'wafel'       // wafle, rożki, kubki lodowe (MIRAN, GRODCONO, NOWE MIRAN...)
+      // Potrzebne OBA rdzenie: "wafel" (l. poj.) i "wafl-" (l. mnoga, "Wafle
+      // płaskie... HANMART"). Żaden nie jest prefiksem drugiego — "wafl" nie
+      // pasuje do "wafel", bo między "waf" i "l" stoi "e".
+      'wafel',      // Wafel Stożek, Wafel Rożek, Wafel Gigante
+      'wafl'        // Wafle płaskie, Wafli...
     ],
 
     // Wszystkie fragmenty z grupy muszą wystąpić w nazwie (dowolna kolejność).
