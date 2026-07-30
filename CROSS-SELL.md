@@ -162,6 +162,10 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
 - **`serek` to nie `ser`.** „Serek kremowy 5kg — Piątnica" (nabiał świeży)
   przechodził, bo `ser` po granicy słowa go nie łapie, a `serow` też nie.
 - **`\b` nie działa na polskich znakach** — patrz `wordRegex()`.
+- **Znany przeciek, nierozwiązany:** „Kulinarna kremowa 18% 5kg — FIGAND" to
+  śmietanka kulinarna (chłodnia), ale nazwa nie zawiera ani `śmietan`, ani `ser`,
+  ani `krem`+`roślinn`. Wystąpiła 1× w trzech plikach, więc jest poniżej progu
+  i nie wpływa dziś na wynik. Wyłapie ją grupa `Nabiał` po podłączeniu katalogu.
 - Produkty mrożone, których nazwa nie zawiera „mrożon": croissanty
   (VANDEMOORTELE, EUROPASTRY). Wyłapane osobną regułą.
 
@@ -171,6 +175,18 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
   Mleko w proszku i skondensowane zostają.
 - Produkty i nadzienia serowe cukiernicze (Sermiks, Sernik Wiedeński, ProSer,
   „Serowe prod.") — **chłodnia**, wykluczone (rdzeń `serow`).
+- Krem roślinny do bicia (Decor Up) — **chłodnia**, wykluczony
+  (`allOf: krem+roślinn`). Warunek na „roślinn" jest konieczny: samo „krem"
+  wyrzuciłoby połowę asortymentu, w tym typowe anchory (kremy pistacjowe,
+  orzechowe, budyniowe).
+- Mrożone pieczywo VANDEMOORTELE — **mroźnia**, wykluczone po marce.
+  Wykluczenie po marce, a nie po typie produktu, bo asortyment nie ma wspólnego
+  rdzenia w nazwie: croissanty, blaty z ciasta francuskiego, rogaliki, precle,
+  ciabatty, briosze, muffiny, torty. Reguła na typ wymagałaby dopisywania bez końca.
+  **Uwaga:** `europastry` i `panesco` dodane przeze mnie przez analogię — to ci sami
+  dostawcy mrożonego pieczywa (Croissant XXL PANESCO, Chleb Brioche EUROPASTRY,
+  Ciasto Tort miodowy PANESCO), ale właściciel produktu potwierdził tylko
+  VANDEMOORTELE. Do weryfikacji.
 - Marki, które **nie** są wykluczeniem, mimo że pojawiły się w pierwotnej
   specyfikacji: EKSTRA, Jaskółka Czerwona, LESAFFRE, Hirondell, MIRAN, GRODCONO,
   Palma BIELMAR, MILENA, Esperto ALFAPRO. Wykluczanie po marce wyrzucało za dużo.
@@ -178,9 +194,8 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
 
 ## Aktualny wynik
 
-Wyniki dla `0022850` i `0031629` policzone przy starych progach
-(`MIN_COUNT: 3`, `MIN_SHARE: 10`) — po zmianie na 4/5 mogą dojść pozycje z ogona.
-Wynik dla `0021269` jest już z aktualnymi progami.
+Wszystkie trzy policzone przy aktualnych progach (`MIN_COUNT: 4`, `MIN_SHARE: 5`)
+i pełnym zestawie reguł. Każdy anchor daje pełne 4 pozycje.
 
 ```
 anchor 0022850 (Delipasta PISTACJA):

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.0
+// @version      2.1
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, analizuje co-occurrence i eksportuje kandydatów do cross-sellingu do CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -97,6 +97,15 @@
       'margaryn',   // margaryny profesjonalne (Palma BIELMAR, MILENA, Esperto ALFAPRO...)
       'mrożon',     // mrożona / mrożony / mrożone / mrożonka / mrożonek
       'croissant',  // ciasta gotowe — mrożone, ale "mrożon" nie występuje w nazwie
+
+      // Dostawcy mrożonego pieczywa. Wykluczenie po marce, bo asortyment jest
+      // szeroki i nazwy typu produktu nie mają wspólnego rdzenia: croissanty,
+      // blaty z ciasta francuskiego, rogaliki, precle, ciabatty, briosze, muffiny.
+      // Reguła na typ produktu wymagałaby dopisywania pozycji bez końca.
+      'vandemoortele',
+      'europastry',
+      'panesco',
+
       'jajow',      // masa jajowa pasteryzowana
       'twarog',     // nadzienie twarogowe / prod. twarogowy (odmiana bez "ó")
       'serow',      // nadzienia i produkty cukiernicze serowe (Sermiks, Sernik Wiedeński, ProSer)
@@ -125,7 +134,11 @@
       ['drożdż', 'przemysłow'],
       // Mleko UHT (bag in box i kartony) = chłodnia. Warunek na "uht" chroni
       // mleko w proszku i skondensowane, które zostają w rankingu.
-      ['mleko', 'uht']
+      ['mleko', 'uht'],
+      // Kremy roślinne do bicia (Decor Up) = chłodnia. Warunek na "roślinn"
+      // jest konieczny — samo "krem" wyrzuciłoby połowę asortymentu
+      // (kremy pistacjowe, orzechowe, budyniowe), w tym typowe anchory.
+      ['krem', 'roślinn']
     ],
 
     // Dopasowanie na granicy słowa — "ser" nie łapie "deser"/"serwetki".
