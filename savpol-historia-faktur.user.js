@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      1.5
-// @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, i eksportuje do CSV
+// @version      1.6
+// @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, analizuje co-occurrence i eksportuje kandydatów do cross-sellingu do CSV
 // @match        https://erp.savpol.pl/*
 // @grant        unsafeWindow
 // @run-at       document-idle
@@ -20,6 +20,50 @@
   const MAX_INVOICES = 100;                       // limit pobieranych faktur
   const HISTORY_START_DATE = new Date(2024, 0, 1); // od stycznia 2024
   const MAX_PAGES = 50;                            // zabezpieczenie przed nieskończoną pętlą paginacji
+
+  const EXPORT_RAW_HISTORY = true;                 // dodatkowy CSV z pełną historią (debug reguł)
+
+  // ---------- Konfiguracja analizy cross-sell ----------
+  const CROSS_SELL = {
+    MIN_COUNT: 3,       // minimalna liczba wspólnych faktur
+    MIN_SHARE: 25,      // minimalny udział procentowy
+    TOP_N: 4            // ile kandydatów w finalnej liście
+  };
+
+  // Lista wykluczeń jest ŚWIADOMIE otwarta — dopisuj kolejne pozycje
+  // (produkty wycofane, sezonowe, z długim lead-time itp.).
+  const EXCLUSIONS = {
+    // Dopasowanie po fragmencie nazwy (gdziekolwiek), case-insensitive.
+    substring: [
+      'margaryn',   // margaryny profesjonalne (Palma BIELMAR, MILENA, Esperto ALFAPRO...)
+      'mrożon'      // mrożona / mrożony / mrożone / mrożonka / mrożonek
+    ],
+
+    // Nazwa MUSI się zaczynać od podanego fragmentu.
+    prefix: [
+      'wafel'       // wafle, rożki, kubki lodowe (MIRAN, GRODCONO, NOWE MIRAN...)
+    ],
+
+    // Wszystkie fragmenty z grupy muszą wystąpić w nazwie (dowolna kolejność).
+    // Chroni drożdże suche/instant przed przypadkowym wykluczeniem.
+    allOf: [
+      ['drożdż', 'śwież'],
+      ['drożdż', 'płynn'],
+      ['drożdż', 'przemysłow']
+    ],
+
+    // Dopasowanie na granicy słowa — "ser" nie łapie "deser"/"serwetki".
+    words: [
+      'mascarpone', 'śmietana', 'twaróg', 'jogurt', 'żółtko', 'ser', 'masło',
+      'boczek', 'salami', 'kebab', 'parówki', 'wędlina', 'kiełbasa'
+    ],
+
+    // Wyjątki: jeśli nazwa pasuje do reguły z `words`, ale zawiera któryś
+    // z tych fragmentów — NIE wykluczamy.
+    wordExceptions: {
+      'masło': ['kakaowe']   // masło kakaowe = składnik shelf-stable
+    }
+  };
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -268,6 +312,159 @@
     URL.revokeObjectURL(url);
   }
 
+  // ---------- Krok 4: analiza cross-sell ----------
+
+  // Uwaga: \b w JS działa na ASCII, więc dla "śmietana"/"żółtko"/"masło"
+  // granicę słowa budujemy na klasach Unicode (wymaga flagi /u).
+  function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+  const wordRegexCache = new Map();
+  function wordRegex(word) {
+    if (!wordRegexCache.has(word)) {
+      wordRegexCache.set(word, new RegExp(
+        `(^|[^\\p{L}\\p{N}])${escapeRegex(word)}([^\\p{L}\\p{N}]|$)`, 'u'
+      ));
+    }
+    return wordRegexCache.get(word);
+  }
+
+  // Zwraca nazwę dopasowanej reguły (do logu) albo null, jeśli produkt przechodzi.
+  function findExclusion(productName) {
+    const name = (productName || '').toLocaleLowerCase('pl-PL');
+    if (!name) return null;
+
+    for (const frag of EXCLUSIONS.substring) {
+      if (name.includes(frag.toLocaleLowerCase('pl-PL'))) return `substring:${frag}`;
+    }
+
+    for (const frag of EXCLUSIONS.prefix) {
+      if (name.startsWith(frag.toLocaleLowerCase('pl-PL'))) return `prefix:${frag}`;
+    }
+
+    for (const group of EXCLUSIONS.allOf) {
+      if (group.every(frag => name.includes(frag.toLocaleLowerCase('pl-PL')))) {
+        return `allOf:${group.join('+')}`;
+      }
+    }
+
+    for (const word of EXCLUSIONS.words) {
+      const w = word.toLocaleLowerCase('pl-PL');
+      if (!wordRegex(w).test(name)) continue;
+      const exceptions = EXCLUSIONS.wordExceptions[word] || [];
+      const excused = exceptions.some(ex => name.includes(ex.toLocaleLowerCase('pl-PL')));
+      if (!excused) return `word:${word}`;
+    }
+
+    return null;
+  }
+
+  function sameSku(a, b) {
+    return (a || '').trim().toLocaleLowerCase('pl-PL') === (b || '').trim().toLocaleLowerCase('pl-PL');
+  }
+
+  function analyzeCrossSell(rows, anchorSku) {
+    // Grupujemy pozycje po numerze faktury.
+    const byDoc = new Map();
+    for (const r of rows) {
+      if (!byDoc.has(r.doc)) byDoc.set(r.doc, []);
+      byDoc.get(r.doc).push(r);
+    }
+
+    // Krok 1 — N = liczba faktur, w których faktycznie widać anchor.
+    const anchorDocs = [];
+    for (const [doc, items] of byDoc) {
+      if (items.some(it => sameSku(it.sku, anchorSku))) anchorDocs.push(doc);
+    }
+    const N = anchorDocs.length;
+
+    // Krok 2 — co-occurrence: liczymy FAKTURY, nie pozycje.
+    const stats = new Map(); // sku -> { sku, name, count }
+    for (const doc of anchorDocs) {
+      const seenInDoc = new Set();
+      for (const it of byDoc.get(doc)) {
+        const sku = (it.sku || '').trim();
+        if (!sku || sameSku(sku, anchorSku)) continue;
+        const key = sku.toLocaleLowerCase('pl-PL');
+        if (seenInDoc.has(key)) continue;
+        seenInDoc.add(key);
+        if (!stats.has(key)) stats.set(key, { sku, name: it.product || '', count: 0 });
+        stats.get(key).count++;
+      }
+    }
+
+    // Krok 3 — wykluczenia kategorii.
+    const excluded = [];
+    const kept = [];
+    for (const entry of stats.values()) {
+      const rule = findExclusion(entry.name);
+      if (rule) excluded.push({ ...entry, rule });
+      else kept.push(entry);
+    }
+
+    // Krok 4 — próg sygnału.
+    const ranked = kept
+      .map(e => ({ ...e, share: N > 0 ? (e.count / N) * 100 : 0 }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'pl-PL'));
+
+    const qualified = ranked.filter(
+      e => e.count >= CROSS_SELL.MIN_COUNT && e.share >= CROSS_SELL.MIN_SHARE
+    );
+
+    return {
+      N,
+      anchorSku,
+      candidates: qualified.slice(0, CROSS_SELL.TOP_N),
+      weakSignal: qualified.length === 0,
+      ranked,     // pełny ranking po wykluczeniach (debug)
+      excluded    // co i przez którą regułę wypadło (debug)
+    };
+  }
+
+  function formatShare(share) {
+    return share.toFixed(1).replace('.', ',');
+  }
+
+  function downloadCrossSellCSV(result) {
+    const header = 'nazwa;kod_SKU;liczba_wystapien;udzial_procent\n';
+    let body;
+
+    if (result.weakSignal) {
+      // Pusta lista + jawna flaga, zamiast wymuszania słabych kandydatów.
+      body = `"sygnał zbyt słaby";"";"0";"0,0"`;
+    } else {
+      body = result.candidates.map(c =>
+        `"${c.name}";"${c.sku}";"${c.count}";"${formatShare(c.share)}"`
+      ).join('\n');
+    }
+
+    const csv = header + body + '\n';
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cross_sell_${result.anchorSku || 'produkt'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function logAnalysis(result) {
+    console.log(`[Cross-sell] Anchor: ${result.anchorSku}, N = ${result.N} faktur`);
+    console.log(`[Cross-sell] Ranking po wykluczeniach (${result.ranked.length}):`);
+    console.table(result.ranked.map(e => ({
+      nazwa: e.name, SKU: e.sku, wystąpienia: e.count, udział: formatShare(e.share) + '%'
+    })));
+    if (result.excluded.length) {
+      console.log(`[Cross-sell] Wykluczone (${result.excluded.length}):`);
+      console.table(result.excluded.map(e => ({
+        nazwa: e.name, SKU: e.sku, wystąpienia: e.count, reguła: e.rule
+      })));
+    }
+    if (result.weakSignal) {
+      console.warn(`[Cross-sell] Sygnał zbyt słaby — żaden kandydat nie osiągnął ` +
+        `${CROSS_SELL.MIN_COUNT} wystąpień i ${CROSS_SELL.MIN_SHARE}% udziału.`);
+    }
+  }
+
   // ---------- Główny pipeline ----------
   async function runFullPipeline(button) {
     const originalText = button.textContent;
@@ -288,8 +485,21 @@
         console.log(msg);
       });
 
-      button.textContent = `Gotowe: ${data.length} pozycji. Zapisuję CSV...`;
-      downloadCSV(data, mainSku);
+      button.textContent = 'Analizuję cross-sell...';
+      const analysis = analyzeCrossSell(data, mainSku);
+      logAnalysis(analysis);
+
+      if (EXPORT_RAW_HISTORY) {
+        downloadCSV(data, mainSku);
+        await sleep(300); // przeglądarki gubią drugi download bez odstępu
+      }
+
+      downloadCrossSellCSV(analysis);
+
+      button.textContent = analysis.weakSignal
+        ? `Sygnał zbyt słaby (N=${analysis.N})`
+        : `Gotowe: ${analysis.candidates.length} kandydatów (N=${analysis.N})`;
+      await sleep(2000);
 
       // Zamknij zakładkę zestawienia
       const summaryCloseBtn = document.querySelector('li.k-state-active .csCloseButton_span');
