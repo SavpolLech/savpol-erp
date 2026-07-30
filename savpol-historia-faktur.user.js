@@ -6,6 +6,8 @@
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
 // @grant        unsafeWindow
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -59,6 +61,20 @@
   // (Zadanie 2), więc realnie działa tylko, gdy AVAILABILITY.ENABLE = true.
   const GROUP_FILTER = {
     ENABLE: true // wyłącznik; false = grupa nie wpływa na wynik (zachowanie sprzed Zadania 3)
+  };
+
+  // ---------- Konfiguracja: cache kategorii/gramatury (Zadanie 4) ----------
+  // Kategoria i gramatura są stabilne w czasie, więc nadają się do trwałego
+  // cache w GM storage (przetrwa reload strony i restart przeglądarki).
+  // Stan magazynowy (DYS., podpis "nisko rotujący") zmienia się codziennie
+  // i NIE jest tu cachowany — patrz applyAvailabilityFilter(), zawsze
+  // odczyt na żywo z katalogu.
+  //
+  // Cache jest NARASTAJĄCY: zapisujemy tylko kandydatów faktycznie
+  // sprawdzonych w danym uruchomieniu — bez zrzutu całego katalogu.
+  const CATALOG_CACHE = {
+    ENABLE: true, // wyłącznik; false = brak odczytu/zapisu cache (zachowanie sprzed Zadania 4)
+    KEY: 'savpol_catcache_v1' // jeden klucz GM; wartość to { [sku]: { group, packKg, ts } }
   };
 
   // Wyrazy pomijane przy ustalaniu rodziny produktu — nie niosą kategorii.
@@ -749,12 +765,42 @@
     return true;
   }
 
+  // ---------- Cache kategorii/gramatury (Zadanie 4, GM_setValue/GM_getValue) ----------
+  function loadCatalogCache() {
+    if (!CATALOG_CACHE.ENABLE) return {};
+    try {
+      return GM_getValue(CATALOG_CACHE.KEY, {}) || {};
+    } catch (err) {
+      console.warn('[Cross-sell] Nie udało się odczytać cache kategorii/gramatury:', err);
+      return {};
+    }
+  }
+
+  function saveCatalogCache(cache) {
+    if (!CATALOG_CACHE.ENABLE) return;
+    try {
+      GM_setValue(CATALOG_CACHE.KEY, cache);
+    } catch (err) {
+      console.warn('[Cross-sell] Nie udało się zapisać cache kategorii/gramatury:', err);
+    }
+  }
+
+  // Zapisuje/aktualizuje wpis dla jednego SKU. Wołane tylko dla kandydatów,
+  // których faktycznie sprawdziliśmy w katalogu (cache narastający, Zadanie 4).
+  function rememberCatalogInfo(cache, sku, group, packKg) {
+    const key = (sku || '').trim();
+    if (!key) return;
+    cache[key] = { group: group || '', packKg: (packKg === null || packKg === undefined) ? null : packKg, ts: Date.now() };
+  }
+
   // Przechodzi po pełnym (zdeduplikowanym po rodzinie) rankingu i dobiera
   // kolejnych kandydatów z rankingu, gdy poprzedni odpada na dostępności.
   async function applyAvailabilityFilter(dedupedRanked, topN, onProgress) {
     const kept = [];
     const rejected = [];
     const groupsSeen = new Set();
+    const cache = loadCatalogCache();
+    let cacheUpdates = 0;
     for (const entry of dedupedRanked) {
       if (kept.length >= topN) break;
 
@@ -771,6 +817,15 @@
       }
 
       if (info.group) groupsSeen.add(info.group);
+
+      // Cache narastający (Zadanie 4): kategoria i gramatura są stabilne, więc
+      // zapisujemy je dla każdego sprawdzonego kandydata. Stanu magazynowego
+      // (DYS., podpis) NIE zapisujemy — patrz komentarz przy CATALOG_CACHE.
+      if (CATALOG_CACHE.ENABLE) {
+        rememberCatalogInfo(cache, entry.sku, info.group, biggestPackKg(entry.name));
+        cacheUpdates++;
+        saveCatalogCache(cache);
+      }
 
       // Grupa katalogowa (Zadanie 3) — wygrywa z regułami nazwowymi, ale
       // skuAllow wygrywa z grupą (ratunek na fałszywe trafienia denylisty grup).
@@ -795,7 +850,7 @@
 
       kept.push({ ...entry, dys: info.dys, group: info.group, caption: info.caption });
     }
-    return { kept, rejected, groupsSeen: Array.from(groupsSeen) };
+    return { kept, rejected, groupsSeen: Array.from(groupsSeen), cacheUpdates, cacheSize: Object.keys(cache).length };
   }
 
   function logAvailability(avail) {
@@ -811,6 +866,9 @@
         console.log('[Cross-sell] Grupy wśród sprawdzanych kandydatów spoza denylisty (sprawdź, czy nie brakuje gałęzi):');
         console.table(unlisted.map(g => ({ grupa: g })));
       }
+    }
+    if (CATALOG_CACHE.ENABLE && avail.cacheUpdates !== undefined) {
+      console.log(`[Cross-sell] Cache kategorii/gramatury (GM storage): ${avail.cacheUpdates} zapisanych/odświeżonych w tym uruchomieniu, ${avail.cacheSize} łącznie.`);
     }
   }
 
