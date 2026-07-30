@@ -1,8 +1,9 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      1.6
+// @version      1.9
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, analizuje co-occurrence i eksportuje kandydatów do cross-sellingu do CSV
+// @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
 // @grant        unsafeWindow
 // @run-at       document-idle
@@ -25,18 +26,56 @@
 
   // ---------- Konfiguracja analizy cross-sell ----------
   const CROSS_SELL = {
-    MIN_COUNT: 3,       // minimalna liczba wspólnych faktur
-    MIN_SHARE: 25,      // minimalny udział procentowy
-    TOP_N: 4            // ile kandydatów w finalnej liście
+    MIN_COUNT: 3,       // minimalna liczba wspólnych faktur (chroni przy małym N)
+    // 25% okazało się nieosiągalne przy szerokim asortymencie: na 100 fakturach
+    // anchor 0022850 miał 408 różnych partnerów i mediana 9 pozycji na fakturze,
+    // więc próg przepuszczał tylko jeden uniwersalny surowiec (cukier).
+    MIN_SHARE: 10,      // minimalny udział procentowy
+    TOP_N: 4,           // ile kandydatów w finalnej liście
+
+    // Maksymalna gramatura opakowania (kg lub L) dopuszczalna w sprzedaży
+    // wysyłkowej. Worki 25kg to czyste B2B; 10kg (np. cukier puder) jeszcze ujdzie.
+    MAX_PACK_KG: 10,
+
+    // Max 1 produkt na "rodzinę" (pierwszy znaczący wyraz nazwy), żeby lista
+    // nie wyglądała jak jedna rekomendacja powtórzona trzy razy
+    // (cukier kryształ + puder + wanilinowy).
+    ONE_PER_FAMILY: true
   };
+
+  // Wyrazy pomijane przy ustalaniu rodziny produktu — nie niosą kategorii.
+  const FAMILY_STOPWORDS = ['bt', 'mini', 'nowe', 'op', 'opak', 'do', 'na', 'z', 'w', 'i', 'ze'];
 
   // Lista wykluczeń jest ŚWIADOMIE otwarta — dopisuj kolejne pozycje
   // (produkty wycofane, sezonowe, z długim lead-time itp.).
+  //
+  // ERP nie udostępnia przy produkcie informacji o sposobie przechowywania,
+  // więc kategoria jest zgadywana z nazwy. Tam gdzie nazwa nie wystarcza,
+  // używaj list skuDeny/skuAllow — decyzja per SKU zawsze wygrywa z heurystyką.
   const EXCLUSIONS = {
+    // Zawsze wykluczaj te SKU (chłodnia/mrożonka/wycofane, czego nazwa nie zdradza).
+    // Format: '0005261': 'Serowe prod. Wykwintny — chłodnia'
+    skuDeny: {},
+
+    // Nigdy nie wykluczaj tych SKU — ratunek na fałszywe trafienia reguł.
+    // Wygrywa z regułami nazwowymi ORAZ z progiem gramatury.
+    skuAllow: {},
+
     // Dopasowanie po fragmencie nazwy (gdziekolwiek), case-insensitive.
+    // Zamiast samego stringa można podać { frag, unless: [...] } — wtedy trafienie
+    // jest anulowane, jeśli nazwa zawiera któryś z fragmentów `unless`.
     substring: [
       'margaryn',   // margaryny profesjonalne (Palma BIELMAR, MILENA, Esperto ALFAPRO...)
-      'mrożon'      // mrożona / mrożony / mrożone / mrożonka / mrożonek
+      'mrożon',     // mrożona / mrożony / mrożone / mrożonka / mrożonek
+      'croissant',  // ciasta gotowe — mrożone, ale "mrożon" nie występuje w nazwie
+      'jajow',      // masa jajowa pasteryzowana
+      'twarog',     // nadzienie twarogowe / prod. twarogowy (odmiana bez "ó")
+      'serow',      // nadzienia i produkty cukiernicze serowe (Sermiks, Sernik Wiedeński, ProSer)
+
+      // Rdzeń "śmietan-" łapie wszystkie zaobserwowane formy: Śmietana, Śmietanka,
+      // "Śmietano pod. Kremówka", Śmietankowa. Wyjątki to produkty shelf-stable,
+      // które tylko mają śmietankę w nazwie smaku.
+      { frag: 'śmietan', unless: ['aromat', 'budyń', 'fix', 'proszk'] }
     ],
 
     // Nazwa MUSI się zaczynać od podanego fragmentu.
@@ -49,19 +88,23 @@
     allOf: [
       ['drożdż', 'śwież'],
       ['drożdż', 'płynn'],
-      ['drożdż', 'przemysłow']
+      ['drożdż', 'przemysłow'],
+      // Mleko UHT (bag in box i kartony) = chłodnia. Warunek na "uht" chroni
+      // mleko w proszku i skondensowane, które zostają w rankingu.
+      ['mleko', 'uht']
     ],
 
     // Dopasowanie na granicy słowa — "ser" nie łapie "deser"/"serwetki".
     words: [
-      'mascarpone', 'śmietana', 'twaróg', 'jogurt', 'żółtko', 'ser', 'masło',
+      'mascarpone', 'twaróg', 'jogurt', 'żółtko', 'ser', 'masło',
       'boczek', 'salami', 'kebab', 'parówki', 'wędlina', 'kiełbasa'
     ],
 
     // Wyjątki: jeśli nazwa pasuje do reguły z `words`, ale zawiera któryś
     // z tych fragmentów — NIE wykluczamy.
     wordExceptions: {
-      'masło': ['kakaowe']   // masło kakaowe = składnik shelf-stable
+      // masło kakaowe oraz pasty/polewy o smaku masła solonego = shelf-stable
+      'masło': ['kakaowe', 'delipasta', 'polewa']
     }
   };
 
@@ -333,8 +376,12 @@
     const name = (productName || '').toLocaleLowerCase('pl-PL');
     if (!name) return null;
 
-    for (const frag of EXCLUSIONS.substring) {
-      if (name.includes(frag.toLocaleLowerCase('pl-PL'))) return `substring:${frag}`;
+    for (const rule of EXCLUSIONS.substring) {
+      const frag = (typeof rule === 'string' ? rule : rule.frag).toLocaleLowerCase('pl-PL');
+      if (!name.includes(frag)) continue;
+      const unless = (typeof rule === 'string' ? [] : rule.unless || []);
+      if (unless.some(ex => name.includes(ex.toLocaleLowerCase('pl-PL')))) continue;
+      return `substring:${frag}`;
     }
 
     for (const frag of EXCLUSIONS.prefix) {
@@ -356,6 +403,39 @@
     }
 
     return null;
+  }
+
+  // ---------- Gramatura opakowania ----------
+  // Z nazwy wyciągamy wszystkie liczby z jednostką masy/objętości i bierzemy
+  // największą. Liczby bez jednostki (kody typu "263004", "op. 12 worków")
+  // są ignorowane, bo nie opisują opakowania.
+  function biggestPackKg(productName) {
+    const name = (productName || '').toLocaleLowerCase('pl-PL');
+    const re = /(\d+(?:[.,]\d+)?)\s*(kg|g|l|ml)(?![a-ząćęłńóśźż])/g;
+    let max = null, m;
+    while ((m = re.exec(name)) !== null) {
+      const value = parseFloat(m[1].replace(',', '.'));
+      if (!isFinite(value)) continue;
+      const unit = m[2];
+      const kg = (unit === 'kg' || unit === 'l') ? value : value / 1000;
+      if (max === null || kg > max) max = kg;
+    }
+    return max;
+  }
+
+  // Rodzina produktu = pierwszy znaczący wyraz nazwy (cukier, polewa, pojemnik...).
+  function familyKey(productName) {
+    const tokens = (productName || '')
+      .toLocaleLowerCase('pl-PL')
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter(Boolean);
+    for (const t of tokens) {
+      if (t.length < 3) continue;
+      if (FAMILY_STOPWORDS.includes(t)) continue;
+      if (/^\d+$/.test(t)) continue;
+      return t;
+    }
+    return (productName || '').toLocaleLowerCase('pl-PL');
   }
 
   function sameSku(a, b) {
@@ -392,13 +472,31 @@
       }
     }
 
-    // Krok 3 — wykluczenia kategorii.
+    // Krok 3 — wykluczenia kategorii + gramatury hurtowej.
     const excluded = [];
     const kept = [];
     for (const entry of stats.values()) {
+      // Nadpisania per SKU mają pierwszeństwo nad całą heurystyką nazwową.
+      const skuKey = (entry.sku || '').trim();
+      if (Object.prototype.hasOwnProperty.call(EXCLUSIONS.skuDeny, skuKey)) {
+        excluded.push({ ...entry, rule: `skuDeny:${EXCLUSIONS.skuDeny[skuKey] || 'ręcznie'}` });
+        continue;
+      }
+      if (Object.prototype.hasOwnProperty.call(EXCLUSIONS.skuAllow, skuKey)) {
+        kept.push(entry);
+        continue;
+      }
+
       const rule = findExclusion(entry.name);
-      if (rule) excluded.push({ ...entry, rule });
-      else kept.push(entry);
+      if (rule) { excluded.push({ ...entry, rule }); continue; }
+
+      const packKg = biggestPackKg(entry.name);
+      if (packKg !== null && packKg > CROSS_SELL.MAX_PACK_KG) {
+        excluded.push({ ...entry, rule: `pack:${packKg}kg` });
+        continue;
+      }
+
+      kept.push(entry);
     }
 
     // Krok 4 — próg sygnału.
@@ -410,13 +508,32 @@
       e => e.count >= CROSS_SELL.MIN_COUNT && e.share >= CROSS_SELL.MIN_SHARE
     );
 
+    // Krok 5 — max 1 produkt na rodzinę (ranking jest już posortowany malejąco,
+    // więc zostaje najmocniejszy przedstawiciel rodziny).
+    const droppedByFamily = [];
+    let finalList = qualified;
+    if (CROSS_SELL.ONE_PER_FAMILY) {
+      const seenFamilies = new Set();
+      finalList = [];
+      for (const e of qualified) {
+        const family = familyKey(e.name);
+        if (seenFamilies.has(family)) {
+          droppedByFamily.push({ ...e, family });
+          continue;
+        }
+        seenFamilies.add(family);
+        finalList.push(e);
+      }
+    }
+
     return {
       N,
       anchorSku,
-      candidates: qualified.slice(0, CROSS_SELL.TOP_N),
-      weakSignal: qualified.length === 0,
-      ranked,     // pełny ranking po wykluczeniach (debug)
-      excluded    // co i przez którą regułę wypadło (debug)
+      candidates: finalList.slice(0, CROSS_SELL.TOP_N),
+      weakSignal: finalList.length === 0,
+      ranked,           // pełny ranking po wykluczeniach (debug)
+      excluded,         // co i przez którą regułę wypadło (debug)
+      droppedByFamily   // odrzucone jako duplikat rodziny (debug)
     };
   }
 
@@ -457,6 +574,12 @@
       console.log(`[Cross-sell] Wykluczone (${result.excluded.length}):`);
       console.table(result.excluded.map(e => ({
         nazwa: e.name, SKU: e.sku, wystąpienia: e.count, reguła: e.rule
+      })));
+    }
+    if (result.droppedByFamily.length) {
+      console.log(`[Cross-sell] Odrzucone jako duplikat rodziny (${result.droppedByFamily.length}):`);
+      console.table(result.droppedByFamily.map(e => ({
+        nazwa: e.name, SKU: e.sku, wystąpienia: e.count, rodzina: e.family
       })));
     }
     if (result.weakSignal) {
