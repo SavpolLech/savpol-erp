@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      1.4
-// @description  Pobiera historię faktur (Wszystkie, od 1 stycznia) dla wybranego produktu i eksportuje do CSV
+// @version      1.5
+// @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, i eksportuje do CSV
 // @match        https://erp.savpol.pl/*
 // @grant        unsafeWindow
 // @run-at       document-idle
@@ -15,6 +15,11 @@
 
   const TARGET_URL_FRAGMENT = 'erp.savpol.pl/pl/katalog/csitems/';
   const BUTTON_ID = 'savpol-invoice-history-btn';
+
+  // ---------- Konfiguracja ----------
+  const MAX_INVOICES = 100;                       // limit pobieranych faktur
+  const HISTORY_START_DATE = new Date(2024, 0, 1); // od stycznia 2024
+  const MAX_PAGES = 50;                            // zabezpieczenie przed nieskończoną pętlą paginacji
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
@@ -38,7 +43,6 @@
   function getMainProductSku() {
     const panels = Array.from(document.querySelectorAll('.cs-layout-search-panel'))
       .filter(el => el.offsetParent !== null);
-
     for (const panel of panels) {
       const input = panel.querySelector('input[placeholder="Produkt"]');
       if (input) {
@@ -53,7 +57,6 @@
   function findFilterPanel() {
     const panels = Array.from(document.querySelectorAll('.cs-layout-search-panel'))
       .filter(el => el.offsetParent !== null);
-
     for (const panel of panels) {
       const dateInput = panel.querySelector('input[placeholder="Od"]');
       const allLabel = Array.from(panel.querySelectorAll('.csDBRadioGroupItemLabel'))
@@ -70,23 +73,24 @@
     if (!found) throw new Error('Nie znaleziono panelu z filtrami daty i radio.');
 
     const { dateInput, allLabel } = found;
+
     const dp = unsafeWindow.jQuery(dateInput).data('kendoDatePicker');
     if (!dp) throw new Error('Brak instancji kendoDatePicker.');
 
-    const firstDayThisYear = new Date(new Date().getFullYear(), 0, 1);
-    dp.value(firstDayThisYear);
+    dp.value(HISTORY_START_DATE);
     dp.trigger('change');
     unsafeWindow.jQuery(dateInput).trigger('blur');
-
     await sleep(300);
+
     allLabel.click();
 
     // Czekaj aż lista faktycznie się odświeży (zamiast sztywnego sleep)
     await waitFor(() => {
-        const rows = Array.from(document.querySelectorAll('tr.cs-grid-data-row'))
+      const rows = Array.from(document.querySelectorAll('tr.cs-grid-data-row'))
         .filter(row => row.offsetParent !== null);
-        return rows.length > 0;
+      return rows.length > 0;
     }, 40, 300);
+
     await sleep(500); // dodatkowy zapas na pełne wyrenderowanie
   }
 
@@ -98,10 +102,10 @@
 
   function getVisibleInvoiceGrid() {
     return Array.from(document.querySelectorAll('.cs-grid-data-table'))
-    .find(t => t.offsetParent !== null
-      && t.querySelectorAll('tr.cs-grid-data-row').length > 0
-      && t.querySelector('td[data-datafield="Item"]')
-      && t.querySelector('td[data-datafield="PositionItemDesc"]'));
+      .find(t => t.offsetParent !== null
+        && t.querySelectorAll('tr.cs-grid-data-row').length > 0
+        && t.querySelector('td[data-datafield="Item"]')
+        && t.querySelector('td[data-datafield="PositionItemDesc"]'));
   }
 
   function extractInvoiceRows(docNumber) {
@@ -137,41 +141,112 @@
     });
   }
 
+  // ---------- Paginacja widoku historii produktu ----------
+  // Uwaga: liczniki ".ResultsCountValue" / ".TotalPagesCount" potrafią po zmianie
+  // strony pokazywać błędne wartości (zaobserwowany bug interfejsu), dlatego
+  // NIE są używane do sterowania pętlą. Zamiast tego opieramy się na stanie
+  // przycisku "następna strona" oraz na deduplikacji numerów dokumentów.
+  function getVisiblePager() {
+    return Array.from(document.querySelectorAll('.csDataPager'))
+      .find(el => el.offsetParent !== null) || null;
+  }
+
+  function pagerHasNextPage(pager) {
+    if (!pager) return false;
+    const next = pager.querySelector('.NextPageButton');
+    return !!next && !next.className.split(' ').includes('inactive');
+  }
+
+  async function goToNextPage(pager) {
+    const inputBefore = pager.querySelector('.ActivePageNoInput');
+    const beforeVal = inputBefore ? inputBefore.value : null;
+    const next = pager.querySelector('.NextPageButton');
+    if (!next) return false;
+    next.click();
+
+    const changed = await waitFor(() => {
+      const p = getVisiblePager();
+      const inp = p && p.querySelector('.ActivePageNoInput');
+      return inp && inp.value !== beforeVal;
+    }, 40, 250);
+
+    await sleep(400); // zapas na pełne wyrenderowanie wierszy nowej strony
+    return !!changed;
+  }
+
   async function collectAllInvoices(maxCount, onProgress) {
     const results = [];
-    const initialFaRows = getFaRows();
-    const total = Math.min(initialFaRows.length, maxCount);
-    if (onProgress) onProgress(`Znaleziono ${initialFaRows.length} faktur FA. Przetwarzam ${total}...`);
+    const processedDocs = new Set();
+    let invoicesProcessed = 0;
+    let pageNum = 1;
 
-    for (let i = 0; i < total; i++) {
-      const currentRows = getFaRows();
-      const row = currentRows[i];
-      if (!row) { console.warn('Brak wiersza o indeksie', i); continue; }
+    while (invoicesProcessed < maxCount && pageNum <= MAX_PAGES) {
 
-      const docNumberCell = row.querySelector('td[data-datafield="DocNumber"]');
-      const listDocNumber = docNumberCell ? docNumberCell.getAttribute('title') : `unknown_${i}`;
-      const btn = docNumberCell.querySelector('.csButtonAction');
-      if (!btn) { console.warn('Brak przycisku dla', listDocNumber); continue; }
+      // Numery dokumentów FA na bieżącej stronie, które jeszcze nie były przetworzone
+      const faDocNumbers = getFaRows()
+        .map(row => {
+          const cell = row.querySelector('td[data-datafield="DocNumber"]');
+          return cell ? cell.getAttribute('title') : null;
+        })
+        .filter(doc => doc && !processedDocs.has(doc));
 
-      btn.click();
+      if (onProgress) onProgress(`Strona ${pageNum}: ${faDocNumbers.length} nowych faktur FA...`);
 
-      const grid = await waitFor(() => getVisibleInvoiceGrid());
-      if (!grid) {
-        console.error('Nie udało się otworzyć faktury:', listDocNumber);
-        continue;
+      for (const targetDoc of faDocNumbers) {
+        if (invoicesProcessed >= maxCount) break;
+
+        // Wiersz pobieramy na nowo za każdym razem (odporność na odświeżenia DOM)
+        const row = getFaRows().find(r => {
+          const c = r.querySelector('td[data-datafield="DocNumber"]');
+          return c && c.getAttribute('title') === targetDoc;
+        });
+        if (!row) { console.warn('Nie znaleziono wiersza dla', targetDoc); continue; }
+
+        processedDocs.add(targetDoc);
+
+        const docNumberCell = row.querySelector('td[data-datafield="DocNumber"]');
+        const btn = docNumberCell.querySelector('.csButtonAction');
+        if (!btn) { console.warn('Brak przycisku dla', targetDoc); continue; }
+
+        btn.click();
+
+        const grid = await waitFor(() => getVisibleInvoiceGrid());
+        if (!grid) {
+          console.error('Nie udało się otworzyć faktury:', targetDoc);
+          continue;
+        }
+        await sleep(300);
+
+        const docNumber = getActiveTabDocNumber() || targetDoc;
+        const invoiceRows = extractInvoiceRows(docNumber);
+        invoicesProcessed++;
+
+        if (onProgress) onProgress(`[${invoicesProcessed}/${maxCount}] ${docNumber}: ${invoiceRows.length} pozycji`);
+        results.push(...invoiceRows);
+
+        const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
+        if (closeBtn) closeBtn.click();
+
+        await waitFor(() => visibleGridRows().length > 0);
+        await sleep(300);
       }
-      await sleep(300);
 
-      const docNumber = getActiveTabDocNumber() || listDocNumber;
-      const invoiceRows = extractInvoiceRows(docNumber);
-      if (onProgress) onProgress(`[${i + 1}/${total}] ${docNumber}: ${invoiceRows.length} pozycji`);
-      results.push(...invoiceRows);
+      if (invoicesProcessed >= maxCount) break;
 
-      const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
-      if (closeBtn) closeBtn.click();
+      // Sprawdź czy jest kolejna strona listy faktur
+      const pager = getVisiblePager();
+      if (!pagerHasNextPage(pager)) {
+        if (onProgress) onProgress(`Brak kolejnych stron. Zebrano ${invoicesProcessed} faktur.`);
+        break;
+      }
 
-      await waitFor(() => visibleGridRows().length > 0);
-      await sleep(300);
+      if (onProgress) onProgress(`Przechodzę do strony ${pageNum + 1}...`);
+      const moved = await goToNextPage(pager);
+      if (!moved) {
+        console.warn('[Savpol Historia Faktur] Nie udało się przejść do kolejnej strony — przerywam.');
+        break;
+      }
+      pageNum++;
     }
 
     return results;
@@ -184,7 +259,6 @@
       `"${r.doc}";"${r.product}";"${r.sku}";"${r.qty}"`
     ).join('\n');
     const csv = header + body;
-
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -209,7 +283,7 @@
       await setFilters();
 
       button.textContent = 'Pobieram faktury...';
-      const data = await collectAllInvoices(20, (msg) => {
+      const data = await collectAllInvoices(MAX_INVOICES, (msg) => {
         button.textContent = msg;
         console.log(msg);
       });
@@ -240,7 +314,6 @@
 
   function insertButtonIfNeeded() {
     if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
-
     const toolbar = getVisibleToolbar();
     if (!toolbar) return;
     if (toolbar.querySelector('#' + BUTTON_ID)) return;
@@ -251,9 +324,9 @@
     btn.style.cursor = 'pointer';
     btn.innerHTML = '<div class="caption" title="Pobierz historię faktur">Pobierz historię faktur</div>';
     btn.addEventListener('click', () => runFullPipeline(btn));
-
     toolbar.appendChild(btn);
   }
 
   setInterval(insertButtonIfNeeded, 1000);
+
 })();
