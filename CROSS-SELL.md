@@ -96,6 +96,12 @@ Reguły zostały dostrojone na dwóch anchorach:
 | `0022850` | Delipasta PISTACJA PURE — FABBRI | 100 | 1089 | 408 | 9 | 31% |
 | `0031629` | Krem pistacjowy z Kadayif — ZENTIS | 80 | 1480 | 538 | 14 | 41% |
 | `0021269` | Orzech laskowy prażony Piemonte IGP 1kg | 100 | 1031 | 452 | 8 | **11%** |
+| `0018835` | Orzech laskowy blanszowany prażony 1kg | 100 | 1326 | 582 | 10 | 15% |
+
+Dwa warianty orzecha laskowego (`0021269` i `0018835`) mają wspólne tylko **34%**
+partnerów — mimo niemal identycznej nazwy produktu. Podobieństwo nazwy anchora
+nie oznacza podobnego koszyka; nie warto zakładać, że warianty da się analizować
+razem.
 
 ### Dlaczego głównym progiem jest `MIN_COUNT`, a nie `MIN_SHARE`
 
@@ -161,6 +167,12 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
   „waf" i „l" stoi „e"). Żaden z tych rdzeni nie zawiera drugiego — muszą być oba.
 - **`serek` to nie `ser`.** „Serek kremowy 5kg — Piątnica" (nabiał świeży)
   przechodził, bo `ser` po granicy słowa go nie łapie, a `serow` też nie.
+- **W nazwach z ERP trafiają się literówki bez diakrytyków.** „Krem **ro**s**linny**
+  śnieżnobiały… MONNA LISA" — brak `ś` w jednym słowie, przy poprawnym
+  „śnieżnobiały" w następnym, więc to literówka, nie konwencja ASCII. Reguła
+  `allOf: krem+roślinn` tego nie łapała. Dlatego **wszystkie** dopasowania nazw
+  idą przez `fold()`, które składa nazwę i wzorzec do postaci bez diakrytyków.
+  Skala: 1 nazwa na 1401, ale był to przeciek produktu chłodniczego.
 - **`\b` nie działa na polskich znakach** — patrz `wordRegex()`.
 - **Znany przeciek, nierozwiązany:** „Kulinarna kremowa 18% 5kg — FIGAND" to
   śmietanka kulinarna (chłodnia), ale nazwa nie zawiera ani `śmietan`, ani `ser`,
@@ -215,7 +227,30 @@ anchor 0021269 (Orzech laskowy prażony):
   0010839  10%  Pomidory suszone połówki w oleju 1600g/900g
   0007726   9%  Siemię lniane a 5kg
   0006418   8%  Cukier puder 10kg - A&W
+
+anchor 0018835 (Orzech laskowy blanszowany prażony):
+  0008168  15%  Orzech włoski a 1kg
+  0020669  14%  Olej rzepakowy 5L
+  0006418  12%  Cukier puder 10kg - A&W
+  0005223  11%  Mleko Polfink skond słodz. 1000g pusz.
 ```
+
+### Wpływ `ONE_PER_FAMILY` — zmierzony
+
+Sprawdzone na czterech anchorach przez porównanie z flagą `true` i `false`:
+
+| anchor | efekt |
+|---|---|
+| `0022850` | usuwa drugi pojemnik izotermiczny (KA500 obok KA1000) |
+| `0031629` | usuwa cukier wanilinowy obok cukru pudru |
+| `0021269` | bez zmian |
+| `0018835` | bez zmian |
+
+Obawa, że rodzina `orzech` sklei różne orzechy (włoski / arachidowy / nerkowca /
+pistacjowy) i zububoży listę dla anchora orzechowego, **nie potwierdziła się**:
+pozostałe orzechy mają 5-9 wspólnych faktur i tak siedzą poniżej czwórki.
+Reguła działa więc tam, gdzie miała (warianty gramatury tego samego surowca),
+i nie szkodzi tam, gdzie się jej bano.
 
 `0000263` (proszek 5kg) przechodzi próg gramatury, ale mediana zakupu to 5 worków
 (25kg) — to opakowanie przemysłowe. W katalogu istnieje `0008137`, ten sam proszek

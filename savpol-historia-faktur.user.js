@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.1
+// @version      2.2
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, analizuje co-occurrence i eksportuje kandydatów do cross-sellingu do CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -418,11 +418,26 @@
     return wordRegexCache.get(word);
   }
 
+  // Składanie do postaci bez diakrytyków. W nazwach z ERP trafiają się literówki
+  // typu "Krem roslinny" (przy poprawnym "śnieżnobiały" w tej samej nazwie),
+  // które psują dopasowanie reguł. Dopasowujemy więc obie strony po złożeniu:
+  // "roslinn" i "roślinn" trafiają w tę samą regułę.
+  //
+  // Uwaga: NFD nie rozkłada "ł" — nie ma znaku łączącego, więc wymaga
+  // osobnego podstawienia po zmianie na małe litery.
+  function fold(text) {
+    return (text || '')
+      .toLocaleLowerCase('pl-PL')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/ł/g, 'l');
+  }
+
   // Grupa produktu z siatki katalogu przychodzi zawinięta w komórce — bywa
   // rozbita na wiele linii, a nazwa liścia potrafi się powtórzyć pod ścieżką.
   // Dlatego przed dopasowaniem sklejamy białe znaki.
   function normalizeGroupPath(group) {
-    return (group || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pl-PL');
+    return fold((group || '').replace(/\s+/g, ' ').trim());
   }
 
   // Dopasowanie po prefiksie: grupa nadrzędna łapie wszystkie podgrupy.
@@ -444,32 +459,32 @@
 
   // Zwraca nazwę dopasowanej reguły (do logu) albo null, jeśli produkt przechodzi.
   function findExclusion(productName) {
-    const name = (productName || '').toLocaleLowerCase('pl-PL');
+    const name = fold(productName);
     if (!name) return null;
 
     for (const rule of EXCLUSIONS.substring) {
-      const frag = (typeof rule === 'string' ? rule : rule.frag).toLocaleLowerCase('pl-PL');
+      const frag = fold(typeof rule === 'string' ? rule : rule.frag);
       if (!name.includes(frag)) continue;
       const unless = (typeof rule === 'string' ? [] : rule.unless || []);
-      if (unless.some(ex => name.includes(ex.toLocaleLowerCase('pl-PL')))) continue;
+      if (unless.some(ex => name.includes(fold(ex)))) continue;
       return `substring:${frag}`;
     }
 
     for (const frag of EXCLUSIONS.prefix) {
-      if (name.startsWith(frag.toLocaleLowerCase('pl-PL'))) return `prefix:${frag}`;
+      if (name.startsWith(fold(frag))) return `prefix:${frag}`;
     }
 
     for (const group of EXCLUSIONS.allOf) {
-      if (group.every(frag => name.includes(frag.toLocaleLowerCase('pl-PL')))) {
+      if (group.every(frag => name.includes(fold(frag)))) {
         return `allOf:${group.join('+')}`;
       }
     }
 
     for (const word of EXCLUSIONS.words) {
-      const w = word.toLocaleLowerCase('pl-PL');
+      const w = fold(word);
       if (!wordRegex(w).test(name)) continue;
       const exceptions = EXCLUSIONS.wordExceptions[word] || [];
-      const excused = exceptions.some(ex => name.includes(ex.toLocaleLowerCase('pl-PL')));
+      const excused = exceptions.some(ex => name.includes(fold(ex)));
       if (!excused) return `word:${word}`;
     }
 
@@ -496,8 +511,7 @@
 
   // Rodzina produktu = pierwszy znaczący wyraz nazwy (cukier, polewa, pojemnik...).
   function familyKey(productName) {
-    const tokens = (productName || '')
-      .toLocaleLowerCase('pl-PL')
+    const tokens = fold(productName)
       .split(/[^\p{L}\p{N}]+/u)
       .filter(Boolean);
     for (const t of tokens) {
@@ -506,7 +520,7 @@
       if (/^\d+$/.test(t)) continue;
       return t;
     }
-    return (productName || '').toLocaleLowerCase('pl-PL');
+    return fold(productName);
   }
 
   function sameSku(a, b) {
