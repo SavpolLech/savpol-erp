@@ -54,6 +54,13 @@
     REJECT_LOW_ROTATING: true // "Towar nisko rotujący" -> odrzuć (decyzja właściciela produktu)
   };
 
+  // ---------- Konfiguracja: wykluczenie po grupie katalogowej (Zadanie 3) ----------
+  // Grupa jest dostępna tylko przez ten sam odczyt katalogu co filtr dostępności
+  // (Zadanie 2), więc realnie działa tylko, gdy AVAILABILITY.ENABLE = true.
+  const GROUP_FILTER = {
+    ENABLE: true // wyłącznik; false = grupa nie wpływa na wynik (zachowanie sprzed Zadania 3)
+  };
+
   // Wyrazy pomijane przy ustalaniu rodziny produktu — nie niosą kategorii.
   const FAMILY_STOPWORDS = ['bt', 'mini', 'nowe', 'op', 'opak', 'do', 'na', 'z', 'w', 'i', 'ze'];
 
@@ -74,9 +81,8 @@
     // Dopasowanie po PREFIKSIE ścieżki, więc "B2B\Kategorie\Nabiał" łapie także
     // wszystkie podgrupy poniżej, a "...\Lodziarskie produkty\Wafle" tylko ten liść.
     //
-    // NIEAKTYWNE: grupa nie jest dostępna w widoku historii faktur, tylko
-    // w katalogu produktów. Aktywuje się po dopisaniu odczytu katalogu
-    // (patrz CROSS-SELL.md, roadmapa krok 1-2).
+    // AKTYWNE od Zadania 3 — grupa jest odczytywana live z katalogu w tym samym
+    // kroku co filtr dostępności (Zadanie 2), patrz applyAvailabilityFilter().
     groupDeny: [
       'B2B\\Kategorie\\Dekorowanie\\Dekoracje cukrowe',
       'B2B\\Kategorie\\Dekorowanie\\Dekoracje marcepanowe',
@@ -87,6 +93,15 @@
       'B2B\\Kategorie\\Pieczywo, ciasta',
       'B2B\\Kategorie\\Mięso, wędliny, ryby',
       'B2B\\Kategorie\\Gastronomiczne produkty\\Farsze'
+    ],
+
+    // Wyjątki podkategorii — wygrywają z groupDeny, gdy ścieżka produktu jest
+    // dłuższym/bardziej szczegółowym prefiksem niż wpis na denyliście.
+    // Zmierzone na anchorach 0022850/0031629 (Zadanie 3): "Dekoracje cukrowe"
+    // łapało też suche, wysyłkowe posypki (np. 0012535 Mini pianki), więc ta
+    // podgałąź jest jawnie wypuszczona, reszta grupy zostaje zablokowana.
+    groupAllow: [
+      'B2B\\Kategorie\\Dekorowanie\\Dekoracje cukrowe\\Posypki'
     ],
 
     // Zawsze wykluczaj te SKU (chłodnia/mrożonka/wycofane, czego nazwa nie zdradza).
@@ -463,6 +478,12 @@
   function findGroupExclusion(group) {
     const path = normalizeGroupPath(group);
     if (!path) return null;
+    for (const allowed of EXCLUSIONS.groupAllow) {
+      const prefix = normalizeGroupPath(allowed);
+      if (!path.startsWith(prefix)) continue;
+      const next = path.charAt(prefix.length);
+      if (next === '' || next === '\\' || next === ' ') return null; // wyjątek podkategorii wygrywa z denylistą
+    }
     for (const denied of EXCLUSIONS.groupDeny) {
       const prefix = normalizeGroupPath(denied);
       if (!path.startsWith(prefix)) continue;
@@ -733,6 +754,7 @@
   async function applyAvailabilityFilter(dedupedRanked, topN, onProgress) {
     const kept = [];
     const rejected = [];
+    const groupsSeen = new Set();
     for (const entry of dedupedRanked) {
       if (kept.length >= topN) break;
 
@@ -748,6 +770,20 @@
         continue;
       }
 
+      if (info.group) groupsSeen.add(info.group);
+
+      // Grupa katalogowa (Zadanie 3) — wygrywa z regułami nazwowymi, ale
+      // skuAllow wygrywa z grupą (ratunek na fałszywe trafienia denylisty grup).
+      const skuKey = (entry.sku || '').trim();
+      const hasSkuAllow = Object.prototype.hasOwnProperty.call(EXCLUSIONS.skuAllow, skuKey);
+      if (GROUP_FILTER.ENABLE && !hasSkuAllow) {
+        const groupRule = findGroupExclusion(info.group);
+        if (groupRule) {
+          rejected.push({ ...entry, group: info.group, reason: `grupa:${groupRule}` });
+          continue;
+        }
+      }
+
       if (AVAILABILITY.REJECT_LOW_ROTATING && info.caption === 'Towar nisko rotujący') {
         rejected.push({ ...entry, reason: 'Towar nisko rotujący' });
         continue;
@@ -759,15 +795,22 @@
 
       kept.push({ ...entry, dys: info.dys, group: info.group, caption: info.caption });
     }
-    return { kept, rejected };
+    return { kept, rejected, groupsSeen: Array.from(groupsSeen) };
   }
 
   function logAvailability(avail) {
     console.log(`[Cross-sell] Filtr dostępności — zaakceptowani (${avail.kept.length}):`);
-    console.table(avail.kept.map(e => ({ nazwa: e.name, SKU: e.sku, DYS: e.dys })));
+    console.table(avail.kept.map(e => ({ nazwa: e.name, SKU: e.sku, DYS: e.dys, grupa: e.group || '' })));
     if (avail.rejected.length) {
       console.log(`[Cross-sell] Filtr dostępności — odrzuceni (${avail.rejected.length}):`);
       console.table(avail.rejected.map(e => ({ nazwa: e.name, SKU: e.sku, powód: e.reason })));
+    }
+    if (avail.groupsSeen && avail.groupsSeen.length) {
+      const unlisted = avail.groupsSeen.filter(g => !findGroupExclusion(g));
+      if (unlisted.length) {
+        console.log('[Cross-sell] Grupy wśród sprawdzanych kandydatów spoza denylisty (sprawdź, czy nie brakuje gałęzi):');
+        console.table(unlisted.map(g => ({ grupa: g })));
+      }
     }
   }
 
