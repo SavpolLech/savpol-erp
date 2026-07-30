@@ -43,6 +43,13 @@
     ONE_PER_FAMILY: true
   };
 
+  // ---------- Konfiguracja: filtr dostępności katalogowej (Zadanie 2) ----------
+  // Odczyt na żywo, bez cache — stan magazynowy zmienia się codziennie.
+  const AVAILABILITY = {
+    ENABLE: true,             // wyłącznik całej funkcji; false = zachowanie identyczne z v1.9
+    REJECT_LOW_ROTATING: true // "Towar nisko rotujący" -> odrzuć (decyzja właściciela produktu)
+  };
+
   // Wyrazy pomijane przy ustalaniu rodziny produktu — nie niosą kategorii.
   const FAMILY_STOPWORDS = ['bt', 'mini', 'nowe', 'op', 'opak', 'do', 'na', 'z', 'w', 'i', 'ze'];
 
@@ -579,11 +586,142 @@
       N,
       anchorSku,
       candidates: finalList.slice(0, CROSS_SELL.TOP_N),
+    dedupedRanked: finalList, // NOWE: pula do filtra dostępności (Zadanie 2)
       weakSignal: finalList.length === 0,
       ranked,           // pełny ranking po wykluczeniach (debug)
       excluded,         // co i przez którą regułę wypadło (debug)
       droppedByFamily   // odrzucone jako duplikat rodziny (debug)
     };
+  }
+
+  // ---------- Krok 4b: filtr dostępności w katalogu (bez cache — stan zmienia się codziennie) ----------
+
+  // SKU z dopiskiem po numerze (np. "0022850-R", "0022850-M") to osobna kartoteka
+  // tego samego produktu, prowadzona pod inny kanał obrotu (nie online).
+  // Odrzucamy zawsze, niezależnie od stanu i podpisu — decyzja właściciela produktu.
+  function isAuxiliaryKartoteka(sku) {
+    return /-[A-Za-z]/.test((sku || '').trim());
+  }
+
+  function findVisibleCatalogSearchInput() {
+    const widget = Array.from(document.querySelectorAll('.csDBEditSearch'))
+      .find(w => w.offsetParent !== null);
+    return widget ? widget.querySelector('input.Input') : null;
+  }
+
+  function getVisibleCatalogGrid() {
+    return Array.from(document.querySelectorAll('.cs-grid-data-table'))
+      .find(t => t.offsetParent !== null
+        && t.querySelector('td[data-datafield="Item"]')
+        && t.querySelector('td[data-datafield="QStockAv"]'));
+  }
+
+  // Pole "Szukaj" w katalogu NIE jest widgetem Kendo (w przeciwieństwie do
+  // kendoDatePicker w setFilters()) — wystarczą natywne zdarzenia.
+  async function searchCatalog(query) {
+    const input = await waitFor(findVisibleCatalogSearchInput);
+    if (!input) throw new Error('Nie znaleziono pola wyszukiwania katalogu.');
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    nativeSetter.call(input, query);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', keyCode: 13, which: 13 }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter', keyCode: 13, which: 13 }));
+    await sleep(400);
+    await waitFor(() => getVisibleCatalogGrid() !== null, 40, 250);
+    await sleep(400);
+  }
+
+  // Atrybut title komórki GRUPA PRODUKTU zawiera tylko liść ścieżki — pełna
+  // ścieżka jest w treści pierwszego div.csDBTextBlock (patrz Zadanie 1).
+  function readGroupPath(cell) {
+    if (!cell) return '';
+    const main = cell.querySelector('.csDBTextBlock:not(.cs-style-label)');
+    return main ? main.textContent.trim() : cell.textContent.trim();
+  }
+
+  // Podpis pod nazwą produktu ("Market", "Towar nisko rotujący") to drugi
+  // div.csDBTextBlock.cs-style-label w komórce OPIS.
+  function readCaption(descCell) {
+    const label = descCell ? descCell.querySelector('.cs-style-label') : null;
+    return label ? label.textContent.trim() : '';
+  }
+
+  async function lookupCatalogItem(sku) {
+    await searchCatalog(sku);
+    const grid = getVisibleCatalogGrid();
+    if (!grid) return null;
+    const rows = Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row'));
+    const row = rows.find(r => {
+      const c = r.querySelector('td[data-datafield="Item"]');
+      return c && c.getAttribute('title') === sku;
+    });
+    if (!row) return null;
+
+    const dysCell = row.querySelector('td[data-datafield="QStockAv"]');
+    const groupCell = row.querySelector('td[data-datafield="ItemsGroupTranslatedDesc"]');
+    const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
+    const dysText = dysCell ? (dysCell.getAttribute('title') || '') : '';
+    const dys = parseFloat(dysText.replace(/\s/g, '').replace(',', '.')) || 0;
+
+    return { sku, dys, group: readGroupPath(groupCell), caption: readCaption(descCell) };
+  }
+
+  function findTabLiByText(text) {
+    return Array.from(document.querySelectorAll('li.k-item'))
+      .filter(li => li.offsetParent !== null)
+      .find(li => li.textContent.includes(text)) || null;
+  }
+
+  async function switchToCatalogTab() {
+    const tab = findTabLiByText('Katalog');
+    if (!tab) return false;
+    (tab.querySelector('span.k-link') || tab).click();
+    await waitFor(() => getVisibleCatalogGrid() !== null || findVisibleCatalogSearchInput() !== null, 20, 200);
+    await sleep(300);
+    return true;
+  }
+
+  // Przechodzi po pełnym (zdeduplikowanym po rodzinie) rankingu i dobiera
+  // kolejnych kandydatów z rankingu, gdy poprzedni odpada na dostępności.
+  async function applyAvailabilityFilter(dedupedRanked, topN, onProgress) {
+    const kept = [];
+    const rejected = [];
+    for (const entry of dedupedRanked) {
+      if (kept.length >= topN) break;
+
+      if (isAuxiliaryKartoteka(entry.sku)) {
+        rejected.push({ ...entry, reason: 'kartoteka pomocnicza (sufiks SKU)' });
+        continue;
+      }
+
+      if (onProgress) onProgress(`Sprawdzam dostępność: ${entry.sku}...`);
+      const info = await lookupCatalogItem(entry.sku);
+      if (!info) {
+        rejected.push({ ...entry, reason: 'nie znaleziono w katalogu' });
+        continue;
+      }
+
+      if (AVAILABILITY.REJECT_LOW_ROTATING && info.caption === 'Towar nisko rotujący') {
+        rejected.push({ ...entry, reason: 'Towar nisko rotujący' });
+        continue;
+      }
+      if (info.dys <= 0) {
+        rejected.push({ ...entry, reason: `brak stanu (DYS.=${info.dys})` });
+        continue;
+      }
+
+      kept.push({ ...entry, dys: info.dys, group: info.group, caption: info.caption });
+    }
+    return { kept, rejected };
+  }
+
+  function logAvailability(avail) {
+    console.log(`[Cross-sell] Filtr dostępności — zaakceptowani (${avail.kept.length}):`);
+    console.table(avail.kept.map(e => ({ nazwa: e.name, SKU: e.sku, DYS: e.dys })));
+    if (avail.rejected.length) {
+      console.log(`[Cross-sell] Filtr dostępności — odrzuceni (${avail.rejected.length}):`);
+      console.table(avail.rejected.map(e => ({ nazwa: e.name, SKU: e.sku, powód: e.reason })));
+    }
   }
 
   function formatShare(share) {
@@ -661,6 +799,17 @@
       const analysis = analyzeCrossSell(data, mainSku);
       logAnalysis(analysis);
 
+      let historyTabLi = null;
+      if (AVAILABILITY.ENABLE) {
+        historyTabLi = document.querySelector('li.k-state-active'); // zapamiętane PRZED przejściem do katalogu
+        button.textContent = 'Sprawdzam dostępność w katalogu...';
+        await switchToCatalogTab();
+        const avail = await applyAvailabilityFilter(analysis.dedupedRanked, CROSS_SELL.TOP_N, (msg) => { button.textContent = msg; });
+        logAvailability(avail);
+        analysis.candidates = avail.kept;
+        analysis.weakSignal = analysis.weakSignal || avail.kept.length === 0;
+      }
+
       if (EXPORT_RAW_HISTORY) {
         downloadCSV(data, mainSku);
         await sleep(300); // przeglądarki gubią drugi download bez odstępu
@@ -673,11 +822,20 @@
         : `Gotowe: ${analysis.candidates.length} kandydatów (N=${analysis.N})`;
       await sleep(2000);
 
-      // Zamknij zakładkę zestawienia
-      const summaryCloseBtn = document.querySelector('li.k-state-active .csCloseButton_span');
-      if (summaryCloseBtn) {
-        await sleep(300);
-        summaryCloseBtn.click();
+      // Zamknij zakładkę "Historia produktu" — po ewentualnym przełączeniu na katalog
+      // (filtr dostępności) aktywna zakładka to już nie ta sama, więc zamykamy
+      // po zapamiętanej referencji, nie po klasie .k-state-active.
+      if (AVAILABILITY.ENABLE) {
+        if (historyTabLi) {
+          const closeBtn = historyTabLi.querySelector('.csCloseButton_span');
+          if (closeBtn) closeBtn.click();
+        }
+      } else {
+        const summaryCloseBtn = document.querySelector('li.k-state-active .csCloseButton_span');
+        if (summaryCloseBtn) {
+          await sleep(300);
+          summaryCloseBtn.click();
+        }
       }
 
       button.textContent = originalText;
