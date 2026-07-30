@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.2
+// @version      2.3
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, analizuje co-occurrence i eksportuje kandydatów do cross-sellingu do CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -622,7 +622,7 @@
       N,
       anchorSku,
       candidates: finalList.slice(0, CROSS_SELL.TOP_N),
-    dedupedRanked: finalList, // NOWE: pula do filtra dostępności (Zadanie 2)
+      dedupedRanked: finalList, // pula do filtra dostępności (Zadanie 2)
       weakSignal: finalList.length === 0,
       ranked,           // pełny ranking po wykluczeniach (debug)
       excluded,         // co i przez którą regułę wypadło (debug)

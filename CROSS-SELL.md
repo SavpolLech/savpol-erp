@@ -18,19 +18,29 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v1.9)
+## Stan obecny (v2.3)
 
-Działa i jest przetestowane na dwóch produktach:
+Skalibrowane na **pięciu** anchorach (tabela w „Kalibracja"), każdy daje pełne
+4 pozycje.
 
 - Scrapowanie historii faktur z paginacją (limit 100 faktur, od 1.01.2024).
 - Analiza co-occurrence liczona **per faktura**, nie per pozycja.
-- Wykluczenia kategorii logistycznych na podstawie **nazwy** produktu.
+- Wykluczenia kategorii logistycznych na podstawie **nazwy** produktu,
+  odporne na brak diakrytyków (`fold()`).
 - Filtr gramatury opakowania (odsiewa opakowania czysto B2B).
 - Deduplikacja po rodzinie produktu (max 1 przedstawiciel).
 - Nadpisania per SKU (`skuDeny` / `skuAllow`).
+- **Filtr dostępności katalogowej** (`AVAILABILITY`, Zadanie 2): odczyt `DYS.`
+  na żywo z katalogu, odrzucanie stanu ≤ 0, „Towaru nisko rotującego"
+  i kartotek pomocniczych (SKU z dopiskiem `-M`, `-R`), z dobieraniem kolejnych
+  kandydatów z puli `dedupedRanked`.
+- Denylista grup produktów (`groupDeny`) — gotowa, jeszcze niepodłączona.
 - Eksport: `cross_sell_<SKU>.csv` + opcjonalnie `historia_faktur_<SKU>.csv`.
 - Pełna diagnostyka w konsoli (`console.table`): ranking, wykluczenia z nazwą
-  reguły, odrzucone duplikaty rodzin.
+  reguły, odrzucone duplikaty rodzin, wynik filtra dostępności.
+
+Filtr dostępności wymaga DOM-u ERP, więc **nie jest testowalny offline** —
+analiza co-occurrence i reguły są, patrz „Testowanie zmian w regułach".
 
 ### Pipeline
 
