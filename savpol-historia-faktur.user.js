@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.5.0
+// @version      2.5.1
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -187,6 +187,10 @@
       // "Parówka Hot Dog catering - Indykpol" — w `words` stało 'parówki'
       // w liczbie mnogiej i liczba pojedyncza przeciekała.
       'parówk',
+
+      // "Szynka gotowana plastry - ALFAPRO" = chłodnia. Ani `wędlina`,
+      // ani `kiełbasa` jej nie łapały. Rdzeń, bo szynka/szynki/szynkowa.
+      'szynk',
 
 
       // Rdzeń "śmietan-" łapie wszystkie zaobserwowane formy: Śmietana, Śmietanka,

@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.5.0)
+## Stan obecny (v2.5.1)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -318,8 +318,9 @@ zaczynają dominować i ranking staje się arbitralny.
 Skyr kupują odbiorcy gastronomiczni: w ogonie siedzą farsz kapuściano-pieczarkowy,
 parówki, szpinak siekany, szynka gotowana w plastrach — po 5 faktur każdy.
 Mediana pozycji na fakturę to 4, przy 8-14 w pozostałych plikach. Wykluczenia
-były pisane pod asortyment cukierniczy, więc dla gastronomii mają dziury:
-`szynka` nie ma żadnej reguły (`wędlina` i `kiełbasa` jej nie łapią).
+były pisane pod asortyment cukierniczy, więc dla gastronomii miały dziury:
+`szynka` nie miała żadnej reguły (`wędlina` i `kiełbasa` jej nie łapią).
+Dodany rdzeń `szynk` (decyzja właściciela produktu: chłodnia).
 
 Powtarzalne pozycje między anchorami: `0020669` (olej rzepakowy) w 3 z 5,
 `0006418` (cukier puder) w 4 z 5. To dobra wiadomość dla cache katalogu —

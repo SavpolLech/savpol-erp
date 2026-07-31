@@ -8,7 +8,7 @@ Pracujemy na skrypcie Tampermonkey do ERP Savpol:
 https://github.com/SavpolLech/savpol-erp
 
 Przeczytaj najpierw `CROSS-SELL.md` — to pełny kontekst projektu, podjęte decyzje
-i roadmapa. Potem `savpol-historia-faktur.user.js` (v2.5.0, działa poprawnie
+i roadmapa. Potem `savpol-historia-faktur.user.js` (v2.5.1, działa poprawnie
 i jest skalibrowany na realnych danych — nie przepisuj go od zera).
 
 Skrót: skrypt scrapuje historię faktur produktu z ERP, liczy co-occurrence
@@ -48,10 +48,6 @@ nie zapracowało na sygnał co-occurrence. Zapytaj przed implementacją.
 z zescrapowanych pozycji. Przeniesienie jej przed scrapowanie wymaga odczytania
 nazwy z zaznaczonego wiersza katalogu — ustal selektory na żywej sesji.
 Oszczędza wtedy całe scrapowanie 100 faktur, nie tylko lookupy.
-
-**D. Do decyzji właściciela produktu:** `szynka` nie ma żadnej reguły
-wykluczenia (`wędlina` i `kiełbasa` jej nie łapią). Wyszła przy anchorze
-gastronomicznym `0031401`.
 
 ## Zasady pracy
 
