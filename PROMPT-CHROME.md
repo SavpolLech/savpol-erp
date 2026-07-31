@@ -8,7 +8,7 @@ Pracujemy na skrypcie Tampermonkey do ERP Savpol:
 https://github.com/SavpolLech/savpol-erp
 
 Przeczytaj najpierw `CROSS-SELL.md` — to pełny kontekst projektu, podjęte decyzje
-i roadmapa. Potem `savpol-historia-faktur.user.js` (v2.5.1, działa poprawnie
+i roadmapa. Potem `savpol-historia-faktur.user.js` (v2.6.0, działa poprawnie
 i jest skalibrowany na realnych danych — nie przepisuj go od zera).
 
 Skrót: skrypt scrapuje historię faktur produktu z ERP, liczy co-occurrence
@@ -29,16 +29,14 @@ Nie powtarzaj ich. W skrypcie działają już:
 - filtr dostępności (`AVAILABILITY`): `DYS.` ≤ 0, „Towar nisko rotujący",
   kartoteki pomocnicze `-M`/`-R`,
 - wykluczenie po grupie (`GROUP_FILTER`, `groupDeny` + `groupAllow`),
-- cache kategorii/gramatury w GM storage (`CATALOG_CACHE`),
 - bramka anchora (`ANCHOR_GATE`) i SKU do schowka (`CLIPBOARD`).
 
 ## Co jest otwarte
 
-**A. Cache nie daje dziś żadnej oszczędności** — jest zapisywany, ale nigdy
-czytany do decyzji. Szczegóły i jedyne miejsce, gdzie może zadziałać
-(odrzucenie po grupie z cache, bez zapytania do katalogu), opisuje
-`CROSS-SELL.md`, sekcja „Cache: stan faktyczny". To najsensowniejsze
-następne zadanie.
+**A. Cache katalogowy został USUNIĘTY w v2.6.0** — nie przywracaj go bez
+przeczytania `CROSS-SELL.md`, sekcja „Cache katalogowy — ZROBIONY I USUNIĘTY".
+Był zapisywany i nigdy czytany, a jego uzasadnienie było błędne: grupa i stan
+przychodzą z tego samego zapytania.
 
 **B. Podstawianie wariantów** — `CROSS-SELL.md`, krok „Podstawianie wariantów".
 Wymaga decyzji właściciela produktu, bo oznacza rekomendowanie SKU, które samo

@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.5.1)
+## Stan obecny (v2.6.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -36,8 +36,6 @@ w punktach 1-4; został krok 5 (podstawianie wariantów).
 - **Filtr dostępności katalogowej** (`AVAILABILITY`): `DYS.` na żywo, odrzucanie
   stanu ≤ 0, „Towaru nisko rotującego" i kartotek pomocniczych (`-M`, `-R`),
   z dobieraniem kolejnych kandydatów z puli `dedupedRanked`.
-- **Cache kategorii/gramatury** w GM storage (`CATALOG_CACHE`) — patrz zastrzeżenie
-  w „Cache: stan faktyczny".
 - **SKU do schowka** (`CLIPBOARD`) — główny wynik pracy, lista rozdzielona
   przecinkami, np. `0020669,0006418,0003863,0005105`.
 - Eksport: `cross_sell_<SKU>.csv` + opcjonalnie `historia_faktur_<SKU>.csv`.
@@ -492,50 +490,33 @@ Jeśli sygnał trafia w duże opakowanie, a istnieje ten sam produkt w mniejszym
 **Decyzja do podjęcia:** oznacza to rekomendowanie SKU, które samo nie zapracowało
 na sygnał co-occurrence (proszek 1kg ma 2 faktury i nigdy nie przeszedłby progu).
 
-### 5. Persystencja przez storage Tampermonkey — ZROBIONE
+### 5. Cache katalogowy — ZROBIONY I USUNIĘTY (v2.6.0)
 
-`GM_setValue` / `GM_getValue`. Przeżywa restart przeglądarki i aktualizację
-skryptu, nie leci przy czyszczeniu ciasteczek. Podgląd i eksport w panelu
-Tampermonkey → skrypt → zakładka **Storage**.
+Historia warta zapamiętania, bo to był błąd projektowy w moim własnym zaleceniu.
 
-Podział odpowiedzialności:
+Cache trzymał `SKU → { group, packKg, ts }` w GM storage pod kluczem
+`savpol_catcache_v1`. Uzasadnienie brzmiało: kategoria i gramatura są stabilne,
+więc można je cachować i oszczędzić zapytania do katalogu.
 
-| dane | gdzie | dlaczego |
-|---|---|---|
-| kategoria, gramatura | cache w storage TM (`savpol_catcache_v1`) | stabilne |
-| stan `DYS.`, „nisko rotujący" | odczyt na żywo | zmienia się codziennie |
-| decyzje: reguły, `skuDeny` | źródło skryptu, git | to kod, nie dane |
+**Uzasadnienie było błędne.** Grupa i stan `DYS.` przychodzą z **tego samego
+wiersza katalogu, w jednym zapytaniu**. Skoro stan musi być świeży przy każdym
+uruchomieniu, zapytanie i tak leci — a wtedy grupa jest darmowa. Cache zapisywał
+dane, których nikt nie czytał: `applyAvailabilityFilter()` zawsze pytał na żywo.
 
-**Cache narastający, nie pełny zrzut katalogu.** Skrypt sprawdza tylko kilku
-kandydatów per anchor i zapisuje wynik. Kandydaci powtarzają się między
-produktami (`0020669` olej w 3 z 7 anchorów, `0006418` cukier puder w 5 z 7),
-więc cache sam się zapełnia tym, co potrzebne.
+Dodatkowo `packKg` w cache nie wnosiło nic nowego, bo liczyła je ta sama
+`biggestPackKg()` z nazwy, której używa filtr gramatury.
 
-## Cache: stan faktyczny i co z nim zrobić
+Usunięty w v2.6.0 razem z `@grant GM_setValue` / `GM_getValue`. Gdyby wracał
+magazyn wyników (niżej), granty trzeba dopisać z powrotem.
 
-Trzy obserwacje po przejrzeniu implementacji — warte znajomości, zanim ktoś
-uzna cache za działającą optymalizację:
+**Wniosek do zapamiętania:** cache płaci się tylko wtedy, gdy pozwala **pominąć
+zapytanie w całości**. Cachowanie jednego pola z odpowiedzi, po którą i tak
+musimy pójść, nie oszczędza niczego.
 
-**1. Cache jest zapisywany, ale nie czytany do decyzji.** `loadCatalogCache()`
-służy tylko do dołożenia wpisów i policzenia rozmiaru. `applyAvailabilityFilter()`
-zawsze robi live lookup. Oszczędności czasu **nie ma**.
-
-**2. Samo cachowanie kategorii nie może dać oszczędności**, dopóki stan magazynowy
-musi być świeży — grupa i `DYS.` przychodzą z **tego samego wiersza katalogu**,
-w jednym zapytaniu. Zaoszczędzić da się tylko wtedy, gdy zapytanie zostanie
-pominięte **całkowicie**.
-
-**3. Jest jedno miejsce, gdzie to działa.** Produkt odrzucony przez grupę nigdy
-nie potrzebuje stanu — jest wykluczony niezależnie od `DYS.`. Więc jeśli grupa
-jest w cache i jest na denyliście, kandydata można odrzucić **bez zapytania**.
-To realna oszczędność: dziś każdy taki kandydat kosztuje pełny lookup.
-
-**4. Pole `packKg` w cache nie wnosi nowej informacji** — jest liczone przez
-`biggestPackKg()` z nazwy, czyli tak samo jak w filtrze gramatury. Wartość
-pojawi się dopiero, gdy gramatura będzie czytana z osobnego pola katalogu.
-
-Realny użytek cache dziś: **materiał do podstawiania wariantów** (krok niżej).
-Zbiera mapę `SKU → grupa`, której inaczej trzeba by szukać zapytanie po zapytaniu.
+Jedyne miejsce, gdzie ten cache mógłby zadziałać: produkt odrzucony przez grupę
+nigdy nie potrzebuje stanu, więc cached group na denyliście = odrzucenie bez
+zapytania. Nie zaimplementowane — patrz „Magazyn wyników" jako lepszy użytek
+tego samego miejsca.
 
 ### Znane ograniczenie: pokrycie sprawdzania grup
 
