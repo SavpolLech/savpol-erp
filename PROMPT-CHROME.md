@@ -8,13 +8,14 @@ Pracujemy na skrypcie Tampermonkey do ERP Savpol:
 https://github.com/SavpolLech/savpol-erp
 
 Przeczytaj najpierw `CROSS-SELL.md` — to pełny kontekst projektu, podjęte decyzje
-i roadmapa. Potem `savpol-historia-faktur.user.js` (v1.9, działa poprawnie,
-nie przepisuj go od zera).
+i roadmapa. Potem `savpol-historia-faktur.user.js` (v2.5.0, działa poprawnie
+i jest skalibrowany na realnych danych — nie przepisuj go od zera).
 
 Skrót: skrypt scrapuje historię faktur produktu z ERP, liczy co-occurrence
 i typuje 4 produkty do sekcji „Często kupowane razem" w e-commerce. Wyklucza
-produkty, których nie da się wysłać kurierem — dziś zgadując kategorię z nazwy
-produktu, bo nie mieliśmy dostępu do danych strukturalnych.
+produkty, których nie da się wysłać kurierem — na podstawie nazwy oraz grupy
+produktu odczytanej z katalogu. Główny wynik pracy to SKU rekomendowanych
+produktów w schowku, rozdzielone przecinkami.
 
 Jestem zalogowany w ERP i mam otwarty katalog produktów
 (`erp.savpol.pl/pl/katalog/csitems/`). Masz dostęp do przeglądarki, więc możesz
