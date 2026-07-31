@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.4.1
-// @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, analizuje co-occurrence i eksportuje kandydatów do cross-sellingu do CSV
+// @version      2.5.0
+// @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
 // @grant        unsafeWindow
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_setClipboard
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -75,6 +76,29 @@
   const CATALOG_CACHE = {
     ENABLE: true, // wyłącznik; false = brak odczytu/zapisu cache (zachowanie sprzed Zadania 4)
     KEY: 'savpol_catcache_v1' // jeden klucz GM; wartość to { [sku]: { group, packKg, ts } }
+  };
+
+  // ---------- Konfiguracja: SKU do schowka ----------
+  // Główny wynik pracy skryptu: lista SKU rozdzielona przecinkami, gotowa
+  // do wklejenia (np. 0020669,0006418,0003863,0005105).
+  const CLIPBOARD = {
+    ENABLE: true,
+    SEPARATOR: ','
+  };
+
+  // ---------- Konfiguracja: bramka anchora ----------
+  // Jeśli sam analizowany produkt jest niewysyłkowy (chłodnia, mroźnia itp.),
+  // nie budujemy dla niego cross-sellu. Takie produkty są na e-commerce
+  // dostępne z odbiorem osobistym z magazynu, więc strona produktowa istnieje,
+  // ale sekcja "Często kupowane razem" nie jest tam inwestycją wartą zachodu
+  // (decyzja właściciela produktu).
+  //
+  // UWAGA: bramka używa tej samej listy EXCLUSIONS co filtr kandydatów, choć
+  // uzasadnienia są różne (kandydaci: nie wyślemy kurierem; anchor: nie
+  // inwestujemy w cross-sell). Dziś oba zbiory są identyczne. Gdyby się
+  // rozjechały, bramka potrzebuje własnej, węższej listy.
+  const ANCHOR_GATE = {
+    ENABLE: true
   };
 
   // Wyrazy pomijane przy ustalaniu rodziny produktu — nie niosą kategorii.
@@ -155,6 +179,16 @@
       'serow',      // nadzienia i produkty cukiernicze serowe (Sermiks, Sernik Wiedeński, ProSer)
       'serek',      // serek kremowy/homogenizowany — nabiał świeży, "ser" po granicy słowa go nie łapie
 
+      // "Kremówka do ubijania 33% UHT" — śmietanka, ale rdzeń "śmietan" jej nie
+      // łapie, bo słowo brzmi "krem-ówka". Wcześniej wpadała tylko wtedy, gdy
+      // nazwa zaczynała się od "Śmietano pod. Kremówka...".
+      'kremowk',    // Kremówka / kremówki (po fold() bez diakrytyków)
+
+      // "Parówka Hot Dog catering - Indykpol" — w `words` stało 'parówki'
+      // w liczbie mnogiej i liczba pojedyncza przeciekała.
+      'parówk',
+
+
       // Rdzeń "śmietan-" łapie wszystkie zaobserwowane formy: Śmietana, Śmietanka,
       // "Śmietano pod. Kremówka", Śmietankowa. Wyjątki to produkty shelf-stable,
       // które tylko mają śmietankę w nazwie smaku.
@@ -193,7 +227,10 @@
     // Dopasowanie na granicy słowa — "ser" nie łapie "deser"/"serwetki".
     words: [
       'mascarpone', 'twaróg', 'jogurt', 'żółtko', 'ser', 'masło',
-      'boczek', 'salami', 'kebab', 'parówki', 'wędlina', 'kiełbasa'
+      // Uwaga: tu wchodzą tylko PEŁNE słowa. Rdzenie (np. 'parówk') trafiają
+      // do `substring`, bo po granicy słowa rdzeń nigdy nie dopasuje formy
+      // odmienionej — po "parówk" stoi litera, więc granica nie wypada.
+      'boczek', 'salami', 'kebab', 'wędlina', 'kiełbasa'
     ],
 
     // Wyjątki: jeśli nazwa pasuje do reguły z `words`, ale zawiera któryś
@@ -798,6 +835,7 @@
   async function applyAvailabilityFilter(dedupedRanked, topN, onProgress) {
     const kept = [];
     const rejected = [];
+    let checked = 0; // ilu kandydatów faktycznie odpytaliśmy w katalogu
     const groupsSeen = new Set();
     const cache = loadCatalogCache();
     let cacheUpdates = 0;
@@ -810,6 +848,7 @@
       }
 
       if (onProgress) onProgress(`Sprawdzam dostępność: ${entry.sku}...`);
+      checked++;
       const info = await lookupCatalogItem(entry.sku);
       if (!info) {
         rejected.push({ ...entry, reason: 'nie znaleziono w katalogu' });
@@ -850,7 +889,12 @@
 
       kept.push({ ...entry, dys: info.dys, group: info.group, caption: info.caption });
     }
-    return { kept, rejected, groupsSeen: Array.from(groupsSeen), cacheUpdates, cacheSize: Object.keys(cache).length };
+    return {
+      kept, rejected,
+      groupsSeen: Array.from(groupsSeen),
+      checked, poolSize: dedupedRanked.length,
+      cacheUpdates, cacheSize: Object.keys(cache).length
+    };
   }
 
   function logAvailability(avail) {
@@ -860,10 +904,17 @@
       console.log(`[Cross-sell] Filtr dostępności — odrzuceni (${avail.rejected.length}):`);
       console.table(avail.rejected.map(e => ({ nazwa: e.name, SKU: e.sku, powód: e.reason })));
     }
+    // Pętla przerywa się po zebraniu TOP_N, więc grupy znamy tylko dla części
+    // puli. Wypisujemy pokrycie jawnie — inaczej pusta lista "grup spoza
+    // denylisty" wyglądałaby na potwierdzenie kompletności, a nie na brak danych.
+    if (avail.poolSize !== undefined) {
+      console.log(`[Cross-sell] Sprawdzono w katalogu ${avail.checked} z ${avail.poolSize} pozycji puli ` +
+        `(pętla kończy się po zebraniu ${CROSS_SELL.TOP_N} kandydatów) — grupy pozostałych ${avail.poolSize - avail.checked} są nieznane.`);
+    }
     if (avail.groupsSeen && avail.groupsSeen.length) {
       const unlisted = avail.groupsSeen.filter(g => !findGroupExclusion(g));
       if (unlisted.length) {
-        console.log('[Cross-sell] Grupy wśród sprawdzanych kandydatów spoza denylisty (sprawdź, czy nie brakuje gałęzi):');
+        console.log('[Cross-sell] Grupy wśród sprawdzonych kandydatów spoza denylisty (sprawdź, czy nie brakuje gałęzi):');
         console.table(unlisted.map(g => ({ grupa: g })));
       }
     }
@@ -899,6 +950,65 @@
     URL.revokeObjectURL(url);
   }
 
+  // ---------- Wynik główny: SKU do schowka ----------
+  // GM_setClipboard działa bez gestu użytkownika i bez uprawnień przeglądarki,
+  // dlatego jest ścieżką pierwszego wyboru. navigator.clipboard zostaje jako
+  // zapas, gdy skrypt działa bez @grant (np. po ręcznej edycji nagłówka).
+  function skusToText(candidates) {
+    return candidates.map(c => (c.sku || '').trim()).filter(Boolean).join(CLIPBOARD.SEPARATOR);
+  }
+
+  function copySkusToClipboard(text) {
+    if (!text) return Promise.resolve(false);
+
+    if (typeof GM_setClipboard === 'function') {
+      try {
+        GM_setClipboard(text, 'text');
+        return Promise.resolve(true);
+      } catch (err) {
+        console.warn('[Cross-sell] GM_setClipboard zawiodło, próbuję navigator.clipboard:', err);
+      }
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(() => true).catch(err => {
+        console.warn('[Cross-sell] navigator.clipboard zawiodło:', err);
+        return false;
+      });
+    }
+
+    return Promise.resolve(false);
+  }
+
+  // Wynik wypisujemy zawsze, niezależnie od tego, czy zapis do schowka się udał —
+  // wtedy zostaje do skopiowania ręcznie z konsoli.
+  async function deliverSkus(candidates) {
+    const text = skusToText(candidates);
+    if (!text) {
+      console.warn('[Cross-sell] Brak SKU do skopiowania.');
+      return { text, copied: false };
+    }
+
+    console.log('%c[Cross-sell] SKU do cross-sellingu:', 'font-weight:bold');
+    console.log(text);
+
+    if (!CLIPBOARD.ENABLE) return { text, copied: false };
+
+    const copied = await copySkusToClipboard(text);
+    console.log(copied
+      ? '[Cross-sell] Skopiowano do schowka.'
+      : '[Cross-sell] NIE udało się zapisać do schowka — skopiuj z linii powyżej.');
+    return { text, copied };
+  }
+
+  // ---------- Bramka anchora ----------
+  // Nazwę anchora bierzemy z zescrapowanych pozycji, bo panel filtrów podaje
+  // tylko SKU. Zwraca null, jeśli anchor nie wystąpił w żadnej fakturze.
+  function getAnchorName(rows, anchorSku) {
+    const hit = rows.find(r => sameSku(r.sku, anchorSku));
+    return hit ? hit.product : null;
+  }
+
   function logAnalysis(result) {
     console.log(`[Cross-sell] Anchor: ${result.anchorSku}, N = ${result.N} faktur`);
     console.log(`[Cross-sell] Ranking po wykluczeniach (${result.ranked.length}):`);
@@ -924,6 +1034,22 @@
   }
 
   // ---------- Główny pipeline ----------
+  // Zamyka zakładkę "Historia produktu". Po przełączeniu na katalog aktywną
+  // zakładką nie jest już historia, więc gdy mamy zapamiętaną referencję,
+  // zamykamy po niej; bez referencji — po zakładce aktywnej.
+  async function closeHistoryTab(historyTabLi) {
+    if (historyTabLi) {
+      const closeBtn = historyTabLi.querySelector('.csCloseButton_span');
+      if (closeBtn) closeBtn.click();
+      return;
+    }
+    const activeCloseBtn = document.querySelector('li.k-state-active .csCloseButton_span');
+    if (activeCloseBtn) {
+      await sleep(300);
+      activeCloseBtn.click();
+    }
+  }
+
   async function runFullPipeline(button) {
     const originalText = button.textContent;
     try {
@@ -947,6 +1073,22 @@
       const analysis = analyzeCrossSell(data, mainSku);
       logAnalysis(analysis);
 
+      // Bramka anchora — sprawdzana PRZED odczytem katalogu, żeby nie marnować
+      // kilkunastu zapytań do katalogu na produkt, dla którego i tak nie
+      // budujemy cross-sellu.
+      const anchorName = getAnchorName(data, mainSku);
+      const anchorRule = (ANCHOR_GATE.ENABLE && anchorName) ? findExclusion(anchorName) : null;
+      if (anchorRule) {
+        console.warn(`[Cross-sell] Anchor "${anchorName}" (${mainSku}) jest niewysyłkowy ` +
+          `(reguła ${anchorRule}) — pomijam cross-sell dla tego produktu.`);
+        if (EXPORT_RAW_HISTORY) downloadCSV(data, mainSku);
+        button.textContent = 'Anchor niewysyłkowy — pominięto';
+        await sleep(2500);
+        closeHistoryTab(null);
+        button.textContent = originalText;
+        return;
+      }
+
       let historyTabLi = null;
       if (AVAILABILITY.ENABLE) {
         historyTabLi = document.querySelector('li.k-state-active'); // zapamiętane PRZED przejściem do katalogu
@@ -968,26 +1110,19 @@
 
       downloadCrossSellCSV(analysis);
 
-      button.textContent = analysis.weakSignal
-        ? `Sygnał zbyt słaby (N=${analysis.N})`
-        : `Gotowe: ${analysis.candidates.length} kandydatów (N=${analysis.N})`;
-      await sleep(2000);
+      // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
+      const delivered = await deliverSkus(analysis.candidates);
 
-      // Zamknij zakładkę "Historia produktu" — po ewentualnym przełączeniu na katalog
-      // (filtr dostępności) aktywna zakładka to już nie ta sama, więc zamykamy
-      // po zapamiętanej referencji, nie po klasie .k-state-active.
-      if (AVAILABILITY.ENABLE) {
-        if (historyTabLi) {
-          const closeBtn = historyTabLi.querySelector('.csCloseButton_span');
-          if (closeBtn) closeBtn.click();
-        }
+      if (analysis.weakSignal) {
+        button.textContent = `Sygnał zbyt słaby (N=${analysis.N})`;
       } else {
-        const summaryCloseBtn = document.querySelector('li.k-state-active .csCloseButton_span');
-        if (summaryCloseBtn) {
-          await sleep(300);
-          summaryCloseBtn.click();
-        }
+        button.textContent = delivered.copied
+          ? `Gotowe, SKU w schowku: ${delivered.text}`
+          : `Gotowe: ${analysis.candidates.length} kandydatów — SKU w konsoli`;
       }
+      await sleep(2500);
+
+      await closeHistoryTab(AVAILABILITY.ENABLE ? historyTabLi : null);
 
       button.textContent = originalText;
     } catch (err) {

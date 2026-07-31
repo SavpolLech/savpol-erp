@@ -18,29 +18,60 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.3)
+## Stan obecny (v2.5.0)
 
-Skalibrowane na **pięciu** anchorach (tabela w „Kalibracja"), każdy daje pełne
-4 pozycje.
+Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
+w punktach 1-4; został krok 5 (podstawianie wariantów).
 
 - Scrapowanie historii faktur z paginacją (limit 100 faktur, od 1.01.2024).
 - Analiza co-occurrence liczona **per faktura**, nie per pozycja.
-- Wykluczenia kategorii logistycznych na podstawie **nazwy** produktu,
-  odporne na brak diakrytyków (`fold()`).
-- Filtr gramatury opakowania (odsiewa opakowania czysto B2B).
-- Deduplikacja po rodzinie produktu (max 1 przedstawiciel).
+- **Bramka anchora** (`ANCHOR_GATE`): jeśli sam analizowany produkt jest
+  niewysyłkowy, cross-sell nie jest budowany wcale.
+- Wykluczenia logistyczne z **nazwy** produktu, odporne na brak diakrytyków
+  (`fold()`).
+- Filtr gramatury opakowania (`MAX_PACK_KG`).
+- Deduplikacja po rodzinie produktu (`ONE_PER_FAMILY`).
 - Nadpisania per SKU (`skuDeny` / `skuAllow`).
-- **Filtr dostępności katalogowej** (`AVAILABILITY`, Zadanie 2): odczyt `DYS.`
-  na żywo z katalogu, odrzucanie stanu ≤ 0, „Towaru nisko rotującego"
-  i kartotek pomocniczych (SKU z dopiskiem `-M`, `-R`), z dobieraniem kolejnych
-  kandydatów z puli `dedupedRanked`.
-- Denylista grup produktów (`groupDeny`) — gotowa, jeszcze niepodłączona.
+- **Wykluczenie po grupie katalogowej** (`GROUP_FILTER`, `groupDeny`/`groupAllow`).
+- **Filtr dostępności katalogowej** (`AVAILABILITY`): `DYS.` na żywo, odrzucanie
+  stanu ≤ 0, „Towaru nisko rotującego" i kartotek pomocniczych (`-M`, `-R`),
+  z dobieraniem kolejnych kandydatów z puli `dedupedRanked`.
+- **Cache kategorii/gramatury** w GM storage (`CATALOG_CACHE`) — patrz zastrzeżenie
+  w „Cache: stan faktyczny".
+- **SKU do schowka** (`CLIPBOARD`) — główny wynik pracy, lista rozdzielona
+  przecinkami, np. `0020669,0006418,0003863,0005105`.
 - Eksport: `cross_sell_<SKU>.csv` + opcjonalnie `historia_faktur_<SKU>.csv`.
-- Pełna diagnostyka w konsoli (`console.table`): ranking, wykluczenia z nazwą
-  reguły, odrzucone duplikaty rodzin, wynik filtra dostępności.
+- Diagnostyka w konsoli (`console.table`): ranking, wykluczenia z nazwą reguły,
+  duplikaty rodzin, wynik filtra dostępności, pokrycie sprawdzania grup.
 
-Filtr dostępności wymaga DOM-u ERP, więc **nie jest testowalny offline** —
-analiza co-occurrence i reguły są, patrz „Testowanie zmian w regułach".
+Filtr dostępności, grupy i cache wymagają DOM-u ERP, więc **nie są testowalne
+offline** — analiza co-occurrence, reguły nazwowe, bramka anchora i format
+schowka są. Patrz „Testowanie zmian w regułach".
+
+### Bramka anchora — dwie role listy `EXCLUSIONS`
+
+Produkty chłodnicze i mroźnicze **są** na e-commerce: można je odebrać osobiście
+z magazynu, więc mają strony produktowe. Decyzja właściciela produktu: nie
+budujemy dla nich sekcji „Często kupowane razem".
+
+Bramka używa tej samej listy `EXCLUSIONS` co filtr kandydatów, choć uzasadnienia
+są różne:
+
+| rola | uzasadnienie |
+|---|---|
+| filtr kandydatów | nie wyślemy kurierem |
+| bramka anchora | nie inwestujemy w cross-sell poza wysyłką |
+
+Dziś oba zbiory są identyczne, więc jedna lista wystarcza. Gdyby się rozjechały
+(np. chłodnia w opakowaniach termicznych, albo odwrotnie: cross-sell dla odbioru
+osobistego, bo klient i tak jedzie do magazynu) — bramka potrzebuje własnej,
+węższej listy.
+
+Nazwa anchora pochodzi z zescrapowanych pozycji, bo panel filtrów podaje tylko
+SKU. Dlatego bramka działa **po** scrapowaniu, ale **przed** odczytem katalogu —
+oszczędza kilkanaście zapytań do katalogu, nie oszczędza scrapowania. Przeniesienie
+jej przed scrapowanie wymaga odczytania nazwy z zaznaczonego wiersza katalogu,
+czyli ustalenia selektorów na żywej sesji.
 
 ### Pipeline
 
@@ -99,7 +130,7 @@ Kolejność sprawdzania: `skuDeny` → `skuAllow` → `substring` → `prefix` �
 
 ## Kalibracja na realnych danych
 
-Reguły zostały dostrojone na dwóch anchorach:
+Reguły zostały dostrojone na siedmiu anchorach:
 
 | anchor | produkt | faktur | pozycji | unikalnych partnerów | mediana pozycji/fakturę | lider |
 |---|---|---|---|---|---|---|
@@ -108,6 +139,8 @@ Reguły zostały dostrojone na dwóch anchorach:
 | `0021269` | Orzech laskowy prażony Piemonte IGP 1kg | 100 | 1031 | 452 | 8 | **11%** |
 | `0018835` | Orzech laskowy blanszowany prażony 1kg | 100 | 1326 | 582 | 10 | 15% |
 | `0023103` | Krem orzechowo-mleczny Milky Hazelnut 4kg — ALFAPRO | 100 | 1568 | 534 | 10 | 20% |
+| `0011265` | Prażynki Cacao Barry Paillete Feuilletine 2,5kg | **59** | 661 | 322 | 10 | 12% |
+| `0031401` | Jogurt Skyr naturalny 5kg — Piątnica | 100 | 868 | 320 | **4** | 12% |
 
 Dwa warianty orzecha laskowego (`0021269` i `0018835`) mają wspólne tylko **34%**
 partnerów — mimo niemal identycznej nazwy produktu. Podobieństwo nazwy anchora
@@ -263,7 +296,30 @@ anchor 0023103 (Krem orzechowo-mleczny Milky Hazelnut):
   0020669  18%  Olej rzepakowy 5L
   0032222  14%  Czekolada biała Namur White 29% 10kg - ChocConcept
   0006418  13%  Cukier puder 10kg - A&W
+
+anchor 0011265 (Prażynki Paillete Feuilletine) — N=59, remisy:
+  0006418  12%  Cukier puder 10kg - A&W
+  0000533  12%  Galaretka truskawkowa worek 5kg - BOWIKA
+  0020669  12%  Olej rzepakowy 5L
+  0022634   7%  Biszkopt ciemny 10kg - PANEM
+
+anchor 0031401 (Jogurt Skyr) — POMINIĘTY przez bramkę anchora (word:jogurt)
 ```
+
+Wyniki to zawartość schowka: `skusToText()` zwraca je jako `0004446,0003246,...`.
+
+**`0011265` stoi na najsłabszej podstawie.** N=59 (jedyny anchor poniżej 100),
+a trzy pierwsze pozycje mają identyczne 7 faktur — o kolejności decyduje wtedy
+alfabet (`localeCompare` na nazwie), nie siła sygnału. Czwarty kandydat ma
+dokładnie 4 faktury, czyli siedzi na progu `MIN_COUNT`. Przy niskim N remisy
+zaczynają dominować i ranking staje się arbitralny.
+
+**`0031401` pokazał, że koszyk zależy od typu odbiorcy, nie tylko od produktu.**
+Skyr kupują odbiorcy gastronomiczni: w ogonie siedzą farsz kapuściano-pieczarkowy,
+parówki, szpinak siekany, szynka gotowana w plastrach — po 5 faktur każdy.
+Mediana pozycji na fakturę to 4, przy 8-14 w pozostałych plikach. Wykluczenia
+były pisane pod asortyment cukierniczy, więc dla gastronomii mają dziury:
+`szynka` nie ma żadnej reguły (`wędlina` i `kiełbasa` jej nie łapią).
 
 Powtarzalne pozycje między anchorami: `0020669` (olej rzepakowy) w 3 z 5,
 `0006418` (cukier puder) w 4 z 5. To dobra wiadomość dla cache katalogu —
@@ -342,9 +398,10 @@ sekcji komplementów.
 (25kg) — to opakowanie przemysłowe. W katalogu istnieje `0008137`, ten sam proszek
 w worku 1kg, ze stanem magazynowym. To wzorcowy przypadek dla podstawiania wariantów.
 
-## Roadmap — co dalej
+## Roadmap
 
-Kolejność jest istotna, każdy krok osobno testowalny i wyłączalny flagą.
+Kroki 1-4 **zrobione** (v2.4.1-2.5.0), opis został jako uzasadnienie decyzji.
+Otwarty jest krok „Podstawianie wariantów" oraz obserwacje w „Cache: stan faktyczny".
 
 ### 1. Odczyt katalogu produktów
 
@@ -434,26 +491,63 @@ Jeśli sygnał trafia w duże opakowanie, a istnieje ten sam produkt w mniejszym
 **Decyzja do podjęcia:** oznacza to rekomendowanie SKU, które samo nie zapracowało
 na sygnał co-occurrence (proszek 1kg ma 2 faktury i nigdy nie przeszedłby progu).
 
-### 5. Persystencja przez storage Tampermonkey
+### 5. Persystencja przez storage Tampermonkey — ZROBIONE
 
-`GM_setValue` / `GM_getValue` (wymaga dopisania `@grant`). Przeżywa restart
-przeglądarki i aktualizację skryptu, nie leci przy czyszczeniu ciasteczek.
-Podgląd i eksport w panelu TM → zakładka **Storage**.
+`GM_setValue` / `GM_getValue`. Przeżywa restart przeglądarki i aktualizację
+skryptu, nie leci przy czyszczeniu ciasteczek. Podgląd i eksport w panelu
+Tampermonkey → skrypt → zakładka **Storage**.
 
 Podział odpowiedzialności:
 
 | dane | gdzie | dlaczego |
 |---|---|---|
-| kategoria, gramatura | cache w storage TM | stabilne |
+| kategoria, gramatura | cache w storage TM (`savpol_catcache_v1`) | stabilne |
 | stan `DYS.`, „nisko rotujący" | odczyt na żywo | zmienia się codziennie |
 | decyzje: reguły, `skuDeny` | źródło skryptu, git | to kod, nie dane |
 
-**Cache narastający, nie pełny zrzut katalogu.** Skrypt sprawdza tylko ~4 kandydatów
-per anchor i zapisuje wynik. Kandydaci powtarzają się między produktami (cukier,
-olej, polewy), więc cache sam się zapełnia tym, co potrzebne — bez przeklikiwania
-setek stron paginacji i bez pytania „ile pozycji ma katalog".
+**Cache narastający, nie pełny zrzut katalogu.** Skrypt sprawdza tylko kilku
+kandydatów per anchor i zapisuje wynik. Kandydaci powtarzają się między
+produktami (`0020669` olej w 3 z 7 anchorów, `0006418` cukier puder w 5 z 7),
+więc cache sam się zapełnia tym, co potrzebne.
 
-## Testowanie zmian w regułach
+## Cache: stan faktyczny i co z nim zrobić
+
+Trzy obserwacje po przejrzeniu implementacji — warte znajomości, zanim ktoś
+uzna cache za działającą optymalizację:
+
+**1. Cache jest zapisywany, ale nie czytany do decyzji.** `loadCatalogCache()`
+służy tylko do dołożenia wpisów i policzenia rozmiaru. `applyAvailabilityFilter()`
+zawsze robi live lookup. Oszczędności czasu **nie ma**.
+
+**2. Samo cachowanie kategorii nie może dać oszczędności**, dopóki stan magazynowy
+musi być świeży — grupa i `DYS.` przychodzą z **tego samego wiersza katalogu**,
+w jednym zapytaniu. Zaoszczędzić da się tylko wtedy, gdy zapytanie zostanie
+pominięte **całkowicie**.
+
+**3. Jest jedno miejsce, gdzie to działa.** Produkt odrzucony przez grupę nigdy
+nie potrzebuje stanu — jest wykluczony niezależnie od `DYS.`. Więc jeśli grupa
+jest w cache i jest na denyliście, kandydata można odrzucić **bez zapytania**.
+To realna oszczędność: dziś każdy taki kandydat kosztuje pełny lookup.
+
+**4. Pole `packKg` w cache nie wnosi nowej informacji** — jest liczone przez
+`biggestPackKg()` z nazwy, czyli tak samo jak w filtrze gramatury. Wartość
+pojawi się dopiero, gdy gramatura będzie czytana z osobnego pola katalogu.
+
+Realny użytek cache dziś: **materiał do podstawiania wariantów** (krok niżej).
+Zbiera mapę `SKU → grupa`, której inaczej trzeba by szukać zapytanie po zapytaniu.
+
+### Znane ograniczenie: pokrycie sprawdzania grup
+
+`applyAvailabilityFilter()` przerywa pętlę po zebraniu `TOP_N` kandydatów, więc
+grupy zna tylko dla części puli. Log „grupy spoza denylisty", który miał pilnować
+dziur w denyliście, widzi zatem 4-8 SKU, nie cały ranking.
+
+Od v2.5.0 log wypisuje jawnie `sprawdzono X z Y pozycji puli`, żeby pusta lista
+nie wyglądała na potwierdzenie kompletności. Sprawdzanie całej puli dałoby lepszą
+widoczność, ale kosztuje 11-26 zapytań zamiast 4-8 — do rozważenia, gdy cache
+zacznie odcinać część lookupów (punkt 3 wyżej).
+
+## Testowanie zmian w regułach## Testowanie zmian w regułach
 
 Analiza jest czystą funkcją danych, więc da się ją odpalić lokalnie na zapisanych
 CSV-kach bez ERP — wystarczy wyciąć fragment źródła i podać wiersze

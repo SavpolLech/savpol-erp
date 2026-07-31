@@ -20,65 +20,49 @@ Jestem zalogowany w ERP i mam otwarty katalog produktów
 (`erp.savpol.pl/pl/katalog/csitems/`). Masz dostęp do przeglądarki, więc możesz
 sam obejrzeć DOM — nie zgaduj selektorów, sprawdź je.
 
-## Zadanie 1 — rozpoznanie widoku katalogu (zrób to pierwsze)
+## Stan: Zadania 1-4 są ZROBIONE
 
-Wyszukaj w katalogu frazę `proszek do pieczenia`. Zwróci ~6 rekordów. Ustal:
+Nie powtarzaj ich. W skrypcie działają już:
 
-1. Selektor pola wyszukiwania i sposób zatwierdzania frazy (Enter? przycisk?).
-   ERP używa Kendo UI — część kontrolek wymaga wywołania zdarzeń na instancji
-   widgetu, nie samego `.value = ...`. W skrypcie jest już przykład takiego
-   podejścia dla `kendoDatePicker` w funkcji `setFilters()`.
-2. Nazwy `data-datafield` dla kolumn: SYMBOL, OPIS, GRUPA PRODUKTU, DYS., STATUS.
-3. Jak odczytać podpisy pod nazwą produktu („Market", „Towar nisko rotujący").
-4. Czy siatka jest paginowana przy większej liczbie wyników i czy pager jest ten sam
-   co `.csDataPager` używany już w skrypcie.
-5. Czy przy tej liście jest eksport do pliku.
+- odczyt katalogu (`lookupCatalogItem`, `switchToCatalogTab`, `searchCatalog`),
+- filtr dostępności (`AVAILABILITY`): `DYS.` ≤ 0, „Towar nisko rotujący",
+  kartoteki pomocnicze `-M`/`-R`,
+- wykluczenie po grupie (`GROUP_FILTER`, `groupDeny` + `groupAllow`),
+- cache kategorii/gramatury w GM storage (`CATALOG_CACHE`),
+- bramka anchora (`ANCHOR_GATE`) i SKU do schowka (`CLIPBOARD`).
 
-Pokaż mi ustalenia **przed** pisaniem kodu.
+## Co jest otwarte
 
-## Zadanie 2 — filtr dostępności
+**A. Cache nie daje dziś żadnej oszczędności** — jest zapisywany, ale nigdy
+czytany do decyzji. Szczegóły i jedyne miejsce, gdzie może zadziałać
+(odrzucenie po grupie z cache, bez zapytania do katalogu), opisuje
+`CROSS-SELL.md`, sekcja „Cache: stan faktyczny". To najsensowniejsze
+następne zadanie.
 
-Dopisz krok, który dla finalnych kandydatów sprawdza w katalogu stan dyspozycyjny
-(`DYS.`) i odrzuca produkty ze stanem zerowym, dobierając następnych z rankingu.
-Odczyt na żywo, bez cache — stan zmienia się codziennie.
+**B. Podstawianie wariantów** — `CROSS-SELL.md`, krok „Podstawianie wariantów".
+Wymaga decyzji właściciela produktu, bo oznacza rekomendowanie SKU, które samo
+nie zapracowało na sygnał co-occurrence. Zapytaj przed implementacją.
 
-Uwzględnij flagę „Towar nisko rotujący" jako sygnał deprioryzujący (zapytaj mnie,
-czy ma odrzucać, czy tylko obniżać pozycję).
+**C. Bramka anchora działa po scrapowaniu**, bo nazwę anchora bierze
+z zescrapowanych pozycji. Przeniesienie jej przed scrapowanie wymaga odczytania
+nazwy z zaznaczonego wiersza katalogu — ustal selektory na żywej sesji.
+Oszczędza wtedy całe scrapowanie 100 faktur, nie tylko lookupy.
 
-## Zadanie 3 — grupy produktów zamiast regex-ów
-
-Lista grup jest już w `EXCLUSIONS.groupDeny`, razem z gotowym dopasowaniem po
-prefiksie ścieżki (`findGroupExclusion()`, przetestowane). Trzeba ją tylko podłączyć
-do `analyzeCrossSell()` — grupa ma wygrywać z regułami nazwowymi, a `skuAllow`
-z grupą.
-
-**Zanim to zrobisz, przeczytaj w `CROSS-SELL.md` sekcję o nadmiernym wykluczaniu.**
-Te grupy zawierają najwięcej produktów niewysyłkowych, ale nie wyłącznie takie —
-np. cała grupa `Drożdże` odetnie drożdże suche, które celowo przepuszczamy,
-a `Nabiał` odetnie mleko w proszku.
-
-Dlatego zmierz najpierw wpływ, zanim cokolwiek włączysz na stałe: dla anchorów
-`0022850` i `0031629` pokaż mi, **które produkty z obecnego rankingu wypadną przez
-grupę** i jaka jest ich grupa. Wtedy zdecyduję, czy wpisać wyjątki do `skuAllow`,
-czy zawęzić denylistę do liści (np. `Nabiał\Śmietana` zamiast całego `Nabiał`).
-
-Reguł nazwowych z `EXCLUSIONS` **nie usuwaj** — zostają jako druga warstwa.
-Dodaj do logu listę grup, które wystąpiły wśród kandydatów, a których nie ma
-na denyliście (inaczej brakująca gałąź chłodnicza przejdzie po cichu).
-
-## Zadanie 4 — persystencja
-
-Cache kategorii i gramatur w `GM_setValue` / `GM_getValue` (dopisz `@grant`).
-Cache narastający — tylko sprawdzani kandydaci, bez zrzutu całego katalogu.
-Stanu magazynowego **nie cachuj**.
+**D. Do decyzji właściciela produktu:** `szynka` nie ma żadnej reguły
+wykluczenia (`wędlina` i `kiełbasa` jej nie łapią). Wyszła przy anchorze
+gastronomicznym `0031401`.
 
 ## Zasady pracy
 
 - Zachowaj obecny styl: komentarze po polsku, konfiguracja na górze pliku,
   każda nowa funkcja wyłączalna flagą.
-- Nie zmieniaj progów w `CROSS_SELL` bez pytania — są skalibrowane na realnych
-  danych, uzasadnienie jest w `CROSS-SELL.md`.
+- Nie zmieniaj progów w `CROSS_SELL` ani reguł w `EXCLUSIONS` bez pytania —
+  są skalibrowane na siedmiu anchorach, uzasadnienia w `CROSS-SELL.md`.
+- Rdzenie odmiany idą do `substring`, pełne słowa do `words` — patrz
+  „Pułapki nazewnictwa". Rdzeń w `words` nigdy nie dopasuje formy odmienionej.
 - Diagnostyka w konsoli przez `console.table`, jak w `logAnalysis()`.
-- Po każdym zadaniu pokaż mi wynik na realnym produkcie, zanim przejdziesz dalej.
-- Do testów użyj anchorów `0022850` lub `0031629` — ich wyniki są opisane
-  w `CROSS-SELL.md`, więc łatwo zauważyć regresję.
+- **Zrób `git pull` przed startem i `git push` po zakończeniu.** Repo jest
+  edytowane też z drugiej sesji; rozjazdy już się zdarzały.
+- Po każdym zadaniu pokaż wynik na realnym produkcie, zanim przejdziesz dalej.
+- Do testów użyj anchorów z tabeli kalibracji w `CROSS-SELL.md` — ich wyniki
+  są tam zapisane, więc regresja jest widoczna od razu.
