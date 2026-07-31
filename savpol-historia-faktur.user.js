@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.2.4.1
+// @version      2.4.1
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, z obsługą paginacji, analizuje co-occurrence i eksportuje kandydatów do cross-sellingu do CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
