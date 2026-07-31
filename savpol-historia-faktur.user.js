@@ -760,9 +760,9 @@
     const tab = findTabLiByText('Katalog');
     if (!tab) return false;
     (tab.querySelector('span.k-link') || tab).click();
-    await waitFor(() => getVisibleCatalogGrid() !== null || findVisibleCatalogSearchInput() !== null, 20, 200);
+    const ready = await waitFor(() => (getVisibleCatalogGrid() !== null && findVisibleCatalogSearchInput() !== null) || null, 20, 200);
     await sleep(300);
-    return true;
+    return ready !== null;
   }
 
   // ---------- Cache kategorii/gramatury (Zadanie 4, GM_setValue/GM_getValue) ----------
@@ -951,7 +951,10 @@
       if (AVAILABILITY.ENABLE) {
         historyTabLi = document.querySelector('li.k-state-active'); // zapamiętane PRZED przejściem do katalogu
         button.textContent = 'Sprawdzam dostępność w katalogu...';
-        await switchToCatalogTab();
+      const switched = await switchToCatalogTab();
+      if (!switched) {
+        throw new Error('Nie udalo sie przelaczyc na zakladke "Katalog" - przerywam sprawdzanie dostepnosci, zeby nie wpisywac SKU w zlym widoku.');
+      }
         const avail = await applyAvailabilityFilter(analysis.dedupedRanked, CROSS_SELL.TOP_N, (msg) => { button.textContent = msg; });
         logAvailability(avail);
         analysis.candidates = avail.kept;
