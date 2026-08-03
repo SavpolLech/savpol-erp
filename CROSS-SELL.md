@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.7.0)
+## Stan obecny (v2.7.1)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -76,7 +76,7 @@ zero produktów, choć dane były dobre — N=99, lider 26%, pula 26 pozycji.
 |---|---|
 | 1 | `N` = liczba faktur, w których **faktycznie widać anchor-SKU** wśród pozycji |
 | 2 | dla każdego innego SKU: w ilu z tych `N` faktur wystąpił (raz na fakturę) |
-| 3 | wykluczenia: `skuDeny` → `skuAllow` → reguły nazwowe → próg gramatury |
+| 3 | wykluczenia: format SKU → `skuDeny` → `skuAllow` → reguły nazwowe → próg gramatury |
 | 4 | próg sygnału: `count >= MIN_COUNT` **i** `share >= MIN_SHARE` |
 | 5 | max 1 produkt na rodzinę, potem `TOP_N` |
 
@@ -99,10 +99,13 @@ Wszystko na górze pliku.
 
 ### `EXCLUSIONS`
 
-Kolejność sprawdzania: `skuDeny` → `skuAllow` → `substring` → `prefix` → `allOf`
-→ `words` → gramatura. **Decyzja per SKU wygrywa z całą heurystyką** —
+Kolejność sprawdzania: `skuPattern` → `skuDeny` → `skuAllow` → `substring` →
+`prefix` → `allOf` → `words` → gramatura. **Decyzja per SKU wygrywa z całą heurystyką** —
 `skuAllow` obchodzi także próg gramatury.
 
+- `skuPattern` — wzorzec prawidłowego SKU produktu (`/^[0-9]{6,8}(-[A-Z])?$/`).
+  Pozycje niepasujące to **usługi i opłaty, nie towary** — patrz „Pozycje, które
+  nie są produktami".
 - `skuDeny` — `{ '0000263': 'powód' }`. Wyklucz zawsze. Rejestr wiedzy, której
   nazwa nie zdradza.
 - `skuAllow` — ratunek na fałszywe trafienia reguł.
@@ -180,6 +183,22 @@ więc `ilość / gramatura` = liczba opakowań):
 | Proszek do pieczenia 5kg | 5,0 (=25kg) | 33% |
 | Brzoskwinia w syropie 4200g | 1,4 | 13% |
 | CUKIER KRYSZTAŁ 25kg | 2,0 (=50kg) | 22% |
+
+### Pozycje, które nie są produktami
+
+Na fakturach są też **usługi**: `KurierDPD` / „Dostawa - Kurier DPD". Nie ma ich
+w katalogu produktów i nie da się ich polecić, ale w co-occurrence liczą się
+normalnie.
+
+Skala jest mała — 11 pozycji w 38 plikach — ale **rośnie przy niskim N**. Anchor
+`0023990` (Płyn do przypaleń, N=10) miał dostawę na **pierwszym miejscu z 40%
+udziału**, bo wszystkie realne produkty wystąpiły po jednej fakturze. Uratował nas
+przypadek: filtr dostępności nie znalazł `KurierDPD` w katalogu i odrzucił ją.
+
+Filtr jest **strukturalny, nie nazwowy** — `skuPattern` sprawdza format SKU
+(6-8 cyfr + opcjonalny sufiks `-M`/`-R`/`-P`). Odporny na nazwy nowych usług,
+bo nie zgaduje z treści. Sprawdzony na wszystkich 38 plikach: jedyne SKU
+nienumeryczne to `KurierDPD`.
 
 ### Pułapki nazewnictwa, które kosztowały najwięcej
 

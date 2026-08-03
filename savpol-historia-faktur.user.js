@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.7.0
+// @version      2.7.1
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -112,6 +112,14 @@
     groupAllow: [
       'B2B\\Kategorie\\Dekorowanie\\Dekoracje cukrowe\\Posypki'
     ],
+
+    // Wzorzec prawidłowego SKU produktu. Pozycje niepasujące to usługi i opłaty,
+    // nie towary — np. "Dostawa - Kurier DPD" o SKU "KurierDPD". Wpadają na
+    // faktury i przy niskim N potrafią wejść na pierwsze miejsce rankingu
+    // (anchor 0023990, N=10: dostawa miała 40% udziału).
+    // Dopuszczone sufiksy kartotek pomocniczych (-M, -R, -P) — odsiewa je
+    // dopiero isAuxiliaryKartoteka() na etapie filtra dostępności.
+    skuPattern: /^[0-9]{6,8}(-[A-Z])?$/,
 
     // Zawsze wykluczaj te SKU (chłodnia/mrożonka/wycofane, czego nazwa nie zdradza).
     // Format: '0005261': 'Serowe prod. Wykwintny — chłodnia'
@@ -626,8 +634,16 @@
     const excluded = [];
     const kept = [];
     for (const entry of stats.values()) {
-      // Nadpisania per SKU mają pierwszeństwo nad całą heurystyką nazwową.
       const skuKey = (entry.sku || '').trim();
+
+      // Usługi i opłaty (dostawa, transport) nie są produktami — odsiewamy
+      // je po formacie SKU, przed jakąkolwiek regułą nazwową.
+      if (EXCLUSIONS.skuPattern && !EXCLUSIONS.skuPattern.test(skuKey)) {
+        excluded.push({ ...entry, rule: 'nieprodukt:format SKU' });
+        continue;
+      }
+
+      // Nadpisania per SKU mają pierwszeństwo nad całą heurystyką nazwową.
       if (Object.prototype.hasOwnProperty.call(EXCLUSIONS.skuDeny, skuKey)) {
         excluded.push({ ...entry, rule: `skuDeny:${EXCLUSIONS.skuDeny[skuKey] || 'ręcznie'}` });
         continue;
