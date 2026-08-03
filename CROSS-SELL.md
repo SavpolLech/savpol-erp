@@ -18,15 +18,13 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.6.0)
+## Stan obecny (v2.7.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
 
 - Scrapowanie historii faktur z paginacją (limit 100 faktur, od 1.01.2024).
 - Analiza co-occurrence liczona **per faktura**, nie per pozycja.
-- **Bramka anchora** (`ANCHOR_GATE`): jeśli sam analizowany produkt jest
-  niewysyłkowy, cross-sell nie jest budowany wcale.
 - Wykluczenia logistyczne z **nazwy** produktu, odporne na brak diakrytyków
   (`fold()`).
 - Filtr gramatury opakowania (`MAX_PACK_KG`).
@@ -42,34 +40,26 @@ w punktach 1-4; został krok 5 (podstawianie wariantów).
 - Diagnostyka w konsoli (`console.table`): ranking, wykluczenia z nazwą reguły,
   duplikaty rodzin, wynik filtra dostępności, pokrycie sprawdzania grup.
 
-Filtr dostępności, grupy i cache wymagają DOM-u ERP, więc **nie są testowalne
-offline** — analiza co-occurrence, reguły nazwowe, bramka anchora i format
-schowka są. Patrz „Testowanie zmian w regułach".
+Filtr dostępności i grupy wymagają DOM-u ERP, więc **nie są testowalne offline** —
+analiza co-occurrence, reguły nazwowe i format schowka są. Patrz „Testowanie
+zmian w regułach".
 
-### Bramka anchora — dwie role listy `EXCLUSIONS`
+### `EXCLUSIONS` filtruje TYLKO kandydatów, nigdy anchora
 
-Produkty chłodnicze i mroźnicze **są** na e-commerce: można je odebrać osobiście
-z magazynu, więc mają strony produktowe. Decyzja właściciela produktu: nie
-budujemy dla nich sekcji „Często kupowane razem".
+Ważne rozróżnienie, bo raz je pomyliłem i kosztowało to jedną wersję.
 
-Bramka używa tej samej listy `EXCLUSIONS` co filtr kandydatów, choć uzasadnienia
-są różne:
+Produkty chłodnicze i mroźnicze **są** na e-commerce — z odbiorem osobistym
+z magazynu. Dla nich cross-sell jest potrzebny **tak samo** jak dla pozostałych.
+Reguły wykluczeń istnieją wyłącznie po to, żeby **nie polecać** produktów, których
+nie da się wysłać — nie po to, żeby decydować, dla których produktów liczyć.
 
-| rola | uzasadnienie |
-|---|---|
-| filtr kandydatów | nie wyślemy kurierem |
-| bramka anchora | nie inwestujemy w cross-sell poza wysyłką |
+W v2.5.0 dodałem bramkę anchora (`ANCHOR_GATE`), która pomijała cross-sell, gdy
+sam anchor pasował do wykluczenia. **Błąd interpretacji** wypowiedzi właściciela
+produktu („nie chcę robić cross-sellingu do takich produktów" = nie polecać ich
+jako kandydatów, nie: nie liczyć dla nich). Usunięta w v2.7.0.
 
-Dziś oba zbiory są identyczne, więc jedna lista wystarcza. Gdyby się rozjechały
-(np. chłodnia w opakowaniach termicznych, albo odwrotnie: cross-sell dla odbioru
-osobistego, bo klient i tak jedzie do magazynu) — bramka potrzebuje własnej,
-węższej listy.
-
-Nazwa anchora pochodzi z zescrapowanych pozycji, bo panel filtrów podaje tylko
-SKU. Dlatego bramka działa **po** scrapowaniu, ale **przed** odczytem katalogu —
-oszczędza kilkanaście zapytań do katalogu, nie oszczędza scrapowania. Przeniesienie
-jej przed scrapowanie wymaga odczytania nazwy z zaznaczonego wiersza katalogu,
-czyli ustalenia selektorów na żywej sesji.
+Objaw, po którym to wyszło: anchor `0023812` (Śmietana kwaśna Piątnica) zwrócił
+zero produktów, choć dane były dobre — N=99, lider 26%, pula 26 pozycji.
 
 ### Pipeline
 

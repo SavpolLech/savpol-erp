@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.6.0
+// @version      2.7.0
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -68,21 +68,6 @@
   const CLIPBOARD = {
     ENABLE: true,
     SEPARATOR: ','
-  };
-
-  // ---------- Konfiguracja: bramka anchora ----------
-  // Jeśli sam analizowany produkt jest niewysyłkowy (chłodnia, mroźnia itp.),
-  // nie budujemy dla niego cross-sellu. Takie produkty są na e-commerce
-  // dostępne z odbiorem osobistym z magazynu, więc strona produktowa istnieje,
-  // ale sekcja "Często kupowane razem" nie jest tam inwestycją wartą zachodu
-  // (decyzja właściciela produktu).
-  //
-  // UWAGA: bramka używa tej samej listy EXCLUSIONS co filtr kandydatów, choć
-  // uzasadnienia są różne (kandydaci: nie wyślemy kurierem; anchor: nie
-  // inwestujemy w cross-sell). Dziś oba zbiory są identyczne. Gdyby się
-  // rozjechały, bramka potrzebuje własnej, węższej listy.
-  const ANCHOR_GATE = {
-    ENABLE: true
   };
 
   // Wyrazy pomijane przy ustalaniu rodziny produktu — nie niosą kategorii.
@@ -946,14 +931,6 @@
     return { text, copied };
   }
 
-  // ---------- Bramka anchora ----------
-  // Nazwę anchora bierzemy z zescrapowanych pozycji, bo panel filtrów podaje
-  // tylko SKU. Zwraca null, jeśli anchor nie wystąpił w żadnej fakturze.
-  function getAnchorName(rows, anchorSku) {
-    const hit = rows.find(r => sameSku(r.sku, anchorSku));
-    return hit ? hit.product : null;
-  }
-
   function logAnalysis(result) {
     console.log(`[Cross-sell] Anchor: ${result.anchorSku}, N = ${result.N} faktur`);
     console.log(`[Cross-sell] Ranking po wykluczeniach (${result.ranked.length}):`);
@@ -1017,22 +994,6 @@
       button.textContent = 'Analizuję cross-sell...';
       const analysis = analyzeCrossSell(data, mainSku);
       logAnalysis(analysis);
-
-      // Bramka anchora — sprawdzana PRZED odczytem katalogu, żeby nie marnować
-      // kilkunastu zapytań do katalogu na produkt, dla którego i tak nie
-      // budujemy cross-sellu.
-      const anchorName = getAnchorName(data, mainSku);
-      const anchorRule = (ANCHOR_GATE.ENABLE && anchorName) ? findExclusion(anchorName) : null;
-      if (anchorRule) {
-        console.warn(`[Cross-sell] Anchor "${anchorName}" (${mainSku}) jest niewysyłkowy ` +
-          `(reguła ${anchorRule}) — pomijam cross-sell dla tego produktu.`);
-        if (EXPORT_RAW_HISTORY) downloadCSV(data, mainSku);
-        button.textContent = 'Anchor niewysyłkowy — pominięto';
-        await sleep(2500);
-        closeHistoryTab(null);
-        button.textContent = originalText;
-        return;
-      }
 
       let historyTabLi = null;
       if (AVAILABILITY.ENABLE) {

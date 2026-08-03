@@ -8,7 +8,7 @@ Pracujemy na skrypcie Tampermonkey do ERP Savpol:
 https://github.com/SavpolLech/savpol-erp
 
 Przeczytaj najpierw `CROSS-SELL.md` — to pełny kontekst projektu, podjęte decyzje
-i roadmapa. Potem `savpol-historia-faktur.user.js` (v2.6.0, działa poprawnie
+i roadmapa. Potem `savpol-historia-faktur.user.js` (v2.7.0, działa poprawnie
 i jest skalibrowany na realnych danych — nie przepisuj go od zera).
 
 Skrót: skrypt scrapuje historię faktur produktu z ERP, liczy co-occurrence
@@ -29,7 +29,7 @@ Nie powtarzaj ich. W skrypcie działają już:
 - filtr dostępności (`AVAILABILITY`): `DYS.` ≤ 0, „Towar nisko rotujący",
   kartoteki pomocnicze `-M`/`-R`,
 - wykluczenie po grupie (`GROUP_FILTER`, `groupDeny` + `groupAllow`),
-- bramka anchora (`ANCHOR_GATE`) i SKU do schowka (`CLIPBOARD`).
+- SKU do schowka (`CLIPBOARD`).
 
 ## Co jest otwarte
 
@@ -42,10 +42,9 @@ przychodzą z tego samego zapytania.
 Wymaga decyzji właściciela produktu, bo oznacza rekomendowanie SKU, które samo
 nie zapracowało na sygnał co-occurrence. Zapytaj przed implementacją.
 
-**C. Bramka anchora działa po scrapowaniu**, bo nazwę anchora bierze
-z zescrapowanych pozycji. Przeniesienie jej przed scrapowanie wymaga odczytania
-nazwy z zaznaczonego wiersza katalogu — ustal selektory na żywej sesji.
-Oszczędza wtedy całe scrapowanie 100 faktur, nie tylko lookupy.
+**C. Nie dodawaj bramki anchora.** Była w v2.5.0, usunięta w v2.7.0 —
+`EXCLUSIONS` filtruje wyłącznie kandydatów. Produkty chłodnicze i mroźnicze
+też potrzebują cross-sellu. Szczegóły w `CROSS-SELL.md`.
 
 ## Zasady pracy
 
