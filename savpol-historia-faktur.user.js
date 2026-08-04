@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.8.0
+// @version      2.8.1
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -722,8 +722,14 @@
     return /-[A-Za-z]/.test((sku || '').trim());
   }
 
+  // Wyszukiwarka MUSI być szukana wewnątrz panelu zakładki "Katalog", nie
+  // "pierwsza widoczna w dokumencie" — widok historii produktu ma własne panele
+  // wyszukiwania i przy przełączonej zakładce SKU trafiały właśnie tam.
+  // Objaw: skrypt szukał kandydatów w historii faktur zamiast w katalogu.
   function findVisibleCatalogSearchInput() {
-    const widget = Array.from(document.querySelectorAll('.csDBEditSearch'))
+    const panel = getCatalogPanel();
+    const scope = panel || document;
+    const widget = Array.from(scope.querySelectorAll('.csDBEditSearch'))
       .find(w => w.offsetParent !== null);
     return widget ? widget.querySelector('input.Input') : null;
   }
@@ -738,6 +744,18 @@
   // Pole "Szukaj" w katalogu NIE jest widgetem Kendo (w przeciwieństwie do
   // kendoDatePicker w setFilters()) — wystarczą natywne zdarzenia.
   async function searchCatalog(query) {
+    // Weryfikacja PRZY KAŻDYM wyszukaniu, nie raz przed pętlą. Aktywna zakładka
+    // może się zmienić w trakcie sprawdzania kandydatów, a wtedy kolejne
+    // iteracje wpisywałyby SKU w wyszukiwarkę historii faktur.
+    if (!isCatalogTabActive()) {
+      console.warn('[Cross-sell] Zakładka katalogu nieaktywna — przełączam ponownie.');
+      const back = await switchToCatalogTab();
+      if (!back) {
+        throw new Error('Nie udało się wrócić na zakładkę "Katalog" — przerywam, ' +
+          'żeby nie wpisywać SKU w widoku historii faktur.');
+      }
+    }
+
     const input = await waitFor(findVisibleCatalogSearchInput);
     if (!input) throw new Error('Nie znaleziono pola wyszukiwania katalogu.');
     const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
@@ -791,11 +809,34 @@
       .find(li => li.textContent.includes(text)) || null;
   }
 
+  // Panel treści zakładki katalogu. Kendo wiąże zakładkę z panelem przez
+  // aria-controls, więc bierzemy go z powiązania, a nie z kolejności w DOM.
+  function getCatalogPanel() {
+    const tab = findTabLiByText('Katalog');
+    if (!tab) return null;
+    const id = tab.getAttribute('aria-controls');
+    return id ? document.getElementById(id) : null;
+  }
+
+  // Zakładka katalogu jest aktywna, gdy Kendo oznaczyło ją k-state-active
+  // ORAZ jej panel jest faktycznie widoczny. Sama widoczność siatki nie
+  // wystarcza — siatka katalogu może zostać w DOM po przełączeniu zakładki.
+  function isCatalogTabActive() {
+    const tab = findTabLiByText('Katalog');
+    if (!tab || !tab.classList.contains('k-state-active')) return false;
+    const panel = getCatalogPanel();
+    return !!panel && panel.offsetParent !== null;
+  }
+
   async function switchToCatalogTab() {
     const tab = findTabLiByText('Katalog');
     if (!tab) return false;
-    (tab.querySelector('span.k-link') || tab).click();
-    const ready = await waitFor(() => (getVisibleCatalogGrid() !== null && findVisibleCatalogSearchInput() !== null) || null, 20, 200);
+    if (!isCatalogTabActive()) {
+      (tab.querySelector('span.k-link') || tab).click();
+    }
+    const ready = await waitFor(() => (isCatalogTabActive()
+      && getVisibleCatalogGrid() !== null
+      && findVisibleCatalogSearchInput() !== null) || null, 20, 200);
     await sleep(300);
     return ready !== null;
   }
