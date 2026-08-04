@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.8.0)
+## Stan obecny (v2.9.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -38,8 +38,12 @@ w punktach 1-4; został krok 5 (podstawianie wariantów).
   przecinkami, np. `0020669,0006418,0003863,0005105`.
 - Eksport: `cross_sell_<SKU>.csv` + opcjonalnie `historia_faktur_<SKU>.csv`.
 - **Nakładka z postępem** (`PROGRESS`) — pływające okno z etapem, paskiem,
-  licznikiem `X / 100 faktur` i czasem trwania. Przebieg trwa kilka minut,
-  a napis na przycisku w toolbarze ERP jest ciasny i łatwo go przeoczyć.
+  licznikiem `X / 100 faktur` i czasem trwania. Na koniec pokazuje SKU wyniku
+  w polu z przyciskiem **Kopiuj**. Przebieg trwa kilka minut, a napis na
+  przycisku w toolbarze ERP jest ciasny i łatwo go przeoczyć.
+- **Przerywanie pracy** (`ABORT`) — przycisk „Przerwij" w nakładce albo ponowne
+  kliknięcie przycisku w toolbarze. Przerwanie jest **kooperacyjne i miękkie**:
+  patrz „Przerywanie i wyniki częściowe".
 - Diagnostyka w konsoli (`console.table`): ranking, wykluczenia z nazwą reguły,
   duplikaty rodzin, wynik filtra dostępności, pokrycie sprawdzania grup.
 
@@ -47,6 +51,42 @@ Filtr dostępności, grupy i nakładka postępu wymagają DOM-u, więc **nie są
 testowalne offline** —
 analiza co-occurrence, reguły nazwowe i format schowka są. Patrz „Testowanie
 zmian w regułach".
+
+### Przerywanie i wyniki częściowe
+
+Przebieg trwa kilka minut i bez przerywania jedynym wyjściem było przeładowanie
+strony, co gubi otwarte zakładki ERP.
+
+**Kooperacyjne, nie natychmiastowe.** Flaga `ABORT.requested` jest sprawdzana
+w bezpiecznych punktach: między fakturami, między stronami paginacji, między
+kandydatami oraz w każdej iteracji `waitFor()` (tam siedzą najdłuższe
+oczekiwania, do 10 s). Skrypt kończy bieżącą operację i wychodzi, zamiast urwać
+się w środku klikania po DOM.
+
+**Miękkie — zebrane faktury nie przepadają.** Przerwanie w trakcie scrapowania
+nie kasuje pracy: `collectAllInvoicesInterruptible()` zwraca to, co zebrano,
+i pipeline **dokańcza analizę oraz eksport** na niepełnej próbie. Po przerwaniu
+flaga jest zerowana, żeby sam fakt przerwania nie ubił analizy, dla której
+faktury właśnie zebrano. Przerwanie przed pierwszą fakturą kończy przebieg bez
+wyniku — nie ma czego analizować.
+
+**Wynik częściowy jest oznaczany na każdym wyjściu**, bo po samej zawartości
+jest nieodróżnialny od pełnego:
+
+| wyjście | oznaczenie |
+|---|---|
+| nazwa pliku CSV | sufiks `_CZESCIOWE` |
+| nakładka | „próba NIEPEŁNA (przerwana)" + pasek na czerwono |
+| nakładka, szczegół | „Wynik z N faktur, nie z pełnej próby" |
+| konsola | ostrzeżenie z liczbą zachowanych pozycji |
+
+Skala różnicy jest realna — na anchorze `0022850` próba 40 z 100 faktur daje
+`0003246,0004304,0010937,0020131` wobec `0004446,0003246,0012535,0004304`
+z pełnej. Dwie pozycje wspólne z czterech.
+
+**Zakładka historii zostaje otwarta po przerwaniu** — świadomie. W przerwanym
+stanie nie wiadomo, w którym widoku jesteśmy, a zamykanie „aktywnej zakładki"
+mogłoby zamknąć nie tę, o którą chodzi.
 
 ### `EXCLUSIONS` filtruje TYLKO kandydatów, nigdy anchora
 
@@ -217,6 +257,13 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
   wyjątki `delipasta` i `polewa`.
 - **Nie matchuj po nazwach owoców.** „Delipasta Malinowa" nie jest mrożonką.
   Jedyny pewny keyword to rdzeń `mrożon`.
+- **Zakładki ERP nie da się szukać po fragmencie nazwy.** Obok listy katalogu
+  ERP trzyma otwarte karty produktów o etykietach `Katalog: 0030078`, a te nie
+  mają ani siatki, ani wyszukiwarki. Dopasowanie `textContent.includes('Katalog')`
+  trafiało w kartę produktu i przełączenie kończyło się błędem „Nie udało się
+  przełączyć na zakładkę Katalog" — losowo, zależnie od tego, czy dla danego
+  produktu karta była otwarta. `findCatalogTabLi()` wymaga **dokładnej** etykiety
+  `Katalog`. Zakładka historii nazywa się `Pozycje dokumentów: <SKU>`.
 - **Liczba mnoga potrzebuje osobnego rdzenia.** `prefix: 'wafel'` nie łapało
   „Wafle płaskie… HANMART", bo `wafl` **nie jest** prefiksem `wafel` (między
   „waf" i „l" stoi „e"). Żaden z tych rdzeni nie zawiera drugiego — muszą być oba.

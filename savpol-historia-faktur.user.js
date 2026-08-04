@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.8.1
+// @version      2.9.0
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -17,6 +17,7 @@
 
   const TARGET_URL_FRAGMENT = 'erp.savpol.pl/pl/katalog/csitems/';
   const BUTTON_ID = 'savpol-invoice-history-btn';
+  const ORIGINAL_BUTTON_TEXT = 'Pobierz historię faktur';
 
   // ---------- Konfiguracja ----------
   const MAX_INVOICES = 100;                       // limit pobieranych faktur
@@ -78,6 +79,33 @@
     ENABLE: true,
     SEPARATOR: ','
   };
+
+  // ---------- Przerywanie pracy ----------
+  // Przebieg trwa kilka minut i nie da się go ubić inaczej niż przeładowaniem
+  // strony, co gubi otwarte zakładki ERP. Przerywanie jest KOOPERACYJNE:
+  // flaga jest sprawdzana w bezpiecznych punktach (między fakturami, między
+  // stronami paginacji, między kandydatami, w każdej iteracji waitFor), więc
+  // skrypt kończy bieżącą operację i wychodzi, zamiast urwać się w środku
+  // klikania po DOM.
+  const ABORT = {
+    requested: false,
+    running: false
+  };
+
+  function requestAbort() {
+    if (!ABORT.running || ABORT.requested) return;
+    ABORT.requested = true;
+    console.warn('[Savpol Historia Faktur] Zgłoszono przerwanie — kończę przy najbliższym bezpiecznym punkcie.');
+  }
+
+  // Rzuca błąd oznaczony isAbort, żeby catch w pipeline odróżnił przerwanie
+  // użytkownika od prawdziwej awarii (inny komunikat, brak eksportu).
+  function throwIfAborted() {
+    if (!ABORT.requested) return;
+    const err = new Error('Przerwano przez użytkownika');
+    err.isAbort = true;
+    throw err;
+  }
 
   // Wyrazy pomijane przy ustalaniu rodziny produktu — nie niosą kategorii.
   const FAMILY_STOPWORDS = ['bt', 'mini', 'nowe', 'op', 'opak', 'do', 'na', 'z', 'w', 'i', 'ze'];
@@ -235,6 +263,7 @@
 
   async function waitFor(fn, tries = 40, interval = 250) {
     for (let i = 0; i < tries; i++) {
+      throwIfAborted();  // najdłuższe oczekiwania siedzą tutaj (do 10 s)
       const val = fn();
       if (val) return val;
       await sleep(interval);
@@ -384,13 +413,17 @@
     return !!changed;
   }
 
-  async function collectAllInvoices(maxCount, onProgress) {
-    const results = [];
+  // Przerwanie jest MIĘKKIE: łapiemy je tutaj i zwracamy faktury zebrane do tej
+  // pory, żeby kilka minut scrapowania nie przepadło. Wynik z niepełnej próby
+  // jest oznaczany jako częściowy na każdym wyjściu (nakładka, konsola, nazwa CSV).
+  async function collectAllInvoices(maxCount, onProgress, sink) {
+    const results = sink || [];
     const processedDocs = new Set();
     let invoicesProcessed = 0;
     let pageNum = 1;
 
     while (invoicesProcessed < maxCount && pageNum <= MAX_PAGES) {
+      throwIfAborted();
 
       // Numery dokumentów FA na bieżącej stronie, które jeszcze nie były przetworzone
       const faDocNumbers = getFaRows()
@@ -403,6 +436,7 @@
       if (onProgress) onProgress(`Strona ${pageNum}: ${faDocNumbers.length} nowych faktur FA`, { done: invoicesProcessed, total: maxCount });
 
       for (const targetDoc of faDocNumbers) {
+        throwIfAborted();
         if (invoicesProcessed >= maxCount) break;
 
         // Wiersz pobieramy na nowo za każdym razem (odporność na odświeżenia DOM)
@@ -460,6 +494,21 @@
     }
 
     return results;
+  }
+
+  // Opakowanie łapiące przerwanie — zwraca { rows, aborted }.
+  async function collectAllInvoicesInterruptible(maxCount, onProgress) {
+    const collected = [];
+    try {
+      const rows = await collectAllInvoices(maxCount, onProgress, collected);
+      return { rows, aborted: false };
+    } catch (err) {
+      if (err && err.isAbort) {
+        console.warn(`[Savpol Historia Faktur] Przerwano — zachowuję ${collected.length} zebranych pozycji.`);
+        return { rows: collected, aborted: true };
+      }
+      throw err;
+    }
   }
 
   // ---------- Krok 3: CSV ----------
@@ -809,10 +858,26 @@
       .find(li => li.textContent.includes(text)) || null;
   }
 
+  // Zakładka listy katalogu, czyli DOKŁADNIE "Katalog".
+  //
+  // Dopasowanie po fragmencie było błędem: obok listy ERP trzyma otwarte karty
+  // produktów o etykietach "Katalog: 0030078", a te nie mają ani siatki, ani
+  // wyszukiwarki. Substring trafiał w kartę produktu i przełączenie kończyło
+  // się błędem "Nie udało się przełączyć na zakładkę Katalog" — zależnie od
+  // tego, czy dla danego produktu karta była otwarta.
+  function findCatalogTabLi() {
+    const tabs = Array.from(document.querySelectorAll('li.k-item'))
+      .filter(li => li.offsetParent !== null);
+    const label = li => (li.textContent || '').replace(/\s+/g, ' ').trim();
+    return tabs.find(li => label(li) === 'Katalog')
+      || tabs.find(li => /^Katalog$/i.test(label(li)))
+      || null;
+  }
+
   // Panel treści zakładki katalogu. Kendo wiąże zakładkę z panelem przez
   // aria-controls, więc bierzemy go z powiązania, a nie z kolejności w DOM.
   function getCatalogPanel() {
-    const tab = findTabLiByText('Katalog');
+    const tab = findCatalogTabLi();
     if (!tab) return null;
     const id = tab.getAttribute('aria-controls');
     return id ? document.getElementById(id) : null;
@@ -822,15 +887,21 @@
   // ORAZ jej panel jest faktycznie widoczny. Sama widoczność siatki nie
   // wystarcza — siatka katalogu może zostać w DOM po przełączeniu zakładki.
   function isCatalogTabActive() {
-    const tab = findTabLiByText('Katalog');
+    const tab = findCatalogTabLi();
     if (!tab || !tab.classList.contains('k-state-active')) return false;
     const panel = getCatalogPanel();
     return !!panel && panel.offsetParent !== null;
   }
 
   async function switchToCatalogTab() {
-    const tab = findTabLiByText('Katalog');
-    if (!tab) return false;
+    const tab = findCatalogTabLi();
+    if (!tab) {
+      console.error('[Cross-sell] Nie znaleziono zakładki "Katalog". Widoczne zakładki:',
+        Array.from(document.querySelectorAll('li.k-item'))
+          .filter(li => li.offsetParent !== null)
+          .map(li => (li.textContent || '').replace(/\s+/g, ' ').trim()));
+      return false;
+    }
     if (!isCatalogTabActive()) {
       (tab.querySelector('span.k-link') || tab).click();
     }
@@ -848,7 +919,9 @@
     const rejected = [];
     let checked = 0; // ilu kandydatów faktycznie odpytaliśmy w katalogu
     const groupsSeen = new Set();
+    let aborted = false;
     for (const entry of dedupedRanked) {
+      if (ABORT.requested) { aborted = true; break; }  // miękkie: zachowaj sprawdzonych
       if (kept.length >= topN) break;
 
       if (isAuxiliaryKartoteka(entry.sku)) {
@@ -858,7 +931,13 @@
 
       if (onProgress) onProgress(`Sprawdzam dostępność: ${entry.sku}...`);
       checked++;
-      const info = await lookupCatalogItem(entry.sku);
+      let info;
+      try {
+        info = await lookupCatalogItem(entry.sku);
+      } catch (err) {
+        if (err && err.isAbort) { aborted = true; break; }
+        throw err;
+      }
       if (!info) {
         rejected.push({ ...entry, reason: 'nie znaleziono w katalogu' });
         continue;
@@ -890,7 +969,7 @@
       kept.push({ ...entry, dys: info.dys, group: info.group, caption: info.caption });
     }
     return {
-      kept, rejected,
+      kept, rejected, aborted,
       groupsSeen: Array.from(groupsSeen),
       checked, poolSize: dedupedRanked.length
     };
@@ -941,7 +1020,9 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `cross_sell_${result.anchorSku || 'produkt'}.csv`;
+    // Nazwa pliku niesie informację o niepełnej próbie — inaczej częściowy
+    // wynik jest nieodróżnialny od pełnego po samej zawartości.
+    a.download = `cross_sell_${result.anchorSku || 'produkt'}${result.partial ? '_CZESCIOWE' : ''}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1039,7 +1120,16 @@
   }
 
   async function runFullPipeline(button) {
-    const originalText = button.textContent;
+    // Drugie kliknięcie w trakcie pracy = żądanie przerwania, nie drugi przebieg.
+    if (ABORT.running) {
+      requestAbort();
+      button.textContent = 'Przerywam...';
+      return;
+    }
+
+    const originalText = ORIGINAL_BUTTON_TEXT;
+    ABORT.running = true;
+    ABORT.requested = false;
     const ui = PROGRESS.ENABLE ? createProgressOverlay() : noopProgress();
     try {
       ui.phase('Otwieram historię produktu...');
@@ -1057,17 +1147,29 @@
 
       ui.phase('Pobieram faktury...');
       button.textContent = 'Pobieram faktury...';
-      const data = await collectAllInvoices(MAX_INVOICES, (msg, n) => {
+      const collect = await collectAllInvoicesInterruptible(MAX_INVOICES, (msg, n) => {
         button.textContent = msg;
         ui.detail(msg);
         if (n) ui.count(n.done, n.total);
         console.log(msg);
       });
+      const data = collect.rows;
+      let partial = collect.aborted;
 
-      ui.phase('Analizuję cross-sell...');
+      // Przerwanie bez ani jednej faktury nie ma czego analizować.
+      if (partial && data.length === 0) {
+        const err = new Error('Przerwano przed odczytaniem pierwszej faktury');
+        err.isAbort = true;
+        throw err;
+      }
+      // Dalsze etapy mają już przebiegać do końca — inaczej sam fakt przerwania
+      // ubiłby analizę, dla której faktury właśnie zebraliśmy.
+      ABORT.requested = false;
+
+      ui.phase(partial ? 'Przerwano — analizuję zebrane faktury...' : 'Analizuję cross-sell...');
       ui.detail(data.length + ' pozycji z ' + new Set(data.map(r => r.doc)).size + ' faktur');
-      button.textContent = 'Analizuję cross-sell...';
       const analysis = analyzeCrossSell(data, mainSku);
+      analysis.partial = partial;
       logAnalysis(analysis);
 
       let historyTabLi = null;
@@ -1086,6 +1188,7 @@
         logAvailability(avail);
         analysis.candidates = avail.kept;
         analysis.weakSignal = analysis.weakSignal || avail.kept.length === 0;
+        if (avail.aborted) { partial = true; analysis.partial = true; }
       }
 
       if (EXPORT_RAW_HISTORY) {
@@ -1098,13 +1201,18 @@
       // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
       const delivered = await deliverSkus(analysis.candidates);
 
+      const partialNote = partial ? ' — próba NIEPEŁNA (przerwana)' : '';
+
       if (analysis.weakSignal) {
-        ui.finish(`Sygnał zbyt słaby (N=${analysis.N})`, false);
+        ui.finish(`Sygnał zbyt słaby (N=${analysis.N})${partialNote}`, false);
         ui.detail('Żaden kandydat nie przeszedł progu — brak rekomendacji.');
         button.textContent = `Sygnał zbyt słaby (N=${analysis.N})`;
       } else {
-        ui.finish(`Gotowe — ${analysis.candidates.length} kandydatów (N=${analysis.N})`, true);
-        ui.detail(delivered.text + (delivered.copied ? '  (w schowku)' : '  (skopiuj z konsoli)'));
+        ui.finish(`Gotowe — ${analysis.candidates.length} kandydatów (N=${analysis.N})${partialNote}`, !partial);
+        ui.result(delivered.text);
+        ui.detail(partial
+          ? `Wynik z ${analysis.N} faktur, nie z pełnej próby — traktuj ostrożnie.`
+          : (delivered.copied ? 'SKU są już w schowku.' : 'Zapis do schowka zawiódł — użyj przycisku Kopiuj.'));
         button.textContent = delivered.copied
           ? `Gotowe, SKU w schowku: ${delivered.text}`
           : `Gotowe: ${analysis.candidates.length} kandydatów — SKU w konsoli`;
@@ -1115,11 +1223,23 @@
 
       button.textContent = originalText;
     } catch (err) {
-      console.error('[Savpol Historia Faktur] Błąd:', err);
-      ui.finish('Błąd — zobacz konsolę', false);
-      ui.detail(String(err && err.message || err));
-      button.textContent = 'Błąd — zobacz konsolę';
+      if (err && err.isAbort) {
+        // Przerwanie użytkownika — świadomie NIE eksportujemy nic. Wynik
+        // z niepełnej próby wyglądałby jak normalna rekomendacja, a nie jest.
+        console.warn('[Savpol Historia Faktur] Przerwano przez użytkownika.');
+        ui.finish('Przerwano', false);
+        ui.detail('Nie zapisano CSV ani schowka — próba była niepełna.');
+        button.textContent = 'Przerwano';
+      } else {
+        console.error('[Savpol Historia Faktur] Błąd:', err);
+        ui.finish('Błąd — zobacz konsolę', false);
+        ui.detail(String(err && err.message || err));
+        button.textContent = 'Błąd — zobacz konsolę';
+      }
       setTimeout(() => { button.textContent = originalText; }, 3000);
+    } finally {
+      ABORT.running = false;
+      ABORT.requested = false;
     }
   }
 
@@ -1150,6 +1270,8 @@
     box.innerHTML = [
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
       '  <strong style="flex:1;font-size:13px">Historia faktur</strong>',
+      '  <button data-role="stop" type="button" style="cursor:pointer;font:inherit;font-size:12px;',
+      '    padding:2px 8px;border:0;border-radius:4px;background:#5a3a3a;color:#ffd9d4">Przerwij</button>',
       '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 4px">&times;</span>',
       '</div>',
       '<div data-role="phase" style="margin-bottom:6px;opacity:.85"></div>',
@@ -1160,12 +1282,39 @@
       '  <span data-role="count" style="flex:1"></span>',
       '  <span data-role="time"></span>',
       '</div>',
-      '<div data-role="detail" style="margin-top:8px;font-size:12px;opacity:.7;word-break:break-word"></div>'
+      '<div data-role="detail" style="margin-top:8px;font-size:12px;opacity:.7;word-break:break-word"></div>',
+      '<div data-role="resultbox" style="display:none;margin-top:10px;padding-top:10px;',
+      '    border-top:1px solid rgba(255,255,255,.15)">',
+      '  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;',
+      '      margin-bottom:4px">SKU do cross-sellingu</div>',
+      '  <div style="display:flex;gap:6px;align-items:stretch">',
+      '    <input data-role="skus" readonly style="flex:1;min-width:0;font:12px ui-monospace,Consolas,monospace;',
+      '        padding:5px 7px;border:1px solid rgba(255,255,255,.2);border-radius:4px;',
+      '        background:rgba(0,0,0,.25);color:#f5f7fa">',
+      '    <button data-role="copy" type="button" style="cursor:pointer;font:inherit;font-size:12px;',
+      '        padding:5px 10px;border:0;border-radius:4px;background:#4c9aff;color:#04142e;',
+      '        font-weight:600;white-space:nowrap">Kopiuj</button>',
+      '  </div>',
+      '</div>'
     ].join('');
 
     document.body.appendChild(box);
     const el = r => box.querySelector('[data-role="' + r + '"]');
     el('close').addEventListener('click', removeProgressOverlay);
+    el('copy').addEventListener('click', async () => {
+      const text = el('skus').value;
+      if (!text) return;
+      el('skus').select();
+      const ok = await copySkusToClipboard(text);
+      el('copy').textContent = ok ? 'Skopiowano' : 'Zaznacz i Ctrl+C';
+      setTimeout(() => { el('copy').textContent = 'Kopiuj'; }, 2000);
+    });
+    el('stop').addEventListener('click', () => {
+      requestAbort();
+      el('stop').disabled = true;
+      el('stop').textContent = 'Przerywam...';
+      el('phase').textContent = 'Przerywam — kończę bieżącą operację...';
+    });
 
     const started = Date.now();
     const fmt = ms => {
@@ -1186,7 +1335,15 @@
         }
         el('time').textContent = fmt(Date.now() - started);
       },
+      // Wynik do kopiuj-wklej. Pole jest readonly, ale zaznaczalne — jeśli
+      // zapis do schowka zawiedzie, zostaje Ctrl+C bez sięgania do konsoli.
+      result(text) {
+        if (!text) return;
+        el('skus').value = text;
+        el('resultbox').style.display = 'block';
+      },
       finish(text, ok) {
+        el('stop').remove();
         el('phase').textContent = text;
         el('bar').style.width = '100%';
         el('bar').style.background = ok ? '#36b37e' : '#ff5630';
@@ -1198,7 +1355,7 @@
 
   // Atrapa na wypadek PROGRESS.ENABLE = false — pipeline nie musi sprawdzać flagi.
   function noopProgress() {
-    return { phase() {}, detail() {}, count() {}, finish() {} };
+    return { phase() {}, detail() {}, count() {}, result() {}, finish() {} };
   }
 
   // ---------- Wstrzyknięcie przycisku ----------
@@ -1217,7 +1374,8 @@
     btn.id = BUTTON_ID;
     btn.className = 'csButton _csControl csButtonAction csAutogenerateButton UnderlinedButton icon-left';
     btn.style.cursor = 'pointer';
-    btn.innerHTML = '<div class="caption" title="Pobierz historię faktur">Pobierz historię faktur</div>';
+    btn.innerHTML = '<div class="caption" title="' + ORIGINAL_BUTTON_TEXT +
+      ' (w trakcie pracy: kliknij ponownie, żeby przerwać)">' + ORIGINAL_BUTTON_TEXT + '</div>';
     btn.addEventListener('click', () => runFullPipeline(btn));
     toolbar.appendChild(btn);
   }
