@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.9.1)
+## Stan obecny (v2.9.2)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -37,9 +37,12 @@ w punktach 1-4; został krok 5 (podstawianie wariantów).
 - **SKU do schowka** (`CLIPBOARD`) — główny wynik pracy, lista rozdzielona
   przecinkami, np. `0020669,0006418,0003863,0005105`.
 - Eksport: `cross_sell_<SKU>.csv` + opcjonalnie `historia_faktur_<SKU>.csv`.
-- **Nakładka z postępem** (`PROGRESS`) — pływające okno z etapem, paskiem,
-  licznikiem `X / 100 faktur` i czasem trwania. Na koniec pokazuje SKU wyniku
-  w polu z przyciskiem **Kopiuj**. Przebieg trwa kilka minut, a napis na
+- **Nakładka z postępem i wynikiem** (`PROGRESS`) — pływające okno z etapem,
+  paskiem, licznikiem `X / 100 faktur` i czasem trwania. Na koniec pokazuje SKU
+  w polu z przyciskiem **Kopiuj** i **zostaje na ekranie** do zamknięcia
+  krzyżykiem (`HIDE_AFTER_MS: 0`). Panel jest nośnikiem wyniku, nie tylko
+  postępu — autoukrywanie po 15 s zabierało go, zanim dało się użyć.
+  Wartość > 0 przywraca samoukrycie. Przebieg trwa kilka minut, a napis na
   przycisku w toolbarze ERP jest ciasny i łatwo go przeoczyć.
 - **Przerywanie pracy** (`ABORT`) — przycisk „Przerwij" w nakładce albo ponowne
   kliknięcie przycisku w toolbarze. Przerwanie jest **kooperacyjne i miękkie**:

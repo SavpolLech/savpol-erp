@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.9.1
+// @version      2.9.2
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -69,7 +69,11 @@
   // użytkownik musi widzieć, że coś się dzieje i na którym etapie.
   const PROGRESS = {
     ENABLE: true,
-    HIDE_AFTER_MS: 15000  // po zakończeniu nakładka znika sama; 0 = zostaje
+    // 0 = nakładka zostaje po zakończeniu, do zamknięcia krzyżykiem. Domyślnie
+    // zostaje, bo końcowy panel jest nośnikiem WYNIKU (SKU + przycisk Kopiuj),
+    // nie tylko postępu — autoukrywanie zabierało go, zanim dało się użyć.
+    // Wartość > 0 = liczba ms do samoukrycia.
+    HIDE_AFTER_MS: 0
   };
 
   // ---------- Konfiguracja: SKU do schowka ----------
@@ -1364,7 +1368,7 @@
       '  <strong style="flex:1;font-size:13px">Historia faktur</strong>',
       '  <button data-role="stop" type="button" style="cursor:pointer;font:inherit;font-size:12px;',
       '    padding:2px 8px;border:0;border-radius:4px;background:#5a3a3a;color:#ffd9d4">Przerwij</button>',
-      '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 4px">&times;</span>',
+      '  <span data-role="close" title="Zamknij panel" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
       '</div>',
       '<div data-role="phase" style="margin-bottom:6px;opacity:.85"></div>',
       '<div style="height:6px;background:rgba(255,255,255,.15);border-radius:3px;overflow:hidden">',
