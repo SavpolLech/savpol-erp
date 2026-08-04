@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.9.0
+// @version      2.9.1
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -396,6 +396,23 @@
     return !!next && !next.className.split(' ').includes('inactive');
   }
 
+  // Zrzut stanu pagera do diagnozy. Zaobserwowano przebieg, w którym
+  // pagerHasNextPage() zwracał true, a przejście na stronę 2 nie następowało
+  // (anchor 0031018, zebrane 20 faktur). Nie wiadomo jeszcze, czy pager
+  // naprawdę miał kolejną stronę, czy tylko nie oznaczył przycisku jako
+  // nieaktywnego — te dane to rozstrzygną, zamiast zgadywać i zmieniać logikę.
+  function describePager(pager) {
+    if (!pager) return '(brak widocznego pagera)';
+    const val = el => { const e = pager.querySelector(el); return e ? (e.value || e.textContent || '').trim() : '?'; };
+    const next = pager.querySelector('.NextPageButton');
+    return [
+      'strona=' + val('.ActivePageNoInput'),
+      'stron=' + val('.TotalPagesCount'),
+      'rekordow=' + val('.ResultsCountValue'),
+      'nextClass="' + (next ? next.className : 'brak przycisku') + '"'
+    ].join(' | ');
+  }
+
   async function goToNextPage(pager) {
     const inputBefore = pager.querySelector('.ActivePageNoInput');
     const beforeVal = inputBefore ? inputBefore.value : null;
@@ -410,6 +427,10 @@
     }, 40, 250);
 
     await sleep(400); // zapas na pełne wyrenderowanie wierszy nowej strony
+    if (!changed) {
+      console.warn('[Savpol Historia Faktur] Numer strony nie zmienił się po kliknięciu. ' +
+        'Pager przed: ' + beforeVal + ' | po: ' + describePager(getVisiblePager()));
+    }
     return !!changed;
   }
 
@@ -487,7 +508,8 @@
       if (onProgress) onProgress(`Przechodzę do strony ${pageNum + 1}...`, { done: invoicesProcessed, total: maxCount });
       const moved = await goToNextPage(pager);
       if (!moved) {
-        console.warn('[Savpol Historia Faktur] Nie udało się przejść do kolejnej strony — przerywam.');
+        console.warn('[Savpol Historia Faktur] Nie udało się przejść do kolejnej strony — przerywam. ' +
+          'Zebrano ' + invoicesProcessed + ' faktur. Stan pagera: ' + describePager(getVisiblePager()));
         break;
       }
       pageNum++;
@@ -858,20 +880,61 @@
       .find(li => li.textContent.includes(text)) || null;
   }
 
-  // Zakładka listy katalogu, czyli DOKŁADNIE "Katalog".
+  // Zakładka listy katalogu — rozpoznawana po ZAWARTOŚCI panelu, nie po nazwie.
   //
-  // Dopasowanie po fragmencie było błędem: obok listy ERP trzyma otwarte karty
-  // produktów o etykietach "Katalog: 0030078", a te nie mają ani siatki, ani
-  // wyszukiwarki. Substring trafiał w kartę produktu i przełączenie kończyło
-  // się błędem "Nie udało się przełączyć na zakładkę Katalog" — zależnie od
-  // tego, czy dla danego produktu karta była otwarta.
+  // Dopasowanie po etykiecie zawiodło dwukrotnie: substring "Katalog" trafiał
+  // w kartę produktu ("Katalog: 0030078"), a wymóg dokładnego "Katalog" nie
+  // trafiał w nic (log z realnego przebiegu: 18 widocznych li.k-item i zero
+  // trafień). Etykiety zależą od tego, jak użytkownik nawigował, a li.k-item
+  // to w tym ERP także pozycje menu w lewym panelu.
+  //
+  // Dlatego szukamy panelu, który FAKTYCZNIE zawiera wyszukiwarkę i siatkę
+  // katalogu. Sprawdzamy obecność w DOM, nie widoczność — panel nieaktywnej
+  // zakładki jest ukryty, ale jego treść istnieje.
+  function tabLabel(li) {
+    return (li.textContent || '').replace(/\s+/g, ' ').trim();
+  }
+
+  // Kandydaci na zakładki: tylko li.k-item powiązane z panelem przez
+  // aria-controls. Pozycje menu tego atrybutu nie mają, więc wypadają.
+  function listTabCandidates() {
+    return Array.from(document.querySelectorAll('li.k-item[aria-controls]'))
+      .filter(li => li.offsetParent !== null)
+      .map(li => ({ li, panel: document.getElementById(li.getAttribute('aria-controls')) }))
+      .filter(t => t.panel);
+  }
+
+  // Sygnatura listy katalogu: wyszukiwarka + siatka z kolumną stanu (QStockAv).
+  // Karta produktu i historia faktur nie mają tej kombinacji.
+  function panelLooksLikeCatalog(panel) {
+    const hasSearch = panel.querySelector('.csDBEditSearch input.Input') !== null;
+    const hasStockGrid = Array.from(panel.querySelectorAll('.cs-grid-data-table'))
+      .some(t => t.querySelector('td[data-datafield="QStockAv"]'));
+    return { hasSearch, hasStockGrid, score: (hasSearch ? 2 : 0) + (hasStockGrid ? 2 : 0) };
+  }
+
   function findCatalogTabLi() {
-    const tabs = Array.from(document.querySelectorAll('li.k-item'))
-      .filter(li => li.offsetParent !== null);
-    const label = li => (li.textContent || '').replace(/\s+/g, ' ').trim();
-    return tabs.find(li => label(li) === 'Katalog')
-      || tabs.find(li => /^Katalog$/i.test(label(li)))
-      || null;
+    const candidates = listTabCandidates();
+
+    // 1. Panel z pełną sygnaturą katalogu.
+    const full = candidates.find(t => {
+      const m = panelLooksLikeCatalog(t.panel);
+      return m.hasSearch && m.hasStockGrid;
+    });
+    if (full) return full.li;
+
+    // 2. Panel z wyszukiwarką i jakąkolwiek siatką — katalog przed pierwszym
+    //    wyszukaniem może nie mieć jeszcze wiersza z kolumną stanu.
+    const partial = candidates.find(t =>
+      t.panel.querySelector('.csDBEditSearch input.Input') !== null
+      && t.panel.querySelector('.cs-grid-data-table') !== null);
+    if (partial) return partial.li;
+
+    // 3. Ostatnia deska ratunku: etykieta. Zostawiona, bo gdy panel jest jeszcze
+    //    niezaładowany, nazwa to jedyna wskazówka. Karty produktu ("Katalog: X")
+    //    odrzucamy jawnie.
+    const byLabel = candidates.find(t => /^katalog$/i.test(tabLabel(t.li)));
+    return byLabel ? byLabel.li : null;
   }
 
   // Panel treści zakładki katalogu. Kendo wiąże zakładkę z panelem przez
@@ -896,10 +959,19 @@
   async function switchToCatalogTab() {
     const tab = findCatalogTabLi();
     if (!tab) {
-      console.error('[Cross-sell] Nie znaleziono zakładki "Katalog". Widoczne zakładki:',
-        Array.from(document.querySelectorAll('li.k-item'))
-          .filter(li => li.offsetParent !== null)
-          .map(li => (li.textContent || '').replace(/\s+/g, ' ').trim()));
+      // Log linia po linii — tablica zwija sie w konsoli do Array(n)
+      // i diagnoza wymaga klikania.
+      console.error('[Cross-sell] Nie znaleziono panelu katalogu. Kandydaci na zakladki:');
+      const diag = listTabCandidates();
+      if (!diag.length) console.error('  (brak li.k-item[aria-controls])');
+      diag.forEach(t => {
+        const m = panelLooksLikeCatalog(t.panel);
+        console.error(`  "${tabLabel(t.li)}"  search=${m.hasSearch}  stockGrid=${m.hasStockGrid}`);
+      });
+      console.error('[Cross-sell] Wszystkie widoczne li.k-item: '
+        + Array.from(document.querySelectorAll('li.k-item'))
+            .filter(li => li.offsetParent !== null)
+            .map(li => '"' + tabLabel(li) + '"').join(' | '));
       return false;
     }
     if (!isCatalogTabActive()) {
@@ -1022,7 +1094,10 @@
     a.href = url;
     // Nazwa pliku niesie informację o niepełnej próbie — inaczej częściowy
     // wynik jest nieodróżnialny od pełnego po samej zawartości.
-    a.download = `cross_sell_${result.anchorSku || 'produkt'}${result.partial ? '_CZESCIOWE' : ''}.csv`;
+    // Nazwa pliku niesie zastrzeżenia — inaczej wynik obniżonej jakości jest
+    // nieodróżnialny od pełnego po samej zawartości.
+    const marks = (result.partial ? '_CZESCIOWE' : '') + (result.unverified ? '_BEZ_WERYFIKACJI' : '');
+    a.download = `cross_sell_${result.anchorSku || 'produkt'}${marks}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1177,18 +1252,26 @@
         historyTabLi = document.querySelector('li.k-state-active'); // zapamiętane PRZED przejściem do katalogu
         ui.phase('Sprawdzam dostępność w katalogu...');
         button.textContent = 'Sprawdzam dostępność w katalogu...';
-      const switched = await switchToCatalogTab();
-      if (!switched) {
-        throw new Error('Nie udalo sie przelaczyc na zakladke "Katalog" - przerywam sprawdzanie dostepnosci, zeby nie wpisywac SKU w zlym widoku.');
-      }
-        const avail = await applyAvailabilityFilter(analysis.dedupedRanked, CROSS_SELL.TOP_N, (msg) => {
-          button.textContent = msg;
-          ui.detail(msg);
-        });
-        logAvailability(avail);
-        analysis.candidates = avail.kept;
-        analysis.weakSignal = analysis.weakSignal || avail.kept.length === 0;
-        if (avail.aborted) { partial = true; analysis.partial = true; }
+
+        // Awaria katalogu DEGRADUJE wynik, nie kasuje przebiegu. Wcześniej
+        // rzucała wyjątek i kilka minut scrapowania plus gotowy ranking
+        // przepadały — użytkownik nie dostawał nic. Ranking z analizy jest
+        // wartościowy sam w sobie; brakuje mu tylko weryfikacji stanu i grupy.
+        const switched = await switchToCatalogTab();
+        if (!switched) {
+          console.warn('[Cross-sell] Nie udało się przełączyć na katalog — ' +
+            'zwracam wynik BEZ weryfikacji stanu magazynowego i grupy.');
+          analysis.unverified = true;
+        } else {
+          const avail = await applyAvailabilityFilter(analysis.dedupedRanked, CROSS_SELL.TOP_N, (msg) => {
+            button.textContent = msg;
+            ui.detail(msg);
+          });
+          logAvailability(avail);
+          analysis.candidates = avail.kept;
+          analysis.weakSignal = analysis.weakSignal || avail.kept.length === 0;
+          if (avail.aborted) { partial = true; analysis.partial = true; }
+        }
       }
 
       if (EXPORT_RAW_HISTORY) {
@@ -1201,18 +1284,27 @@
       // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
       const delivered = await deliverSkus(analysis.candidates);
 
-      const partialNote = partial ? ' — próba NIEPEŁNA (przerwana)' : '';
+      const notes = [];
+      if (partial) notes.push('próba NIEPEŁNA (przerwana)');
+      if (analysis.unverified) notes.push('BEZ weryfikacji stanu i grupy');
+      const partialNote = notes.length ? ' — ' + notes.join(', ') : '';
 
       if (analysis.weakSignal) {
         ui.finish(`Sygnał zbyt słaby (N=${analysis.N})${partialNote}`, false);
         ui.detail('Żaden kandydat nie przeszedł progu — brak rekomendacji.');
         button.textContent = `Sygnał zbyt słaby (N=${analysis.N})`;
       } else {
-        ui.finish(`Gotowe — ${analysis.candidates.length} kandydatów (N=${analysis.N})${partialNote}`, !partial);
+        const clean = !partial && !analysis.unverified;
+        ui.finish(`Gotowe — ${analysis.candidates.length} kandydatów (N=${analysis.N})${partialNote}`, clean);
         ui.result(delivered.text);
-        ui.detail(partial
-          ? `Wynik z ${analysis.N} faktur, nie z pełnej próby — traktuj ostrożnie.`
-          : (delivered.copied ? 'SKU są już w schowku.' : 'Zapis do schowka zawiódł — użyj przycisku Kopiuj.'));
+        if (analysis.unverified) {
+          ui.detail('Nie sprawdzono stanu magazynowego ani grupy — mogą tu być ' +
+            'produkty niedostępne lub niewysyłkowe. Zobacz konsolę.');
+        } else if (partial) {
+          ui.detail(`Wynik z ${analysis.N} faktur, nie z pełnej próby — traktuj ostrożnie.`);
+        } else {
+          ui.detail(delivered.copied ? 'SKU są już w schowku.' : 'Zapis do schowka zawiódł — użyj przycisku Kopiuj.');
+        }
         button.textContent = delivered.copied
           ? `Gotowe, SKU w schowku: ${delivered.text}`
           : `Gotowe: ${analysis.candidates.length} kandydatów — SKU w konsoli`;

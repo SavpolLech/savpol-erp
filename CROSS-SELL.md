@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.9.0)
+## Stan obecny (v2.9.1)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -87,6 +87,42 @@ z pełnej. Dwie pozycje wspólne z czterech.
 **Zakładka historii zostaje otwarta po przerwaniu** — świadomie. W przerwanym
 stanie nie wiadomo, w którym widoku jesteśmy, a zamykanie „aktywnej zakładki"
 mogłoby zamknąć nie tę, o którą chodzi.
+
+### Degradacja zamiast utraty przebiegu
+
+Awaria odczytu katalogu **nie kasuje** wyniku. Wcześniej rzucała wyjątek i cała
+praca przepadała — realny przebieg zescrapował 20 faktur, policzył ranking
+59 partnerów i użytkownik nie dostał nic.
+
+Ranking z `analyzeCrossSell()` jest wartościowy sam w sobie; brakuje mu tylko
+weryfikacji stanu magazynowego i grupy. Więc gdy przełączenie na katalog
+zawiedzie, skrypt ustawia `analysis.unverified` i **kończy normalnie**.
+
+Oznaczenia obniżonej jakości wyniku, na każdym wyjściu:
+
+| sytuacja | flaga | sufiks CSV | nakładka |
+|---|---|---|---|
+| przerwane przez użytkownika | `partial` | `_CZESCIOWE` | „próba NIEPEŁNA (przerwana)" |
+| katalog niedostępny | `unverified` | `_BEZ_WERYFIKACJI` | „BEZ weryfikacji stanu i grupy" |
+
+Oba mogą wystąpić razem — sufiksy się sklejają. Przy `unverified` w wyniku mogą
+siedzieć produkty niedostępne lub niewysyłkowe, bo nie przeszły przez `DYS.`
+ani przez `groupDeny`.
+
+### OTWARTE: paginacja stanęła po pierwszej stronie
+
+Zaobserwowane raz (anchor `0031018`): `pagerHasNextPage()` zwrócił `true`,
+kliknięcie „następna strona" nie zmieniło numeru, przebieg skończył się na
+20 fakturach. Wcześniej dla `0030078` zebrano 45 z 46 rekordów — możliwe, że to
+ten sam problem.
+
+**Nie wiadomo, czy pager naprawdę miał kolejną stronę, czy tylko nie oznaczył
+przycisku jako nieaktywnego.** Zamiast zgadywać i zmieniać logikę, `describePager()`
+loguje teraz stan pagera przy nieudanym przejściu: numer strony, liczbę stron,
+liczbę rekordów i klasy przycisku. Uwaga: liczniki `.TotalPagesCount`
+i `.ResultsCountValue` są znane z pokazywania błędnych wartości po zmianie
+strony (dlatego pętla nigdy na nich nie polegała) — traktuj je jako wskazówkę,
+nie jako prawdę.
 
 ### `EXCLUSIONS` filtruje TYLKO kandydatów, nigdy anchora
 
@@ -257,13 +293,19 @@ Warto o nich wiedzieć przed dopisywaniem reguł:
   wyjątki `delipasta` i `polewa`.
 - **Nie matchuj po nazwach owoców.** „Delipasta Malinowa" nie jest mrożonką.
   Jedyny pewny keyword to rdzeń `mrożon`.
-- **Zakładki ERP nie da się szukać po fragmencie nazwy.** Obok listy katalogu
-  ERP trzyma otwarte karty produktów o etykietach `Katalog: 0030078`, a te nie
-  mają ani siatki, ani wyszukiwarki. Dopasowanie `textContent.includes('Katalog')`
-  trafiało w kartę produktu i przełączenie kończyło się błędem „Nie udało się
-  przełączyć na zakładkę Katalog" — losowo, zależnie od tego, czy dla danego
-  produktu karta była otwarta. `findCatalogTabLi()` wymaga **dokładnej** etykiety
-  `Katalog`. Zakładka historii nazywa się `Pozycje dokumentów: <SKU>`.
+- **Zakładek ERP nie da się szukać po nazwie — ani po fragmencie, ani dokładnie.**
+  Dwie nieudane próby, obie potwierdzone realnym przebiegiem:
+  `textContent.includes('Katalog')` trafiało w kartę produktu (`Katalog: 0030078`),
+  która nie ma siatki ani wyszukiwarki; wymóg dokładnego `Katalog` nie trafiał
+  w nic (log: 18 widocznych `li.k-item`, zero trafień). Etykiety zależą od tego,
+  jak użytkownik nawigował, a `li.k-item` to w tym ERP także pozycje menu
+  w lewym panelu.
+  Rozwiązanie: **identyfikacja po zawartości panelu**, nie po nazwie.
+  `listTabCandidates()` bierze tylko `li.k-item[aria-controls]` (pozycje menu
+  nie mają tego atrybutu), a `panelLooksLikeCatalog()` szuka panelu
+  z wyszukiwarką `.csDBEditSearch` i siatką z kolumną `QStockAv`. Obecność
+  w DOM, nie widoczność — panel nieaktywnej zakładki jest ukryty, ale jego
+  treść istnieje. Etykieta została jako ostatnia deska ratunku.
 - **Liczba mnoga potrzebuje osobnego rdzenia.** `prefix: 'wafel'` nie łapało
   „Wafle płaskie… HANMART", bo `wafl` **nie jest** prefiksem `wafel` (między
   „waf" i „l" stoi „e"). Żaden z tych rdzeni nie zawiera drugiego — muszą być oba.
