@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.7.1)
+## Stan obecny (v2.8.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -37,10 +37,14 @@ w punktach 1-4; został krok 5 (podstawianie wariantów).
 - **SKU do schowka** (`CLIPBOARD`) — główny wynik pracy, lista rozdzielona
   przecinkami, np. `0020669,0006418,0003863,0005105`.
 - Eksport: `cross_sell_<SKU>.csv` + opcjonalnie `historia_faktur_<SKU>.csv`.
+- **Nakładka z postępem** (`PROGRESS`) — pływające okno z etapem, paskiem,
+  licznikiem `X / 100 faktur` i czasem trwania. Przebieg trwa kilka minut,
+  a napis na przycisku w toolbarze ERP jest ciasny i łatwo go przeoczyć.
 - Diagnostyka w konsoli (`console.table`): ranking, wykluczenia z nazwą reguły,
   duplikaty rodzin, wynik filtra dostępności, pokrycie sprawdzania grup.
 
-Filtr dostępności i grupy wymagają DOM-u ERP, więc **nie są testowalne offline** —
+Filtr dostępności, grupy i nakładka postępu wymagają DOM-u, więc **nie są
+testowalne offline** —
 analiza co-occurrence, reguły nazwowe i format schowka są. Patrz „Testowanie
 zmian w regułach".
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.7.1
+// @version      2.8.0
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -60,6 +60,15 @@
   // (Zadanie 2), więc realnie działa tylko, gdy AVAILABILITY.ENABLE = true.
   const GROUP_FILTER = {
     ENABLE: true // wyłącznik; false = grupa nie wpływa na wynik (zachowanie sprzed Zadania 3)
+  };
+
+  // ---------- Konfiguracja: nakładka z postępem ----------
+  // Pływające okno w prawym dolnym rogu. Napis na przycisku w toolbarze jest
+  // ciasny i gubi się wśród kontrolek ERP, a przebieg trwa kilka minut —
+  // użytkownik musi widzieć, że coś się dzieje i na którym etapie.
+  const PROGRESS = {
+    ENABLE: true,
+    HIDE_AFTER_MS: 15000  // po zakończeniu nakładka znika sama; 0 = zostaje
   };
 
   // ---------- Konfiguracja: SKU do schowka ----------
@@ -391,7 +400,7 @@
         })
         .filter(doc => doc && !processedDocs.has(doc));
 
-      if (onProgress) onProgress(`Strona ${pageNum}: ${faDocNumbers.length} nowych faktur FA...`);
+      if (onProgress) onProgress(`Strona ${pageNum}: ${faDocNumbers.length} nowych faktur FA`, { done: invoicesProcessed, total: maxCount });
 
       for (const targetDoc of faDocNumbers) {
         if (invoicesProcessed >= maxCount) break;
@@ -422,7 +431,7 @@
         const invoiceRows = extractInvoiceRows(docNumber);
         invoicesProcessed++;
 
-        if (onProgress) onProgress(`[${invoicesProcessed}/${maxCount}] ${docNumber}: ${invoiceRows.length} pozycji`);
+        if (onProgress) onProgress(`${docNumber}: ${invoiceRows.length} pozycji`, { done: invoicesProcessed, total: maxCount });
         results.push(...invoiceRows);
 
         const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
@@ -437,11 +446,11 @@
       // Sprawdź czy jest kolejna strona listy faktur
       const pager = getVisiblePager();
       if (!pagerHasNextPage(pager)) {
-        if (onProgress) onProgress(`Brak kolejnych stron. Zebrano ${invoicesProcessed} faktur.`);
+        if (onProgress) onProgress(`Brak kolejnych stron. Zebrano ${invoicesProcessed} faktur.`, { done: invoicesProcessed, total: invoicesProcessed });
         break;
       }
 
-      if (onProgress) onProgress(`Przechodzę do strony ${pageNum + 1}...`);
+      if (onProgress) onProgress(`Przechodzę do strony ${pageNum + 1}...`, { done: invoicesProcessed, total: maxCount });
       const moved = await goToNextPage(pager);
       if (!moved) {
         console.warn('[Savpol Historia Faktur] Nie udało się przejść do kolejnej strony — przerywam.');
@@ -990,23 +999,32 @@
 
   async function runFullPipeline(button) {
     const originalText = button.textContent;
+    const ui = PROGRESS.ENABLE ? createProgressOverlay() : noopProgress();
     try {
+      ui.phase('Otwieram historię produktu...');
       button.textContent = 'Otwieram historię...';
       const opened = openHistory();
       if (!opened) throw new Error('Nie znaleziono przycisku "Historia produktu". Czy produkt jest zaznaczony?');
       await sleep(500);
 
       const mainSku = await waitFor(getMainProductSku);
+      ui.detail('Produkt: ' + (mainSku || '?'));
 
+      ui.phase('Ustawiam filtry (od 1.01.2024, wszystkie)...');
       button.textContent = 'Ustawiam filtry...';
       await setFilters();
 
+      ui.phase('Pobieram faktury...');
       button.textContent = 'Pobieram faktury...';
-      const data = await collectAllInvoices(MAX_INVOICES, (msg) => {
+      const data = await collectAllInvoices(MAX_INVOICES, (msg, n) => {
         button.textContent = msg;
+        ui.detail(msg);
+        if (n) ui.count(n.done, n.total);
         console.log(msg);
       });
 
+      ui.phase('Analizuję cross-sell...');
+      ui.detail(data.length + ' pozycji z ' + new Set(data.map(r => r.doc)).size + ' faktur');
       button.textContent = 'Analizuję cross-sell...';
       const analysis = analyzeCrossSell(data, mainSku);
       logAnalysis(analysis);
@@ -1014,12 +1032,16 @@
       let historyTabLi = null;
       if (AVAILABILITY.ENABLE) {
         historyTabLi = document.querySelector('li.k-state-active'); // zapamiętane PRZED przejściem do katalogu
+        ui.phase('Sprawdzam dostępność w katalogu...');
         button.textContent = 'Sprawdzam dostępność w katalogu...';
       const switched = await switchToCatalogTab();
       if (!switched) {
         throw new Error('Nie udalo sie przelaczyc na zakladke "Katalog" - przerywam sprawdzanie dostepnosci, zeby nie wpisywac SKU w zlym widoku.');
       }
-        const avail = await applyAvailabilityFilter(analysis.dedupedRanked, CROSS_SELL.TOP_N, (msg) => { button.textContent = msg; });
+        const avail = await applyAvailabilityFilter(analysis.dedupedRanked, CROSS_SELL.TOP_N, (msg) => {
+          button.textContent = msg;
+          ui.detail(msg);
+        });
         logAvailability(avail);
         analysis.candidates = avail.kept;
         analysis.weakSignal = analysis.weakSignal || avail.kept.length === 0;
@@ -1036,8 +1058,12 @@
       const delivered = await deliverSkus(analysis.candidates);
 
       if (analysis.weakSignal) {
+        ui.finish(`Sygnał zbyt słaby (N=${analysis.N})`, false);
+        ui.detail('Żaden kandydat nie przeszedł progu — brak rekomendacji.');
         button.textContent = `Sygnał zbyt słaby (N=${analysis.N})`;
       } else {
+        ui.finish(`Gotowe — ${analysis.candidates.length} kandydatów (N=${analysis.N})`, true);
+        ui.detail(delivered.text + (delivered.copied ? '  (w schowku)' : '  (skopiuj z konsoli)'));
         button.textContent = delivered.copied
           ? `Gotowe, SKU w schowku: ${delivered.text}`
           : `Gotowe: ${analysis.candidates.length} kandydatów — SKU w konsoli`;
@@ -1049,9 +1075,89 @@
       button.textContent = originalText;
     } catch (err) {
       console.error('[Savpol Historia Faktur] Błąd:', err);
+      ui.finish('Błąd — zobacz konsolę', false);
+      ui.detail(String(err && err.message || err));
       button.textContent = 'Błąd — zobacz konsolę';
       setTimeout(() => { button.textContent = originalText; }, 3000);
     }
+  }
+
+  // ---------- Nakładka z postępem ----------
+  const PROGRESS_ID = 'savpol-progress-overlay';
+
+  function removeProgressOverlay() {
+    const old = document.getElementById(PROGRESS_ID);
+    if (old) old.remove();
+  }
+
+  // Styl inline, bo arkusze ERP potrafią nadpisać klasy. Wysoki z-index,
+  // pointer-events tylko na przycisku zamknięcia, żeby nakładka nie blokowała
+  // klikania w aplikację pod nią.
+  function createProgressOverlay() {
+    removeProgressOverlay();
+
+    const box = document.createElement('div');
+    box.id = PROGRESS_ID;
+    box.style.cssText = [
+      'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483000',
+      'width:320px', 'padding:14px 16px', 'box-sizing:border-box',
+      'background:#1f2933', 'color:#f5f7fa', 'border-radius:8px',
+      'box-shadow:0 6px 24px rgba(0,0,0,.35)',
+      'font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif'
+    ].join(';');
+
+    box.innerHTML = [
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
+      '  <strong style="flex:1;font-size:13px">Historia faktur</strong>',
+      '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 4px">&times;</span>',
+      '</div>',
+      '<div data-role="phase" style="margin-bottom:6px;opacity:.85"></div>',
+      '<div style="height:6px;background:rgba(255,255,255,.15);border-radius:3px;overflow:hidden">',
+      '  <div data-role="bar" style="height:100%;width:0%;background:#4c9aff;transition:width .2s"></div>',
+      '</div>',
+      '<div style="display:flex;margin-top:6px;font-size:12px;opacity:.75">',
+      '  <span data-role="count" style="flex:1"></span>',
+      '  <span data-role="time"></span>',
+      '</div>',
+      '<div data-role="detail" style="margin-top:8px;font-size:12px;opacity:.7;word-break:break-word"></div>'
+    ].join('');
+
+    document.body.appendChild(box);
+    const el = r => box.querySelector('[data-role="' + r + '"]');
+    el('close').addEventListener('click', removeProgressOverlay);
+
+    const started = Date.now();
+    const fmt = ms => {
+      const sec = Math.round(ms / 1000);
+      return sec < 60 ? sec + ' s' : Math.floor(sec / 60) + ' min ' + String(sec % 60).padStart(2, '0') + ' s';
+    };
+
+    return {
+      phase(text) { el('phase').textContent = text; },
+      detail(text) { el('detail').textContent = text || ''; },
+      // done/total sterują paskiem; bez total pasek zostaje bez zmian
+      count(done, total) {
+        if (total) {
+          el('bar').style.width = Math.min(100, Math.round(100 * done / total)) + '%';
+          el('count').textContent = done + ' / ' + total + ' faktur';
+        } else {
+          el('count').textContent = done ? done + ' faktur' : '';
+        }
+        el('time').textContent = fmt(Date.now() - started);
+      },
+      finish(text, ok) {
+        el('phase').textContent = text;
+        el('bar').style.width = '100%';
+        el('bar').style.background = ok ? '#36b37e' : '#ff5630';
+        el('time').textContent = fmt(Date.now() - started);
+        if (PROGRESS.HIDE_AFTER_MS > 0) setTimeout(removeProgressOverlay, PROGRESS.HIDE_AFTER_MS);
+      }
+    };
+  }
+
+  // Atrapa na wypadek PROGRESS.ENABLE = false — pipeline nie musi sprawdzać flagi.
+  function noopProgress() {
+    return { phase() {}, detail() {}, count() {}, finish() {} };
   }
 
   // ---------- Wstrzyknięcie przycisku ----------
