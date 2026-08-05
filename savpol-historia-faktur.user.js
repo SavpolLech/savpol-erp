@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.9.2
+// @version      2.9.3
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -69,10 +69,14 @@
   // użytkownik musi widzieć, że coś się dzieje i na którym etapie.
   const PROGRESS = {
     ENABLE: true,
-    // 0 = nakładka zostaje po zakończeniu, do zamknięcia krzyżykiem. Domyślnie
-    // zostaje, bo końcowy panel jest nośnikiem WYNIKU (SKU + przycisk Kopiuj),
-    // nie tylko postępu — autoukrywanie zabierało go, zanim dało się użyć.
-    // Wartość > 0 = liczba ms do samoukrycia.
+    // 0 = nakładka zostaje do zamknięcia krzyżykiem albo do kolejnego przebiegu.
+    // Domyślnie zostaje, bo końcowy panel jest nośnikiem WYNIKU (SKU + przycisk
+    // Kopiuj), nie tylko postępu — autoukrywanie zabierało go, zanim dało się
+    // użyć. Wartość > 0 = liczba ms do samoukrycia.
+    //
+    // Sama ta wartość nie wystarcza: ERP przerysowuje widok i potrafi wyrzucić
+    // element z DOM, więc nakładka jest dodatkowo doczepiana z powrotem —
+    // patrz progressKeepAlive przy createProgressOverlay().
     HIDE_AFTER_MS: 0
   };
 
@@ -1342,7 +1346,25 @@
   // ---------- Nakładka z postępem ----------
   const PROGRESS_ID = 'savpol-progress-overlay';
 
+  // Nakładka niesie WYNIK, więc musi przeżyć do świadomego zamknięcia.
+  // ERP przerysowuje widok (m.in. przy zamykaniu zakładki historii) i potrafi
+  // wyrzucić nasz element z DOM. Trzymamy referencję i doczepiamy go z powrotem,
+  // dopóki użytkownik sam nie kliknie krzyżyka.
+  let progressBox = null;
+  let progressKeepAlive = null;
+
+  function stopProgressKeepAlive() {
+    if (progressKeepAlive) {
+      clearInterval(progressKeepAlive);
+      progressKeepAlive = null;
+    }
+  }
+
+  // Zamknięcie na żądanie użytkownika albo przed nowym przebiegiem —
+  // w obu wypadkach przestajemy pilnować obecności.
   function removeProgressOverlay() {
+    stopProgressKeepAlive();
+    progressBox = null;
     const old = document.getElementById(PROGRESS_ID);
     if (old) old.remove();
   }
@@ -1395,6 +1417,15 @@
     ].join('');
 
     document.body.appendChild(box);
+    progressBox = box;
+    // Ten sam węzeł jest doczepiany ponownie, więc nasłuchy i wpisana treść
+    // (SKU w polu wyniku) zostają nienaruszone.
+    stopProgressKeepAlive();
+    progressKeepAlive = setInterval(() => {
+      if (progressBox && !progressBox.isConnected) {
+        document.body.appendChild(progressBox);
+      }
+    }, 1000);
     const el = r => box.querySelector('[data-role="' + r + '"]');
     el('close').addEventListener('click', removeProgressOverlay);
     el('copy').addEventListener('click', async () => {
