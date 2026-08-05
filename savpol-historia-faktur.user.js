@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.9.3
+// @version      2.10.0
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -78,6 +78,14 @@
     // element z DOM, więc nakładka jest dodatkowo doczepiana z powrotem —
     // patrz progressKeepAlive przy createProgressOverlay().
     HIDE_AFTER_MS: 0
+  };
+
+  // ---------- Konfiguracja: stan katalogu po zakończeniu ----------
+  // Po sprawdzeniu kandydatów wyszukiwarka katalogu zostaje z SKU ostatniego
+  // z nich, co jest mylące — widok pokazuje przypadkowy produkt z rekomendacji,
+  // nie ten, który analizowaliśmy. Przywracamy w niej anchora.
+  const FINISH = {
+    SEARCH_ANCHOR: true
   };
 
   // ---------- Konfiguracja: SKU do schowka ----------
@@ -1186,6 +1194,30 @@
   }
 
   // ---------- Główny pipeline ----------
+  // Przywraca w katalogu wyszukanie anchora. Krok kosmetyczny i CELOWO
+  // nieblokujący: wynik jest już policzony, więc awaria tutaj nie może go
+  // zniweczyć — logujemy ostrzeżenie i idziemy dalej.
+  async function searchAnchorInCatalog(anchorSku) {
+    if (!FINISH.SEARCH_ANCHOR || !anchorSku) return false;
+    try {
+      if (!isCatalogTabActive()) {
+        const switched = await switchToCatalogTab();
+        if (!switched) {
+          console.warn('[Cross-sell] Nie mogę wrócić na katalog — pomijam ' +
+            'przywrócenie wyszukania anchora ' + anchorSku + '.');
+          return false;
+        }
+      }
+      await searchCatalog(anchorSku);
+      console.log('[Cross-sell] Katalog pozostawiony na anchorze ' + anchorSku + '.');
+      return true;
+    } catch (err) {
+      console.warn('[Cross-sell] Nie udało się przywrócić wyszukania anchora ' +
+        anchorSku + ':', err && err.message || err);
+      return false;
+    }
+  }
+
   // Zamyka zakładkę "Historia produktu". Po przełączeniu na katalog aktywną
   // zakładką nie jest już historia, więc gdy mamy zapamiętaną referencję,
   // zamykamy po niej; bez referencji — po zakładce aktywnej.
@@ -1279,6 +1311,14 @@
           analysis.candidates = avail.kept;
           analysis.weakSignal = analysis.weakSignal || avail.kept.length === 0;
           if (avail.aborted) { partial = true; analysis.partial = true; }
+        }
+
+        // Ostatnia czynność w katalogu: przywróć wyszukanie anchora, żeby widok
+        // nie został na SKU ostatniego sprawdzanego kandydata.
+        if (FINISH.SEARCH_ANCHOR) {
+          ui.phase('Przywracam w katalogu produkt wyjściowy...');
+          button.textContent = 'Przywracam widok katalogu...';
+          await searchAnchorInCatalog(mainSku);
         }
       }
 

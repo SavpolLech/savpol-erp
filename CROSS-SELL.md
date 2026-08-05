@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.9.3)
+## Stan obecny (v2.10.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -47,6 +47,12 @@ w punktach 1-4; został krok 5 (podstawianie wariantów).
   zamykaniu zakładki historii) i wyrzuca element z DOM, więc `progressKeepAlive`
   doczepia **ten sam węzeł** z powrotem co sekundę — nasłuchy i wpisane SKU
   zostają nienaruszone. Pilnowanie kończy się na krzyżyku lub nowym przebiegu.
+- **Powrót katalogu na anchora** (`FINISH.SEARCH_ANCHOR`) — po sprawdzeniu
+  kandydatów wyszukiwarka katalogu zostawała z SKU ostatniego z nich, więc widok
+  pokazywał przypadkowy produkt z rekomendacji. Ostatnią czynnością w katalogu
+  jest teraz ponowne wyszukanie produktu wyjściowego. Krok kosmetyczny
+  i **nieblokujący** — wynik jest już policzony, awaria tutaj tylko loguje
+  ostrzeżenie.
 - **Przerywanie pracy** (`ABORT`) — przycisk „Przerwij" w nakładce albo ponowne
   kliknięcie przycisku w toolbarze. Przerwanie jest **kooperacyjne i miękkie**:
   patrz „Przerywanie i wyniki częściowe".
@@ -154,7 +160,10 @@ zero produktów, choć dane były dobre — N=99, lider 26%, pula 26 pozycji.
 3. Iteracja po fakturach typu `FA`, otwarcie każdej, odczyt pozycji
    (SKU, nazwa, ilość). Deduplikacja po numerze dokumentu.
 4. `analyzeCrossSell()` — kroki opisane niżej.
-5. Zapis CSV.
+5. Filtr dostępności w katalogu (`AVAILABILITY`), a po nim powrót wyszukiwarki
+   katalogu na anchora (`FINISH.SEARCH_ANCHOR`).
+6. Zapis CSV, SKU do schowka i do panelu wyniku.
+7. Zamknięcie zakładki historii.
 
 ### Kroki analizy
 
