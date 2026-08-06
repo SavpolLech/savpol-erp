@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.13.2)
+## Stan obecny (v2.15.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -629,6 +629,47 @@ przycisk mówi „Wpisz SKU w wyszukiwarkę" i robi zrzut DOM do logu.
 
 Przycisk główny nazywa się teraz **„🧩 Zbuduj opis"**: cross-selling i tak
 był tylko etapem, a wynikiem pracy jest opis produktu.
+
+## Historia faktur trafia do repo, nie na dysk (v2.15.0)
+
+Pobieranie CSV wyłączone (`EXPORT_RAW_HISTORY`, `EXPORT_CROSS_SELL_CSV` — flagi
+zostają, bo przy dostrajaniu reguł surowa historia bywa potrzebna). Powód nie
+jest kosmetyczny: nad opisami pracują trzy osoby równolegle i pliki w cudzych
+Pobranych po prostu się gubiły. Nie dało się odpowiedzieć, które produkty są
+zrobione ani na jakich danych powstała rekomendacja.
+
+Historia idzie do **prywatnego** repo `esavpol-pdp`, ale nie bezpośrednio.
+Ten skrypt nie trzyma żadnego sekretu — wysyła dane do apki generatora,
+a ona commituje swoim serwerowym `GITHUB_PAT`. Alternatywa (PAT w Tampermonkey
+u każdej z trzech osób) była gorsza pod każdym względem.
+
+**Dlaczego kolejka, a nie wysyłka od razu:** z `erp.savpol.pl` żądanie do
+generatora jest cross-origin i nie niesie ciasteczka sesji. Skrypt odkłada więc
+wynik w `GM_setValue` (`invoice_history_queue`), a wysyła dopiero po otwarciu
+generatora — tam jest **same-origin**, bez CORS-a i preflightu. Kolejka radzi
+sobie z sytuacją, gdy ktoś zrobi kilka produktów, zanim otworzy generator.
+
+Obsługa odpowiedzi wynika z tego, czy ponowienie ma sens:
+
+| Kod | Zachowanie |
+|---|---|
+| `200` | wpis znika z kolejki |
+| `401` | **cała** kolejka zostaje, przerywamy — sesja wygasła, po zalogowaniu pójdzie za jednym razem |
+| `400`, `413` | wpis znika — dane są trwale odrzucone, ponawianie tylko zablokowałoby kolejkę |
+| reszta / błąd sieci | wpis zostaje |
+
+Do kolejki trafia też przebieg **bez kandydatów**: „sygnał zbyt słaby" jest
+wynikiem, a bez zapisu ktoś powtórzy tę samą trzyminutową robotę.
+
+**Sprawdzenie duplikatu przed startem** (`GET /api/invoice-history?sku=`) idzie
+z ERP, więc cross-origin — stąd `GM_xmlhttpRequest` (omija CORS, dowozi
+ciasteczko) i `@connect esavpol-pdp.vercel.app`. Gdy historia już jest, skrypt
+**pyta**, zamiast decydować: przebieg `partial` albo `unverified` warto powtórzyć,
+kompletny raczej nie. Każda awaria sprawdzenia jest ignorowana — to udogodnienie,
+nie warunek pracy.
+
+Kontrakt endpointu: `docs/integracja-historia-faktur.md` oraz
+`docs/integracja-erp.md` w repo `esavpol-pdp`.
 
 ## Roadmap
 

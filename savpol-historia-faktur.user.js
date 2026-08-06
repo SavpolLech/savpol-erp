@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.14.0
+// @version      2.15.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -13,6 +13,8 @@
 // @grant        GM_openInTab
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_xmlhttpRequest
+// @connect      esavpol-pdp.vercel.app
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -100,6 +102,21 @@
   const GENERATOR = {
     ENABLE: true,
     URL: 'https://esavpol-pdp.vercel.app/'
+  };
+
+  // ---------- Konfiguracja: historia faktur do repo ----------
+  // Historia trafia do prywatnego repo esavpol-pdp, ale NIE bezpośrednio:
+  // wysyła ją apka generatora swoim serwerowym tokenem. Skrypt nie trzyma
+  // żadnego sekretu — odkłada dane w GM storage i wysyła je dopiero ze strony
+  // generatora, czyli same-origin, z ciasteczkiem sesji i bez CORS-a.
+  // Kontrakt: docs/integracja-historia-faktur.md.
+  const HISTORY_UPLOAD = {
+    ENABLE: true,
+    ENDPOINT: '/api/invoice-history',
+    QUEUE_KEY: 'invoice_history_queue',
+    // Kolejka rośnie, gdy ktoś zrobi kilka produktów, zanim otworzy generator.
+    // Limit chroni storage przed puchnięciem, gdy sesja wygasła na dobre.
+    MAX_QUEUED: 20
   };
 
   // ---------- Konfiguracja: przejście do sklepu ----------
@@ -769,12 +786,16 @@
   }
 
   // ---------- Krok 3: CSV ----------
-  function downloadCSV(data, mainSku) {
+  function buildHistoryCsv(data) {
     const header = 'Numer dokumentu;Produkt;SKU;Ilość\n';
     const body = data.map(r =>
       `"${r.doc}";"${r.product}";"${r.sku}";"${r.qty}"`
     ).join('\n');
-    const csv = header + body;
+    return header + body;
+  }
+
+  function downloadCSV(data, mainSku) {
+    const csv = buildHistoryCsv(data);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1501,6 +1522,30 @@
       const mainSku = await waitFor(getMainProductSku);
       ui.detail('Produkt: ' + (mainSku || '?'));
 
+      // Przy trzech osobach bez koordynacji łatwo zrobić ten sam produkt dwa
+      // razy, a przebieg trwa kilka minut. Pytamy, zamiast decydować za
+      // operatora: przebieg przerwany albo bez weryfikacji warto powtórzyć.
+      const known = await checkHistoryExists(mainSku);
+      if (known && known.exists) {
+        const zastrzezenia = [];
+        if (known.partial) zastrzezenia.push('próba była NIEPEŁNA');
+        if (known.unverified) zastrzezenia.push('BEZ weryfikacji stanu i grupy');
+        const opis = 'Historia dla ' + mainSku + ' jest już w repo: ' +
+          (known.invoices || '?') + ' faktur, ' + formatCollectedAt(known.collectedAt) +
+          (zastrzezenia.length ? '\n\nUwaga: ' + zastrzezenia.join(', ') +
+            ' — powtórzenie ma sens.' : '') +
+          '\n\nZrobić mimo to?';
+        if (!confirm(opis)) {
+          ui.finish('Pominięto — historia już jest w repo', false);
+          ui.detail((known.invoices || '?') + ' faktur, ' +
+            formatCollectedAt(known.collectedAt));
+          button.textContent = '✅ Już zrobione';
+          setTimeout(() => { button.textContent = originalText; }, 3000);
+          await closeHistoryTab(null);
+          return;
+        }
+      }
+
       ui.phase('Ustawiam filtry (od 1.01.2024, wszystkie)...');
       button.textContent = '⚙️ Ustawiam filtry...';
       await setFilters();
@@ -1582,6 +1627,10 @@
       }
 
       if (EXPORT_CROSS_SELL_CSV) downloadCrossSellCSV(analysis);
+
+      // Do kolejki trafia też przebieg bez kandydatów: sam fakt, że sygnał był
+      // zbyt słaby, jest wynikiem — bez zapisu ktoś powtórzy tę samą robotę.
+      queueHistoryUpload(mainSku, data, analysis, partial);
 
       // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
       const delivered = await deliverSkus(analysis.candidates);
@@ -1824,6 +1873,144 @@
       .find(t => t.offsetParent !== null);
   }
 
+  // ---------- Historia faktur do repo ----------
+  function generatorOrigin() {
+    try { return new URL(GENERATOR.URL).origin; } catch (e) { return null; }
+  }
+
+  function readQueue() {
+    const raw = gmGet(HISTORY_UPLOAD.QUEUE_KEY, null);
+    if (!raw) return [];
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      console.warn('[Savpol] Kolejka historii nieczytelna — zaczynam od zera.');
+      return [];
+    }
+  }
+
+  function writeQueue(queue) {
+    gmSet(HISTORY_UPLOAD.QUEUE_KEY, JSON.stringify(queue));
+  }
+
+  // Wynik przebiegu ląduje w kolejce, nie leci od razu — z ERP wysyłka byłaby
+  // cross-origin, a ciasteczko sesji generatora i tak by nie pojechało.
+  function queueHistoryUpload(sku, data, analysis, partial) {
+    if (!HISTORY_UPLOAD.ENABLE || !sku || !data.length) return;
+    const queue = readQueue().filter(item => item.sku !== sku);   // ponowny przebieg zastępuje stary
+    queue.push({
+      sku,
+      csv: buildHistoryCsv(data),
+      meta: {
+        invoices: analysis.N,
+        partial: !!partial,
+        unverified: !!analysis.unverified,
+        candidates: analysis.candidates.map(c => c.sku),
+        scriptVersion: typeof GM_info !== 'undefined' && GM_info.script
+          ? GM_info.script.version : null,
+        collectedAt: new Date().toISOString()
+      }
+    });
+    // Najstarsze wypadają pierwsze — świeższe dane są cenniejsze.
+    writeQueue(queue.slice(-HISTORY_UPLOAD.MAX_QUEUED));
+    console.log('[Savpol] Historia ' + sku + ' czeka na wysyłkę do repo (w kolejce: ' +
+      Math.min(queue.length, HISTORY_UPLOAD.MAX_QUEUED) + ').');
+  }
+
+  // Sprawdzenie, czy ktoś już zrobił ten produkt. Wołane z ERP, więc
+  // cross-origin — stąd GM_xmlhttpRequest, który omija CORS i dowozi
+  // ciasteczko sesji generatora. Zwykły fetch zostałby tu zablokowany.
+  function checkHistoryExists(sku) {
+    return new Promise(resolve => {
+      if (!HISTORY_UPLOAD.ENABLE || typeof GM_xmlhttpRequest !== 'function' || !sku) {
+        resolve(null);
+        return;
+      }
+      const origin = generatorOrigin();
+      if (!origin) { resolve(null); return; }
+
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: origin + HISTORY_UPLOAD.ENDPOINT + '?sku=' + encodeURIComponent(sku),
+        timeout: 8000,
+        onload: res => {
+          try {
+            const body = JSON.parse(res.responseText);
+            resolve(body && body.ok ? body : null);
+          } catch (e) { resolve(null); }
+        },
+        // Każda awaria sprawdzenia jest nieistotna: to udogodnienie, nie warunek
+        // pracy. Cisza i przebieg leci dalej.
+        onerror: () => resolve(null),
+        ontimeout: () => resolve(null)
+      });
+    });
+  }
+
+  function formatCollectedAt(iso) {
+    if (!iso) return 'nieznana data';
+    const d = new Date(iso);
+    return isNaN(d) ? 'nieznana data' : d.toLocaleDateString('pl-PL');
+  }
+
+  // Wysyłka ze strony generatora. Uruchamiana raz, po załadowaniu.
+  async function flushHistoryQueue() {
+    if (!HISTORY_UPLOAD.ENABLE) return;
+    let queue = readQueue();
+    if (!queue.length) return;
+
+    console.log('[Savpol] Wysyłam do repo historie: ' +
+      queue.map(i => i.sku).join(', '));
+
+    const sent = [];
+    for (const item of queue) {
+      try {
+        const res = await fetch(HISTORY_UPLOAD.ENDPOINT, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sku: item.sku, csv: item.csv, meta: item.meta })
+        });
+
+        // 401 to wygasła sesja, nie błąd danych. Zostawiamy WSZYSTKO w kolejce
+        // i przerywamy — po zalogowaniu pójdzie za jednym razem.
+        if (res.status === 401) {
+          console.warn('[Savpol] Sesja generatora wygasła — historia czeka w kolejce, ' +
+            'wyślę po zalogowaniu.');
+          break;
+        }
+
+        const body = await res.json().catch(() => ({}));
+        if (res.ok && body.ok) {
+          sent.push(item.sku);
+          console.log('[Savpol] Zapisano ' + item.sku + ' → ' + body.path);
+          continue;
+        }
+
+        // 400 i 413 to trwałe odrzucenie danych — ponawianie nic nie da,
+        // a wpis blokowałby kolejkę w nieskończoność.
+        if (res.status === 400 || res.status === 413) {
+          sent.push(item.sku);
+          console.error('[Savpol] Serwer odrzucił historię ' + item.sku + ' (' +
+            res.status + ': ' + (body.error || 'bez opisu') + '). Usuwam z kolejki.');
+          continue;
+        }
+
+        console.warn('[Savpol] Nie udało się wysłać ' + item.sku + ' (' + res.status +
+          ') — zostaje w kolejce.');
+      } catch (err) {
+        console.warn('[Savpol] Błąd sieci przy wysyłce ' + item.sku + ':', err);
+        break;
+      }
+    }
+
+    if (sent.length) {
+      queue = readQueue().filter(item => !sent.includes(item.sku));
+      writeQueue(queue);
+    }
+  }
+
   // ---------- Przejście do produktu w sklepie ----------
   // GM_setValue/GM_getValue przeżywają przeładowanie strony i przejście na inną
   // domenę, czego nie robi sessionStorage. Stąd nimi przekazujemy SKU.
@@ -1985,6 +2172,10 @@
   // wyłącznie doklikuje produkt po SKU. Reszta logiki nie ma tam czego szukać.
   if (location.hostname === 'esavpol.pl') {
     runEsavpolHandler(0);
+  } else if (generatorOrigin() && location.origin === generatorOrigin()) {
+    // Strona generatora: jedyne miejsce, z którego wysyłka jest same-origin
+    // i niesie ciasteczko sesji.
+    flushHistoryQueue();
   } else {
     setInterval(() => {
       insertButtonIfNeeded();
