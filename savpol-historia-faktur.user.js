@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.16.0
+// @version      2.16.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -436,7 +436,15 @@
     return Array.from(document.querySelectorAll('.cs-grid-data-table'))
       .find(t => t.offsetParent !== null
         && t.querySelectorAll('tr.cs-grid-data-row').length > 0
-        && t.querySelector('td[data-datafield="Item"]'));
+        && t.querySelector('td[data-datafield="Item"]')
+        // Sama obecność kolumny Item nie wystarcza: LISTA HISTORII też ją ma,
+        // obok DocNumber i danych kontrahenta. Bez tego wykluczenia funkcja
+        // dopasowywała listę historii, zanim otworzyła się zakładka faktury —
+        // wiersze listy trafiały do analizy jako "pozycje faktury", a przebieg
+        // kończył się na jednym dokumencie. Pozycje faktury nie mają numeru
+        // dokumentu ani kontrahenta w wierszu, bo to dane nagłówka.
+        && !t.querySelector('td[data-datafield="DocNumber"]')
+        && !t.querySelector('td[data-datafield="CustomerDesc"]'));
   }
 
   // Zrzut widocznych siatek do diagnozy — jakie kolumny faktycznie są dostępne.

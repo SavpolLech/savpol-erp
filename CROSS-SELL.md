@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.16.0)
+## Stan obecny (v2.16.1)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -695,6 +695,33 @@ Zasady, którymi się kierowałem:
 
 Liczba faktur nadal się pojawia, bo mówi o wiarygodności wyniku — ale jako
 „na podstawie 87 faktur", nie „N=87".
+
+## Pierwsze uruchomienie kończyło się na jednej fakturze (v2.16.1)
+
+Objaw: pierwszy przebieg po wejściu na stronę zbierał jedną „fakturę"
+z kilkunastoma pozycjami, sypał lawiną „Nie znaleziono wiersza" i kończył się
+zerowym rankingiem. Drugie kliknięcie działało poprawnie.
+
+Regresja po v2.11.1. Naprawiając awarię u innego pracownika rozluźniłem
+`getVisibleInvoiceGrid()` do jedynego warunku „ma kolumnę `Item`". Za mocno:
+**lista historii też ma kolumnę `Item`**, obok `DocNumber` i danych kontrahenta
+(widać to w logu diagnostycznym: `[Warehouse, DocType, DocNumber, …, Item,
+PartNo, ItemDesc, …]`). Funkcja dopasowywała więc listę historii i wiersze listy
+trafiały do analizy jako pozycje faktury.
+
+Dlaczego dopiero za pierwszym razem: to wyścig. Po `btn.click()` skrypt czeka na
+siatkę pozycji, ale przy pierwszym otwarciu zakładka faktury renderuje się
+wolniej i lista historii jest jeszcze widoczna — zostaje dopasowana. Za drugim
+razem widok jest już w pamięci ERP, otwiera się natychmiast i trafienie jest
+poprawne. Stąd „działa dopiero za drugim kliknięciem".
+
+Naprawa: siatka pozycji musi mieć `Item`, ale **nie może** mieć `DocNumber`
+ani `CustomerDesc` — to dane nagłówka dokumentu, których pozycje nie niosą.
+Warunek jest niezależny od czasu, więc usuwa wyścig zamiast go tylko skracać.
+
+**Wniosek na przyszłość:** rozpoznawanie siatki po jednej kolumnie jest zbyt
+słabe w ERP, gdzie kilka widoków dzieli te same nazwy pól. Rozpoznawaj po
+kombinacji „ma X i nie ma Y" — tak samo działa `panelLooksLikeCatalog()`.
 
 ## Roadmap
 
