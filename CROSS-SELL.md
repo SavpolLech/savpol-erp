@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.19.0)
+## Stan obecny (v2.20.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -846,6 +846,33 @@ Warto to zapamiętać jako wzorzec: interfejs narastał wokół pośredniego wyn
 (SKU do przeklejenia), który przestał być potrzebny, gdy powstało połączenie
 z generatorem. Element nie zniknął sam — trzeba było zauważyć, że nikt go już
 nie używa.
+
+## Fakt zamiast oceny: `invoices=N` (v2.20.0)
+
+Kontrakt uzgodniony z sesją rozwijającą generator. Zamiast flagi `conf=low`
+skrypt przekazuje **liczbę faktur**, na których oparta jest rekomendacja.
+
+Powód jest praktyczny, nie estetyczny: **próg trzyma teraz generator**, więc
+jego zmiana nie wymaga aktualizacji userscriptu u każdego pracownika z osobna.
+Moje pierwotne `conf=low` zamrażało decyzję po złej stronie — w kodzie, który
+najtrudniej zaktualizować.
+
+Wynika z tego coś, czego pierwotny kontrakt nie mówił wprost, a co jest
+konieczne, żeby działał: **skrypt nie wycina już kandydatów przy małej próbie.**
+Gdyby wycinał, generator nigdy by ich nie zobaczył i nie mógłby progu obniżyć —
+decyzja wróciłaby do skryptu tylnymi drzwiami. `MIN_INVOICES`
+i `LOW_CONFIDENCE_BELOW` sterują wyłącznie komunikatem dla użytkownika.
+
+Zmieniło się też rozgałęzienie w pipeline: sprawdzanie dostępności i komunikat
+końcowy zależą od tego, **czy są kandydaci**, a nie od progu. Przy 12 fakturach
+i jednym kandydacie nadal chcemy sprawdzić jego dostępność w katalogu.
+
+Po stronie generatora łańcuch źródeł wygląda tak (od najmocniejszego):
+faktury → `cross-sell-map.md` → ta sama kategoria co anchor. Kandydaci
+z dwóch ostatnich trafiają do formularza **w osobnej, oznaczonej grupie**,
+nie mieszają się z tymi z faktur. Kandydaci pochodzą wyłącznie z `skus.jsonl`,
+więc model nie ma jak wymyślić nieistniejącego produktu — dostaje gotową listę
+i pisze do niej tylko nagłówki kart.
 
 ## Roadmap
 

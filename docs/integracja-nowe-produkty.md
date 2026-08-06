@@ -42,12 +42,23 @@ Skrypt otwiera generator tak jak dotąd, plus dwa nowe parametry:
 | Parametr | Znaczenie |
 |---|---|
 | `sku` | anchor, bez zmian |
-| `cross` | SKU do cross-sellingu; **puste albo nieobecne, gdy było za mało faktur** |
+| `cross` | SKU z faktur; puste, gdy nic nie przeszło progów |
+| `invoices` | **na ilu fakturach oparta jest rekomendacja** (`0` = brak historii) |
 | `group` | ścieżka grupy produktu z katalogu ERP, rozdzielona `\` |
-| `conf=low` | wynik policzony z 30–49 faktur — do obejrzenia przez człowieka |
 
-`group` jest wysyłana **tylko** przy pustym `cross` — wtedy jest jedyną
-przesłanką, jaką generator ma.
+Uzgodnione 2026-08-06: skrypt przekazuje **fakt, nie ocenę**. Nie ma flagi
+„niepewne" — jest `invoices=N`, a próg trzyma generator. Powód jest praktyczny:
+zmiana progu po stronie apki nie wymaga wtedy aktualizacji userscriptu u trzech
+osób z osobna.
+
+Konsekwencja, która z tego wynika: **skrypt nie wycina kandydatów przy małej
+próbie.** Gdyby wycinał, generator nigdy by ich nie zobaczył i nie mógłby progu
+obniżyć. Przy 12 fakturach i jednym kandydacie dostaniesz `cross=…&invoices=12`
+— decyzja, co z tym zrobić, należy do apki.
+
+`group` jest wysyłana zawsze, gdy udało się ją odczytać. Generator ustala
+kategorię sam z danych sklepu, więc to materiał pomocniczy — ale grupa z ERP
+bywa dokładniejsza niż hierarchia w sklepie i nic nie kosztuje.
 
 ## Do zrobienia
 
@@ -77,11 +88,11 @@ Gdy `cross` jest puste:
 Gdy `group` nie pasuje do żadnej sekcji mapy: nie zgaduj. Lepiej opis bez sekcji
 cross-sellingu niż cztery przypadkowe produkty na stronie.
 
-### 2. `conf=low` w interfejsie
+### 2. Próg po stronie apki
 
-Wynik z małej próby ma być widoczny dla osoby redagującej — komunikat w stylu
-„propozycje z niewielkiej liczby faktur, sprawdź je, zanim zatwierdzisz".
-Bez tego oznaczenie z ERP ginie.
+Apka dostaje `invoices=N` i sama rozstrzyga, czy to dość. Pomiar wyżej sugeruje
+30 jako podłogę i 50 jako granicę pewności, ale to jej decyzja i jej stała.
+Wynik z małej próby ma być widoczny dla osoby redagującej.
 
 ### 3. `meta` w `/api/invoice-history`
 

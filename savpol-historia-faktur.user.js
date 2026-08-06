@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.19.0
+// @version      2.20.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -63,11 +63,15 @@
     //   K=20 → 22% trafień  K=50 → 68%   K=80 → 85%
     //
     // Przy 20 fakturach trzy z czterech rekomendacji byłyby inne, gdyby dane
-    // były kompletne — to losowanie, nie sygnał. Poniżej MIN_INVOICES nie
-    // liczymy wcale; opis powstaje na regułach kategorii po stronie generatora.
+    // były kompletne — to losowanie, nie sygnał.
+    //
+    // UWAGA: te progi sterują WYŁĄCZNIE komunikatem dla użytkownika. Decyzję,
+    // czy wynik jest wiarygodny, podejmuje generator — dostaje surowe
+    // `invoices=N` i sam trzyma próg. Dzięki temu zmiana progu nie wymaga
+    // aktualizacji skryptu u każdego pracownika z osobna. Nie kasujemy tu
+    // kandydatów: gdyby skrypt ich wycinał, generator nigdy by ich nie zobaczył
+    // i nie mógłby progu obniżyć.
     MIN_INVOICES: 30,
-    // Między MIN_INVOICES a tym progiem wynik jest użyteczny, ale wymaga
-    // obejrzenia przez człowieka — oznaczamy go jako niepewny.
     LOW_CONFIDENCE_BELOW: 50,
 
     // Maksymalna gramatura opakowania (kg lub L) dopuszczalna w sprzedaży
@@ -1447,11 +1451,13 @@
   }
 
   // Otwiera generator PDP z anchorem i listą cross-sell w URL.
-  // Poza SKU generator dostaje podpowiedzi o jakości danych:
-  //   conf=low   — próba mała, wynik do obejrzenia przez człowieka
-  //   group=…    — grupa produktu z katalogu ERP; przy pustym cross to jedyna
-  //                przesłanka dla generatora, bo jego cross-sell-map.md jest
-  //                indeksowana kategorią, nie numerem produktu.
+  // Poza SKU generator dostaje FAKTY o danych, nie ocenę:
+  //   invoices=N — na ilu fakturach oparta jest rekomendacja (0 = brak historii)
+  //   group=…    — grupa produktu z katalogu ERP, materiał pomocniczy
+  //
+  // Świadomie nie wysyłamy flagi „niepewne". Próg, poniżej którego wynik uchodzi
+  // za słaby, trzyma generator — inaczej jego zmiana wymagałaby aktualizacji
+  // skryptu u każdego pracownika z osobna.
   function openGenerator(anchorSku, skusText, hints) {
     const cross = (skusText || '')
       .split(/[\s,;]+/)
@@ -1462,7 +1468,8 @@
     const url = GENERATOR.URL
       + '?sku=' + encodeURIComponent(anchorSku)
       + (cross ? '&cross=' + encodeURIComponent(cross) : '')
-      + (hints && hints.lowConfidence ? '&conf=low' : '')
+      + (hints && typeof hints.invoices === 'number'
+        ? '&invoices=' + hints.invoices : '')
       + (hints && hints.group ? '&group=' + encodeURIComponent(hints.group) : '');
 
     // GM_openInTab omija blokadę popupów; window.open jako zapas, gdyby
@@ -1632,26 +1639,22 @@
       const analysis = analyzeCrossSell(data, mainSku);
       analysis.partial = partial;
 
-      // Próba za mała, żeby cokolwiek z niej wnioskować — patrz komentarz przy
-      // CROSS_SELL.MIN_INVOICES. Kandydatów kasujemy świadomie: lista z 15
-      // faktur wygląda jak rekomendacja, a jest losowaniem.
+      // Etykiety dla komunikatu, nie decyzja — patrz komentarz przy MIN_INVOICES.
       analysis.tooFewInvoices = analysis.N < CROSS_SELL.MIN_INVOICES;
       analysis.lowConfidence = !analysis.tooFewInvoices &&
         analysis.N < CROSS_SELL.LOW_CONFIDENCE_BELOW;
-      if (analysis.tooFewInvoices) {
-        analysis.candidates = [];
-        analysis.weakSignal = true;
-      }
 
       logAnalysis(analysis);
 
       let historyTabLi = null;
 
-      // Nowy produkt bez sprzedaży: nie ma czego sprawdzać w katalogu, ale
-      // potrzebujemy GRUPY produktu — to jedyna przesłanka, na której generator
-      // może oprzeć propozycje, bo jego mapa cross-sellu jest indeksowana
-      // kategorią. Przy okazji katalog zostaje na anchorze.
-      if (analysis.tooFewInvoices) {
+      // Brak kandydatów: nie ma czego sprawdzać w katalogu, ale odczytujemy
+      // GRUPĘ produktu. Generator ustala kategorię sam z danych sklepu, więc
+      // to tylko materiał pomocniczy — grupa z ERP bywa dokładniejsza niż
+      // hierarchia w sklepie i nic nie kosztuje, skoro i tak tam wchodzimy.
+      // Rozgałęziamy po tym, CZY SĄ kandydaci, nie po progu: przy 12 fakturach
+      // i jednym kandydacie nadal chcemy sprawdzić jego dostępność.
+      if (!analysis.candidates.length) {
         historyTabLi = document.querySelector('li.k-state-active');
         ui.phase('Sprawdzam kategorię produktu...');
         button.textContent = '🔎 Sprawdzam kategorię...';
@@ -1714,14 +1717,16 @@
       // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
       const delivered = await deliverSkus(analysis.candidates);
 
-      if (analysis.tooFewInvoices) {
+      // Rozstrzyga BRAK KANDYDATÓW, nie próg — przy 12 fakturach i jednym
+      // kandydacie mamy co pokazać, a o wiarygodności rozstrzyga generator.
+      if (!analysis.candidates.length && analysis.tooFewInvoices) {
         ui.finish('Za mało sprzedaży, żeby coś policzyć', false);
         ui.detail(`Ten produkt ma tylko ${analysis.N} faktur — za mało, żeby ` +
           'wiarygodnie stwierdzić, co się z nim kupuje. Kliknij „Otwórz generator ' +
           'opisów": zaproponuje produkty na podstawie kategorii.');
-        // Pole SKU zostaje puste, ale przycisk generatora ma się pokazać —
+        // Lista SKU jest pusta, ale przycisk generatora ma się pokazać —
         // to teraz jedyna droga dalej dla tego produktu.
-        ui.result(' ', mainSku, { group: anchorGroup, noHistory: true });
+        ui.result(' ', mainSku, { group: anchorGroup, invoices: analysis.N });
         button.textContent = '🆕 Za mało sprzedaży — użyj generatora';
       } else if (analysis.weakSignal) {
         ui.finish('Brak propozycji dla tego produktu', false);
@@ -1732,7 +1737,10 @@
       } else {
         const clean = !partial && !analysis.unverified;
         ui.finish(`Gotowe — ${analysis.candidates.length} propozycji`, clean);
-        ui.result(delivered.text, mainSku, { lowConfidence: analysis.lowConfidence });
+        ui.result(delivered.text, mainSku, {
+          invoices: analysis.N,
+          group: anchorGroup
+        });
         if (analysis.unverified) {
           ui.detail('Nie udało mi się sprawdzić dostępności, więc mogą tu być ' +
             'produkty niedostępne lub niewysyłkowe. Zobacz konsolę.');
