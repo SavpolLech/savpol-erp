@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.20.0)
+## Stan obecny (v2.21.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -873,6 +873,40 @@ z dwóch ostatnich trafiają do formularza **w osobnej, oznaczonej grupie**,
 nie mieszają się z tymi z faktur. Kandydaci pochodzą wyłącznie z `skus.jsonl`,
 więc model nie ma jak wymyślić nieistniejącego produktu — dostaje gotową listę
 i pisze do niej tylko nagłówki kart.
+
+## Produkt z zerem faktur wysypywał skrypt (v2.21.0)
+
+Pierwsze zetknięcie z produktem bez ani jednej faktury (`0033228`) skończyło się
+komunikatem „Coś poszło nie tak". W logu: `Pagery: … rekordow=0` — ERP odpowiedział
+poprawnie, że nie ma czego pokazać.
+
+Winny warunek pochodzi z v2.11.1: „zero pozycji bez przerwania to awaria odczytu".
+Wtedy była to prawda, bo narzędzie służyło produktom ze sprzedażą. Od v2.18.0
+nowe produkty są **pełnoprawną ścieżką**, ale ten warunek został i przechwytywał
+je zanim zdążyły z niej skorzystać. Klasyczny przypadek założenia, które
+przestało obowiązywać, a nikt nie wrócił do miejsca, gdzie było zapisane.
+
+Zero pozycji ma teraz dwie rozróżniane przyczyny:
+
+| Sytuacja | Rozpoznanie | Reakcja |
+|---|---|---|
+| Produkt nigdy się nie sprzedał | zero wierszy faktur na liście (`faSeen === 0`) | poprawny wynik, ścieżka rules-based |
+| Nie da się odczytać pozycji | wiersze były, nic z nich nie wyszło | błąd z listą kolumn, jak dotąd |
+
+`collectAllInvoicesInterruptible` zwraca w tym celu `faSeen` — liczbę wierszy
+faktur, jakie w ogóle widział.
+
+**Przy okazji: 12 sekund czekania na nic.** `setFilters()` czekał na wiersze
+faktur pełne 40 × 300 ms, a dla produktu bez sprzedaży nie miały skąd przyjść.
+Teraz warunek kończy się też, gdy pager pokaże 0 rekordów — ale dopiero po ~3 s,
+bo ERP zeruje licznik również na czas ładowania i wcześniejsze zero byłoby
+stanem przejściowym, nie odpowiedzią.
+
+**Czego to nie robi:** historia produktu bez faktur nie trafia do archiwum
+(`queueHistoryUpload` pomija pusty zbiór, a endpoint odrzuciłby puste CSV
+błędem 400). Efekt uboczny: sprawdzanie duplikatu nie wie, że ten produkt
+już ktoś oglądał. Przy nowościach to nawet pożądane — za miesiąc faktury mogą
+już być — ale warto o tym pamiętać.
 
 ## Roadmap
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.20.0
+// @version      2.21.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -437,7 +437,17 @@
     // i zbieranie ruszało, zanim lista historii się przeładowała. Objaw:
     // pierwszy przebieg kończył się zerem, drugi (na gotowej już liście)
     // działał poprawnie.
-    const ready = await waitFor(() => getFaRows().length > 0, 40, 300);
+    // Nowy produkt bez sprzedaży to poprawny przypadek, nie awaria — wtedy
+    // pager pokazuje 0 rekordów i nie ma na co czekać. Zera nie ufamy od razu,
+    // bo ERP zeruje licznik także na czas ładowania; dopiero po ~3 s uznajemy
+    // je za odpowiedź serwera, a nie za stan przejściowy.
+    let attempts = 0;
+    const ready = await waitFor(() => {
+      attempts++;
+      if (getFaRows().length > 0) return true;
+      return attempts > 10 && pagerRecordCount(getVisiblePager()) === 0;
+    }, 40, 300);
+
     if (!ready) {
       diag('BLAD', 'Lista faktur nie załadowała się po ustawieniu filtrów. Pager: ' +
         describePager(getVisiblePager()));
@@ -637,6 +647,18 @@
   // (anchor 0031018, zebrane 20 faktur). Nie wiadomo jeszcze, czy pager
   // naprawdę miał kolejną stronę, czy tylko nie oznaczył przycisku jako
   // nieaktywnego — te dane to rozstrzygną, zamiast zgadywać i zmieniać logikę.
+  // Liczba rekordów wg pagera. `null`, gdy pager nie istnieje albo licznik jest
+  // pusty (ERP zeruje go na czas ładowania) — wtedy nie wiemy jeszcze nic.
+  function pagerRecordCount(pager) {
+    if (!pager) return null;
+    const e = pager.querySelector('.ResultsCountValue');
+    if (!e) return null;
+    const raw = (e.value || e.textContent || '').replace(/\s/g, '');
+    if (!raw) return null;
+    const n = parseInt(raw, 10);
+    return isNaN(n) ? null : n;
+  }
+
   function describePager(pager) {
     if (!pager) return '(brak widocznego pagera)';
     const val = el => { const e = pager.querySelector(el); return e ? (e.value || e.textContent || '').trim() : '?'; };
@@ -813,13 +835,17 @@
   // Opakowanie łapiące przerwanie — zwraca { rows, aborted }.
   async function collectAllInvoicesInterruptible(maxCount, onProgress) {
     const collected = [];
+    // Ile wierszy faktur w ogóle zobaczyliśmy na listach. Rozstrzyga różnicę
+    // między „produkt nie ma sprzedaży" (0 wierszy — poprawny wynik) a „nie
+    // umiem odczytać pozycji" (wiersze były, nic z nich nie wyszło — awaria).
+    const faSeen = getFaRows().length;
     try {
       const rows = await collectAllInvoices(maxCount, onProgress, collected);
-      return { rows, aborted: false };
+      return { rows, aborted: false, faSeen: Math.max(faSeen, getFaRows().length) };
     } catch (err) {
       if (err && err.isAbort) {
         console.warn(`[Savpol Historia Faktur] Przerwano — zachowuję ${collected.length} zebranych pozycji.`);
-        return { rows: collected, aborted: true };
+        return { rows: collected, aborted: true, faSeen };
       }
       throw err;
     }
@@ -1618,13 +1644,23 @@
         throw err;
       }
 
-      // Zero pozycji bez przerwania to awaria odczytu, nie słaby sygnał —
-      // "sygnał zbyt słaby" sugerowałby, że dane są, tylko za rzadkie.
-      if (data.length === 0) {
-        throw new Error('Nie odczytano żadnej pozycji faktury. Najczęstsza przyczyna: ' +
-          'siatka pozycji nie ma kolumny "Item" (SKU) w konfiguracji widoku tego ' +
-          'użytkownika. Zobacz w konsoli listę kolumn przy komunikacie o nieudanym ' +
-          'otwarciu faktury.');
+      // Zero pozycji ma dwie zupełnie różne przyczyny i nie wolno ich mylić:
+      //
+      //   brak wierszy faktur  → produkt nigdy się nie sprzedał. To POPRAWNY
+      //                          wynik, od v2.18.0 pełnoprawna ścieżka: opis
+      //                          powstaje na regułach kategorii w generatorze.
+      //   wiersze były, ale nic
+      //   z nich nie wyszło    → awaria odczytu (np. brak kolumny Item
+      //                          w konfiguracji widoku tego użytkownika).
+      //
+      // Do v2.20.0 oba przypadki kończyły się błędem i pierwszy produkt bez
+      // sprzedaży wysypywał skrypt.
+      if (data.length === 0 && collect.faSeen > 0) {
+        throw new Error('Nie odczytano żadnej pozycji faktury, mimo że na liście ' +
+          'było ' + collect.faSeen + ' dokumentów. Najczęstsza przyczyna: siatka ' +
+          'pozycji nie ma kolumny "Item" (SKU) w konfiguracji widoku tego ' +
+          'użytkownika. Zobacz w konsoli listę kolumn przy komunikacie ' +
+          'o nieudanym otwarciu faktury.');
       }
       // Dalsze etapy mają już przebiegać do końca — inaczej sam fakt przerwania
       // ubiłby analizę, dla której faktury właśnie zebraliśmy.
@@ -1720,14 +1756,20 @@
       // Rozstrzyga BRAK KANDYDATÓW, nie próg — przy 12 fakturach i jednym
       // kandydacie mamy co pokazać, a o wiarygodności rozstrzyga generator.
       if (!analysis.candidates.length && analysis.tooFewInvoices) {
-        ui.finish('Za mało sprzedaży, żeby coś policzyć', false);
-        ui.detail(`Ten produkt ma tylko ${analysis.N} faktur — za mało, żeby ` +
-          'wiarygodnie stwierdzić, co się z nim kupuje. Kliknij „Otwórz generator ' +
-          'opisów": zaproponuje produkty na podstawie kategorii.');
+        ui.finish(analysis.N === 0
+          ? 'Ten produkt nie ma jeszcze sprzedaży'
+          : 'Za mało sprzedaży, żeby coś policzyć', false);
+        ui.detail((analysis.N === 0
+          ? 'Nie znalazłem ani jednej faktury z tym produktem — to normalne ' +
+            'przy nowościach. '
+          : `Ten produkt ma tylko ${analysis.N} faktur — za mało, żeby ` +
+            'wiarygodnie stwierdzić, co się z nim kupuje. ') +
+          'Kliknij „Otwórz generator opisów": zaproponuje produkty ' +
+          'na podstawie kategorii.');
         // Lista SKU jest pusta, ale przycisk generatora ma się pokazać —
         // to teraz jedyna droga dalej dla tego produktu.
         ui.result(' ', mainSku, { group: anchorGroup, invoices: analysis.N });
-        button.textContent = '🆕 Za mało sprzedaży — użyj generatora';
+        button.textContent = '🆕 Nowy produkt — użyj generatora';
       } else if (analysis.weakSignal) {
         ui.finish('Brak propozycji dla tego produktu', false);
         ui.detail(`Sprawdziłem ${analysis.N} faktur i żaden produkt nie powtarza się ` +
