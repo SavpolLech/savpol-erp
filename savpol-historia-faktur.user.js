@@ -1,13 +1,16 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.12.0
-// @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
+// @version      2.13.0
+// @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
+// @match        https://esavpol.pl/*
 // @grant        unsafeWindow
 // @grant        GM_setClipboard
 // @grant        GM_openInTab
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -18,7 +21,9 @@
 
   const TARGET_URL_FRAGMENT = 'erp.savpol.pl/pl/katalog/csitems/';
   const BUTTON_ID = 'savpol-invoice-history-btn';
-  const ORIGINAL_BUTTON_TEXT = 'Pobierz historię faktur';
+  const ORIGINAL_BUTTON_TEXT = '🧩 Zbuduj opis';
+  const ESAVPOL_BUTTON_ID = 'savpol-open-esavpol-btn';
+  const ESAVPOL_BUTTON_TEXT = '🛒 Otwórz w esavpol';
 
   // ---------- Konfiguracja ----------
   const MAX_INVOICES = 100;                       // limit pobieranych faktur
@@ -88,6 +93,23 @@
   const GENERATOR = {
     ENABLE: true,
     URL: 'https://esavpol-pdp.vercel.app/'
+  };
+
+  // ---------- Konfiguracja: przejście do sklepu ----------
+  // ERP nie zna adresu produktu w e-commerce, a slug w URL sklepu nie da się
+  // zbudować z samego SKU. Droga jest więc dwuetapowa, ta sama co w
+  // savpol-sku-harvester: otwieramy wyszukiwarkę sklepu z SKU, a skrypt
+  // działający już na esavpol.pl klika w kartę z DOKŁADNIE tym SKU.
+  const ESAVPOL = {
+    ENABLE: true,
+    SEARCH_URL: sku => 'https://esavpol.pl/produkty?searchtext=' + encodeURIComponent(sku),
+    PENDING_KEY: 'esavpol_pending_sku',
+    // Wyniki dociągają się asynchronicznie: 20 prób co 500 ms = 10 s.
+    MAX_ATTEMPTS: 20,
+    RETRY_MS: 500,
+    // Link produktu poznajemy po kształcie adresu (slug + co najmniej 6 cyfr),
+    // nie po klasie CSS — klasy w sklepie się zmieniają, kształt nie.
+    PRODUCT_LINK_RE: /^\/[a-z0-9ąćęłńóśźż-]+-\d{6,}$/i
   };
 
   // ---------- Konfiguracja: diagnostyka ----------
@@ -1448,7 +1470,7 @@
     // Drugie kliknięcie w trakcie pracy = żądanie przerwania, nie drugi przebieg.
     if (ABORT.running) {
       requestAbort();
-      button.textContent = 'Przerywam...';
+      button.textContent = '⏹️ Przerywam...';
       return;
     }
 
@@ -1460,8 +1482,8 @@
     diagStarted = Date.now();
     describeDom('start przebiegu');
     try {
-      ui.phase('Otwieram historię produktu...');
-      button.textContent = 'Otwieram historię...';
+      ui.phase('📂 Otwieram historię produktu...');
+      button.textContent = '📂 Otwieram historię...';
       const opened = openHistory();
       if (!opened) {
         describeDom('brak przycisku "Historia produktu"');
@@ -1473,11 +1495,11 @@
       ui.detail('Produkt: ' + (mainSku || '?'));
 
       ui.phase('Ustawiam filtry (od 1.01.2024, wszystkie)...');
-      button.textContent = 'Ustawiam filtry...';
+      button.textContent = '⚙️ Ustawiam filtry...';
       await setFilters();
 
       ui.phase('Pobieram faktury...');
-      button.textContent = 'Pobieram faktury...';
+      button.textContent = '📄 Pobieram faktury...';
       const collect = await collectAllInvoicesInterruptible(MAX_INVOICES, (msg, n) => {
         button.textContent = msg;
         ui.detail(msg);
@@ -1516,7 +1538,7 @@
       if (AVAILABILITY.ENABLE) {
         historyTabLi = document.querySelector('li.k-state-active'); // zapamiętane PRZED przejściem do katalogu
         ui.phase('Sprawdzam dostępność w katalogu...');
-        button.textContent = 'Sprawdzam dostępność w katalogu...';
+        button.textContent = '🔎 Sprawdzam dostępność w katalogu...';
 
         // Awaria katalogu DEGRADUJE wynik, nie kasuje przebiegu. Wcześniej
         // rzucała wyjątek i kilka minut scrapowania plus gotowy ranking
@@ -1542,7 +1564,7 @@
         // nie został na SKU ostatniego sprawdzanego kandydata.
         if (FINISH.SEARCH_ANCHOR) {
           ui.phase('Przywracam w katalogu produkt wyjściowy...');
-          button.textContent = 'Przywracam widok katalogu...';
+          button.textContent = '↩️ Przywracam widok katalogu...';
           await searchAnchorInCatalog(mainSku);
         }
       }
@@ -1565,7 +1587,7 @@
       if (analysis.weakSignal) {
         ui.finish(`Sygnał zbyt słaby (N=${analysis.N})${partialNote}`, false);
         ui.detail('Żaden kandydat nie przeszedł progu — brak rekomendacji.');
-        button.textContent = `Sygnał zbyt słaby (N=${analysis.N})`;
+        button.textContent = `🤷 Sygnał zbyt słaby (N=${analysis.N})`;
       } else {
         const clean = !partial && !analysis.unverified;
         ui.finish(`Gotowe — ${analysis.candidates.length} kandydatów (N=${analysis.N})${partialNote}`, clean);
@@ -1579,8 +1601,8 @@
           ui.detail(delivered.copied ? 'SKU są już w schowku.' : 'Zapis do schowka zawiódł — użyj przycisku Kopiuj.');
         }
         button.textContent = delivered.copied
-          ? `Gotowe, SKU w schowku: ${delivered.text}`
-          : `Gotowe: ${analysis.candidates.length} kandydatów — SKU w konsoli`;
+          ? `✅ Gotowe, SKU w schowku: ${delivered.text}`
+          : `✅ Gotowe: ${analysis.candidates.length} kandydatów — SKU w konsoli`;
       }
       await sleep(2500);
 
@@ -1592,17 +1614,17 @@
         // Przerwanie użytkownika — świadomie NIE eksportujemy nic. Wynik
         // z niepełnej próby wyglądałby jak normalna rekomendacja, a nie jest.
         console.warn('[Savpol Historia Faktur] Przerwano przez użytkownika.');
-        ui.finish('Przerwano', false);
+        ui.finish('⏹️ Przerwano', false);
         ui.detail('Nie zapisano CSV ani schowka — próba była niepełna.');
-        button.textContent = 'Przerwano';
+        button.textContent = '⏹️ Przerwano';
       } else {
         console.error('[Savpol Historia Faktur] Błąd:', err);
         diag('BLAD', 'Przebieg zakończony błędem: ' + String(err && err.message || err));
         describeDom('błąd przebiegu');
-        ui.finish('Błąd — zobacz konsolę', false);
+        ui.finish('⚠️ Błąd — zobacz konsolę', false);
         ui.detail(String(err && err.message || err) +
           ' — kliknij „Pobierz log diagnostyczny" i prześlij plik.');
-        button.textContent = 'Błąd — zobacz konsolę';
+        button.textContent = '⚠️ Błąd — zobacz konsolę';
       }
       setTimeout(() => { button.textContent = originalText; }, 3000);
     } finally {
@@ -1795,6 +1817,120 @@
       .find(t => t.offsetParent !== null);
   }
 
+  // ---------- Przejście do produktu w sklepie ----------
+  // GM_setValue/GM_getValue przeżywają przeładowanie strony i przejście na inną
+  // domenę, czego nie robi sessionStorage. Stąd nimi przekazujemy SKU.
+  function gmSet(key, value) {
+    if (typeof GM_setValue === 'function') GM_setValue(key, value);
+  }
+  function gmGet(key, fallback) {
+    return typeof GM_getValue === 'function' ? GM_getValue(key, fallback) : fallback;
+  }
+
+  // SKU zaznaczonego produktu w siatce katalogu. ERP oznacza zaznaczenie
+  // różnie w zależności od wersji widoku, więc sprawdzamy kilka wariantów,
+  // zanim spadniemy na panel filtrów.
+  function getSelectedCatalogSku() {
+    const rows = Array.from(document.querySelectorAll('tr.cs-grid-data-row'))
+      .filter(r => r.offsetParent !== null);
+    const selected = rows.find(r =>
+      r.classList.contains('k-state-selected') ||
+      r.classList.contains('selected') ||
+      r.classList.contains('csSelectedRow') ||
+      r.getAttribute('aria-selected') === 'true');
+    if (selected) {
+      const cell = selected.querySelector('td[data-datafield="Item"]');
+      const sku = cell && (cell.getAttribute('title') || cell.textContent);
+      if (sku && sku.trim()) return sku.trim();
+    }
+    return getMainProductSku();
+  }
+
+  function openInEsavpol(sku) {
+    gmSet(ESAVPOL.PENDING_KEY, sku);
+    const url = ESAVPOL.SEARCH_URL(sku);
+    if (typeof GM_openInTab === 'function') GM_openInTab(url, { active: true });
+    else window.open(url, '_blank');
+  }
+
+  // ---------- Strona sklepu: klik w kartę z dokładnie tym SKU ----------
+  // Karta nie ma osobnego pola z SKU, więc dopasowujemy po treści całej karty,
+  // z granicą cyfrową — inaczej 123456 trafiłoby w 1234567.
+  function findEsavpolProductHref(sku) {
+    const anchors = Array.from(document.querySelectorAll('a[href]'));
+    const exactRe = new RegExp('(^|[^0-9])' + sku.replace(/[^0-9A-Za-z-]/g, '') + '([^0-9]|$)');
+    let firstCandidate = null;
+    for (const a of anchors) {
+      const href = a.getAttribute('href');
+      if (!href || !ESAVPOL.PRODUCT_LINK_RE.test(href)) continue;
+      if (!firstCandidate) firstCandidate = href;
+      const card = a.closest('li, article, div') || a;
+      if (exactRe.test(card.textContent)) return { href: location.origin + href, exact: true };
+    }
+    return firstCandidate ? { href: location.origin + firstCandidate, exact: false } : null;
+  }
+
+  function runEsavpolHandler(attempt) {
+    const sku = gmGet(ESAVPOL.PENDING_KEY, null);
+    if (!sku) return;
+
+    // Jesteśmy już na karcie produktu — zadanie wykonane, czyścimy znacznik,
+    // żeby kolejne wejście na sklep nie przeskakiwało samo z siebie.
+    if (!/[?&]searchtext=/.test(location.search)) {
+      gmSet(ESAVPOL.PENDING_KEY, null);
+      return;
+    }
+
+    const hit = findEsavpolProductHref(sku);
+    if (hit) {
+      gmSet(ESAVPOL.PENDING_KEY, null);
+      if (!hit.exact) {
+        console.warn('[Savpol] Brak karty z dokładnym SKU ' + sku +
+          ' — otwieram pierwszy wynik wyszukiwania.');
+      }
+      location.href = hit.href;
+      return;
+    }
+
+    if (attempt < ESAVPOL.MAX_ATTEMPTS) {
+      setTimeout(() => runEsavpolHandler(attempt + 1), ESAVPOL.RETRY_MS);
+      return;
+    }
+    gmSet(ESAVPOL.PENDING_KEY, null);
+    console.warn('[Savpol] Nie znalazłem w wynikach produktu o SKU ' + sku +
+      '. Zostajesz na liście wyników.');
+  }
+
+  function insertEsavpolButtonIfNeeded() {
+    if (!ESAVPOL.ENABLE) return;
+    if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
+    const toolbar = getVisibleToolbar();
+    if (!toolbar) return;
+    if (toolbar.querySelector('#' + ESAVPOL_BUTTON_ID)) return;
+
+    const btn = document.createElement('div');
+    btn.id = ESAVPOL_BUTTON_ID;
+    btn.className = 'csButton _csControl csButtonAction csAutogenerateButton UnderlinedButton icon-left';
+    btn.style.cursor = 'pointer';
+    btn.innerHTML = '<div class="caption" title="Otwiera zaznaczony produkt na esavpol.pl">' +
+      ESAVPOL_BUTTON_TEXT + '</div>';
+    btn.addEventListener('click', () => {
+      const sku = getSelectedCatalogSku();
+      if (!sku) {
+        console.warn('[Savpol] Nie odczytałem SKU — czy produkt jest zaznaczony?');
+        diag('BLAD', 'Otwórz w esavpol: brak SKU zaznaczonego produktu');
+        describeDom('brak SKU do otwarcia w sklepie');
+        btn.querySelector('.caption').textContent = 'Zaznacz produkt';
+        setTimeout(() => {
+          btn.querySelector('.caption').textContent = ESAVPOL_BUTTON_TEXT;
+        }, 2500);
+        return;
+      }
+      openInEsavpol(sku);
+    });
+    toolbar.appendChild(btn);
+  }
+
   function insertButtonIfNeeded() {
     if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
     const toolbar = getVisibleToolbar();
@@ -1811,6 +1947,15 @@
     toolbar.appendChild(btn);
   }
 
-  setInterval(insertButtonIfNeeded, 1000);
+  // Ten sam skrypt obsługuje dwie domeny: w ERP dokłada przyciski, w sklepie
+  // wyłącznie doklikuje produkt po SKU. Reszta logiki nie ma tam czego szukać.
+  if (location.hostname === 'esavpol.pl') {
+    runEsavpolHandler(0);
+  } else {
+    setInterval(() => {
+      insertButtonIfNeeded();
+      insertEsavpolButtonIfNeeded();
+    }, 1000);
+  }
 
 })();

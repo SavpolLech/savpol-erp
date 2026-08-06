@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.12.0)
+## Stan obecny (v2.13.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -594,6 +594,37 @@ Pliki wrzucamy ręcznie do `diagnostyka/` — instrukcja w `diagnostyka/README.m
 
 W logu jest struktura, nie treść dokumentów. Numery faktur pojawiają się
 w komunikatach o błędach; nazwy kontrahentów i kwoty nie.
+
+## Przejście z ERP na stronę produktu w sklepie (v2.13.0)
+
+ERP nie zna adresu produktu w e-commerce, a slug w URL sklepu
+(`/nazwa-produktu-123456`) nie da się zbudować z samego SKU. Droga jest więc
+dwuetapowa — ta sama, co w [savpol-sku-harvester](https://github.com/SavpolLech/savpol-sku-harvester):
+
+1. Przycisk **„🛒 Otwórz w esavpol"** w pasku katalogu zapisuje SKU zaznaczonego
+   produktu przez `GM_setValue` i otwiera `esavpol.pl/produkty?searchtext=<SKU>`.
+2. Ten sam skrypt — rozszerzony o `@match https://esavpol.pl/*` — działa już
+   na stronie sklepu, znajduje w wynikach kartę z **dokładnie tym** SKU
+   i przechodzi na nią.
+
+Dlaczego `GM_setValue`, a nie `sessionStorage`: to przejście między domenami,
+a storage jest per origin. Dlaczego kształt adresu, a nie klasa CSS: klasy
+w sklepie się zmieniają, wzorzec `slug + co najmniej 6 cyfr` nie.
+
+Dopasowanie SKU idzie po treści całej karty z granicą cyfrową
+(`(^|[^0-9])SKU([^0-9]|$)`) — karta nie ma osobnego pola z SKU, a bez granicy
+`123456` trafiłoby w `1234567`. Gdy dokładnego trafienia brak, skrypt otwiera
+pierwszy wynik i mówi o tym w konsoli. Wyniki dociągają się asynchronicznie,
+więc próba jest ponawiana 20 razy co 500 ms.
+
+**Odczyt zaznaczonego SKU w katalogu** sprawdza kilka wariantów oznaczenia
+wiersza (`k-state-selected`, `selected`, `csSelectedRow`, `aria-selected`),
+bo ERP oznacza je różnie zależnie od widoku, i dopiero potem spada na panel
+filtrów. Gdy nie znajdzie nic, robi zrzut DOM do logu diagnostycznego —
+zamiast zgadywać, który wariant jest ten właściwy.
+
+Przycisk główny nazywa się teraz **„🧩 Zbuduj opis"**: cross-selling i tak
+był tylko etapem, a wynikiem pracy jest opis produktu.
 
 ## Roadmap
 
