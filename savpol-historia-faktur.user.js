@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.16.1
+// @version      2.17.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1642,6 +1642,7 @@
       // Do kolejki trafia też przebieg bez kandydatów: sam fakt, że sygnał był
       // zbyt słaby, jest wynikiem — bez zapisu ktoś powtórzy tę samą robotę.
       queueHistoryUpload(mainSku, data, analysis, partial);
+      const upload = await flushHistoryQueue();
 
       // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
       const delivered = await deliverSkus(analysis.candidates);
@@ -1675,6 +1676,12 @@
       await sleep(2500);
 
       await closeHistoryTab(AVAILABILITY.ENABLE ? historyTabLi : null);
+
+      if (upload.left) {
+        ui.detail('Uwaga: wyniki nie zapisały się w archiwum (' + upload.left +
+          ' w kolejce). Zaloguj się w generatorze opisów — wyślą się same ' +
+          'przy następnym uruchomieniu.');
+      }
 
       button.textContent = originalText;
     } catch (err) {
@@ -1970,60 +1977,83 @@
   }
 
   // Wysyłka ze strony generatora. Uruchamiana raz, po załadowaniu.
-  async function flushHistoryQueue() {
-    if (!HISTORY_UPLOAD.ENABLE) return;
-    let queue = readQueue();
-    if (!queue.length) return;
+  // Jedno żądanie POST. GM_xmlhttpRequest, a nie fetch, bo lecimy z erp.savpol.pl
+  // do innej domeny: zwykły fetch byłby zablokowany przez CORS. Tampermonkey
+  // dokłada ciasteczka domeny docelowej, więc sesja generatora jedzie z żądaniem
+  // — dokładnie tak, jak działa sprawdzanie duplikatu.
+  function postHistoryItem(item) {
+    return new Promise(resolve => {
+      const origin = generatorOrigin();
+      if (!origin || typeof GM_xmlhttpRequest !== 'function') {
+        resolve({ status: 0, body: {} });
+        return;
+      }
+      GM_xmlhttpRequest({
+        method: 'POST',
+        url: origin + HISTORY_UPLOAD.ENDPOINT,
+        headers: { 'Content-Type': 'application/json' },
+        data: JSON.stringify({ sku: item.sku, csv: item.csv, meta: item.meta }),
+        timeout: 30000,
+        onload: res => {
+          let body = {};
+          try { body = JSON.parse(res.responseText); } catch (e) { /* nieistotne */ }
+          resolve({ status: res.status, body });
+        },
+        onerror: () => resolve({ status: 0, body: {} }),
+        ontimeout: () => resolve({ status: 0, body: {} })
+      });
+    });
+  }
 
-    console.log('[Savpol] Wysyłam do repo historie: ' +
-      queue.map(i => i.sku).join(', '));
+  // Wysyłka idzie prosto z ERP, zaraz po przebiegu. Wcześniej czekała na
+  // otwarcie generatora (żeby żądanie było same-origin) i przez to potrafiła
+  // nie dojść do skutku w ogóle — kolejka rosła, a użytkownik nie miał jak się
+  // o tym dowiedzieć. Skoro sprawdzanie duplikatu działa tą samą drogą,
+  // czekanie było niepotrzebnym ryzykiem.
+  async function flushHistoryQueue() {
+    if (!HISTORY_UPLOAD.ENABLE) return { sent: 0, left: 0 };
+    let queue = readQueue();
+    if (!queue.length) return { sent: 0, left: 0 };
+
+    console.log('[Savpol] Wysyłam historie: ' + queue.map(i => i.sku).join(', '));
 
     const sent = [];
     for (const item of queue) {
-      try {
-        const res = await fetch(HISTORY_UPLOAD.ENDPOINT, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sku: item.sku, csv: item.csv, meta: item.meta })
-        });
+      const { status, body } = await postHistoryItem(item);
 
-        // 401 to wygasła sesja, nie błąd danych. Zostawiamy WSZYSTKO w kolejce
-        // i przerywamy — po zalogowaniu pójdzie za jednym razem.
-        if (res.status === 401) {
-          console.warn('[Savpol] Sesja generatora wygasła — historia czeka w kolejce, ' +
-            'wyślę po zalogowaniu.');
-          break;
-        }
+      if (status === 200 && body.ok) {
+        sent.push(item.sku);
+        console.log('[Savpol] Zapisano ' + item.sku + ' → ' + body.path);
+        continue;
+      }
 
-        const body = await res.json().catch(() => ({}));
-        if (res.ok && body.ok) {
-          sent.push(item.sku);
-          console.log('[Savpol] Zapisano ' + item.sku + ' → ' + body.path);
-          continue;
-        }
-
-        // 400 i 413 to trwałe odrzucenie danych — ponawianie nic nie da,
-        // a wpis blokowałby kolejkę w nieskończoność.
-        if (res.status === 400 || res.status === 413) {
-          sent.push(item.sku);
-          console.error('[Savpol] Serwer odrzucił historię ' + item.sku + ' (' +
-            res.status + ': ' + (body.error || 'bez opisu') + '). Usuwam z kolejki.');
-          continue;
-        }
-
-        console.warn('[Savpol] Nie udało się wysłać ' + item.sku + ' (' + res.status +
-          ') — zostaje w kolejce.');
-      } catch (err) {
-        console.warn('[Savpol] Błąd sieci przy wysyłce ' + item.sku + ':', err);
+      // 401 to wygasła sesja, nie błąd danych. Zostawiamy WSZYSTKO w kolejce
+      // i przerywamy — po zalogowaniu w generatorze pójdzie za jednym razem.
+      if (status === 401) {
+        console.warn('[Savpol] Sesja generatora wygasła — historie czekają w kolejce. ' +
+          'Zaloguj się w generatorze opisów, wyślą się przy następnym przebiegu.');
         break;
       }
+
+      // 400 i 413 to trwałe odrzucenie danych — ponawianie nic nie da,
+      // a wpis blokowałby kolejkę w nieskończoność.
+      if (status === 400 || status === 413) {
+        sent.push(item.sku);
+        console.error('[Savpol] Serwer odrzucił historię ' + item.sku + ' (' + status +
+          ': ' + (body.error || 'bez opisu') + '). Usuwam z kolejki.');
+        continue;
+      }
+
+      console.warn('[Savpol] Nie udało się wysłać ' + item.sku +
+        ' (status ' + status + ') — zostaje w kolejce, spróbuję przy następnym przebiegu.');
+      break;
     }
 
     if (sent.length) {
       queue = readQueue().filter(item => !sent.includes(item.sku));
       writeQueue(queue);
     }
+    return { sent: sent.length, left: readQueue().length };
   }
 
   // ---------- Przejście do produktu w sklepie ----------
@@ -2189,8 +2219,8 @@
   if (location.hostname === 'esavpol.pl') {
     runEsavpolHandler(0);
   } else if (generatorOrigin() && location.origin === generatorOrigin()) {
-    // Strona generatora: jedyne miejsce, z którego wysyłka jest same-origin
-    // i niesie ciasteczko sesji.
+    // Zapas: wysyłka idzie już z ERP, ale gdy tam się nie udała (brak sieci,
+    // wygasła sesja), tutaj użytkownik jest właśnie zalogowany.
     flushHistoryQueue();
   } else {
     setInterval(() => {

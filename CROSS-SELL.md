@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.16.1)
+## Stan obecny (v2.17.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -643,11 +643,20 @@ Ten skrypt nie trzyma żadnego sekretu — wysyła dane do apki generatora,
 a ona commituje swoim serwerowym `GITHUB_PAT`. Alternatywa (PAT w Tampermonkey
 u każdej z trzech osób) była gorsza pod każdym względem.
 
-**Dlaczego kolejka, a nie wysyłka od razu:** z `erp.savpol.pl` żądanie do
-generatora jest cross-origin i nie niesie ciasteczka sesji. Skrypt odkłada więc
-wynik w `GM_setValue` (`invoice_history_queue`), a wysyła dopiero po otwarciu
-generatora — tam jest **same-origin**, bez CORS-a i preflightu. Kolejka radzi
-sobie z sytuacją, gdy ktoś zrobi kilka produktów, zanim otworzy generator.
+**Wysyłka idzie prosto z ERP, zaraz po przebiegu** (zmiana w v2.17.0).
+
+Pierwotnie skrypt czekał z wysyłką na otwarcie generatora, żeby żądanie było
+same-origin. W praktyce kolejka rosła i nie wysyłała się nigdy — a użytkownik
+nie miał jak się o tym dowiedzieć, bo komunikaty leciały do konsoli karty,
+której nikt nie otwierał. Założenie było zresztą błędne: sprawdzanie duplikatu
+działało od początku tą samą drogą, przez `GM_xmlhttpRequest`, który omija CORS
+i dokłada ciasteczka domeny docelowej. Skoro `GET` przechodził, `POST` też
+przechodzi.
+
+Kolejka w `GM_setValue` (`invoice_history_queue`) **została**, ale w swojej
+właściwej roli: bufor na nieudane wysyłki, opróżniany przy następnym przebiegu.
+Gdy coś w niej zostanie, użytkownik widzi to w panelu wyników, nie w konsoli.
+Strona generatora próbuje dosłać zaległości jako zapas — tam sesja jest świeża.
 
 Obsługa odpowiedzi wynika z tego, czy ponowienie ma sens:
 
