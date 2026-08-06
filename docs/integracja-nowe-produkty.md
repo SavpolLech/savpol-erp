@@ -1,7 +1,7 @@
 # Nowe produkty bez historii sprzedaży — instrukcja dla `esavpol-pdp`
 
 Do wykonania **w repozytorium `SavpolLech/esavpol-pdp`**. Strona ERP jest już
-gotowa (userscript v2.18.0) i wysyła opisane niżej parametry.
+gotowa (userscript v2.20.0) i wysyła opisane niżej parametry.
 
 ## Problem
 
@@ -27,16 +27,16 @@ próby) wraca w wyniku:
 | 80 | 85% | 0% |
 
 Przy 20 fakturach **trzy z czterech rekomendacji byłyby inne**, gdyby dane były
-kompletne. Stąd progi w skrypcie: poniżej **30** faktur nie liczymy wcale,
-między **30 a 49** wynik jest oznaczony jako niepewny.
+kompletne. Sugerowane progi: **30** jako podłoga, **50** jako granica pewności.
+Trzyma je apka — skrypt przekazuje samo `invoices=N`, patrz niżej.
 
 ## Co przychodzi w URL
 
 Skrypt otwiera generator tak jak dotąd, plus dwa nowe parametry:
 
 ```
-?sku=0000759&group=Artykuły%20cukiernicze%5CDekoracje%20cukrowe%5CPosypki
-?sku=0031018&cross=0020669,0006418&conf=low
+?sku=0000759&invoices=2&group=Artykuły%20cukiernicze%5CDekoracje%20cukrowe%5CPosypki
+?sku=0031018&cross=0020669,0006418&invoices=87
 ```
 
 | Parametr | Znaczenie |
