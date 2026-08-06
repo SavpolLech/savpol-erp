@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.13.2
+// @version      2.14.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -33,7 +33,12 @@
   const MAX_PAGES = 50;                            // zabezpieczenie przed nieskończoną pętlą paginacji
   const MAX_CONSECUTIVE_FAILURES = 3;              // tyle nieudanych otwarć faktur z rzędu kończy zbieranie
 
-  const EXPORT_RAW_HISTORY = true;                 // dodatkowy CSV z pełną historią (debug reguł)
+  // Pliki CSV na dysk. Były potrzebne do kalibracji reguł na realnych danych;
+  // teraz wynikiem pracy są SKU w schowku i opis w generatorze, a pobrane pliki
+  // tylko zaśmiecają Pobrane. Zostają jako flagi, bo przy dostrajaniu reguł
+  // surowa historia znów bywa potrzebna.
+  const EXPORT_RAW_HISTORY = false;                // CSV z pełną historią faktur (debug reguł)
+  const EXPORT_CROSS_SELL_CSV = false;             // CSV z listą kandydatów
 
   // ---------- Konfiguracja analizy cross-sell ----------
   const CROSS_SELL = {
@@ -1576,7 +1581,7 @@
         await sleep(300); // przeglądarki gubią drugi download bez odstępu
       }
 
-      downloadCrossSellCSV(analysis);
+      if (EXPORT_CROSS_SELL_CSV) downloadCrossSellCSV(analysis);
 
       // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
       const delivered = await deliverSkus(analysis.candidates);
