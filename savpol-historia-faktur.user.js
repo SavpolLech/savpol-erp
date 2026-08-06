@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.15.0
+// @version      2.16.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1520,25 +1520,25 @@
       await sleep(500);
 
       const mainSku = await waitFor(getMainProductSku);
-      ui.detail('Produkt: ' + (mainSku || '?'));
+      ui.detail('Produkt: ' + (mainSku || '?') + '. To potrwa około 3 minut.');
 
       // Przy trzech osobach bez koordynacji łatwo zrobić ten sam produkt dwa
       // razy, a przebieg trwa kilka minut. Pytamy, zamiast decydować za
       // operatora: przebieg przerwany albo bez weryfikacji warto powtórzyć.
       const known = await checkHistoryExists(mainSku);
       if (known && known.exists) {
-        const zastrzezenia = [];
-        if (known.partial) zastrzezenia.push('próba była NIEPEŁNA');
-        if (known.unverified) zastrzezenia.push('BEZ weryfikacji stanu i grupy');
-        const opis = 'Historia dla ' + mainSku + ' jest już w repo: ' +
-          (known.invoices || '?') + ' faktur, ' + formatCollectedAt(known.collectedAt) +
-          (zastrzezenia.length ? '\n\nUwaga: ' + zastrzezenia.join(', ') +
-            ' — powtórzenie ma sens.' : '') +
-          '\n\nZrobić mimo to?';
+        const warto = known.partial || known.unverified;
+        const opis = 'Ten produkt ktoś już sprawdzał ' +
+          formatCollectedAt(known.collectedAt) + ' (faktur: ' +
+          (known.invoices || '?') + ').' +
+          (warto
+            ? '\n\nTamto sprawdzanie nie doszło do końca, więc warto je powtórzyć.'
+            : '\n\nWyniki są gotowe, nie musisz robić tego jeszcze raz.') +
+          '\n\nSprawdzić jeszcze raz? Zajmie to około 3 minut.';
         if (!confirm(opis)) {
-          ui.finish('Pominięto — historia już jest w repo', false);
-          ui.detail((known.invoices || '?') + ' faktur, ' +
-            formatCollectedAt(known.collectedAt));
+          ui.finish('Ten produkt jest już zrobiony', false);
+          ui.detail('Sprawdzony ' + formatCollectedAt(known.collectedAt) +
+            '. Gotowe numery znajdziesz w generatorze opisów.');
           button.textContent = '✅ Już zrobione';
           setTimeout(() => { button.textContent = originalText; }, 3000);
           await closeHistoryTab(null);
@@ -1546,11 +1546,11 @@
         }
       }
 
-      ui.phase('Ustawiam filtry (od 1.01.2024, wszystkie)...');
+      ui.phase('Ustawiam zakres: wszystkie faktury od 1 stycznia 2024...');
       button.textContent = '⚙️ Ustawiam filtry...';
       await setFilters();
 
-      ui.phase('Pobieram faktury...');
+      ui.phase('Czytam faktury tego produktu...');
       button.textContent = '📄 Pobieram faktury...';
       const collect = await collectAllInvoicesInterruptible(MAX_INVOICES, (msg, n) => {
         button.textContent = msg;
@@ -1580,8 +1580,11 @@
       // ubiłby analizę, dla której faktury właśnie zebraliśmy.
       ABORT.requested = false;
 
-      ui.phase(partial ? 'Przerwano — analizuję zebrane faktury...' : 'Analizuję cross-sell...');
-      ui.detail(data.length + ' pozycji z ' + new Set(data.map(r => r.doc)).size + ' faktur');
+      ui.phase(partial
+        ? 'Zatrzymane — liczę na tym, co zdążyłem przeczytać...'
+        : 'Szukam produktów kupowanych razem z tym...');
+      ui.detail('Przeczytane: ' + new Set(data.map(r => r.doc)).size + ' faktur, ' +
+        data.length + ' pozycji');
       const analysis = analyzeCrossSell(data, mainSku);
       analysis.partial = partial;
       logAnalysis(analysis);
@@ -1589,8 +1592,8 @@
       let historyTabLi = null;
       if (AVAILABILITY.ENABLE) {
         historyTabLi = document.querySelector('li.k-state-active'); // zapamiętane PRZED przejściem do katalogu
-        ui.phase('Sprawdzam dostępność w katalogu...');
-        button.textContent = '🔎 Sprawdzam dostępność w katalogu...';
+        ui.phase('Sprawdzam, czy te produkty są dostępne...');
+        button.textContent = '🔎 Sprawdzam dostępność...';
 
         // Awaria katalogu DEGRADUJE wynik, nie kasuje przebiegu. Wcześniej
         // rzucała wyjątek i kilka minut scrapowania plus gotowy ranking
@@ -1615,7 +1618,7 @@
         // Ostatnia czynność w katalogu: przywróć wyszukanie anchora, żeby widok
         // nie został na SKU ostatniego sprawdzanego kandydata.
         if (FINISH.SEARCH_ANCHOR) {
-          ui.phase('Przywracam w katalogu produkt wyjściowy...');
+          ui.phase('Wracam do produktu, od którego zaczęliśmy...');
           button.textContent = '↩️ Przywracam widok katalogu...';
           await searchAnchorInCatalog(mainSku);
         }
@@ -1635,30 +1638,31 @@
       // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
       const delivered = await deliverSkus(analysis.candidates);
 
-      const notes = [];
-      if (partial) notes.push('próba NIEPEŁNA (przerwana)');
-      if (analysis.unverified) notes.push('BEZ weryfikacji stanu i grupy');
-      const partialNote = notes.length ? ' — ' + notes.join(', ') : '';
-
       if (analysis.weakSignal) {
-        ui.finish(`Sygnał zbyt słaby (N=${analysis.N})${partialNote}`, false);
-        ui.detail('Żaden kandydat nie przeszedł progu — brak rekomendacji.');
-        button.textContent = `🤷 Sygnał zbyt słaby (N=${analysis.N})`;
+        ui.finish('Brak propozycji dla tego produktu', false);
+        ui.detail(`Sprawdziłem ${analysis.N} faktur i żaden produkt nie powtarza się ` +
+          'w nich dość często, żeby go polecać. To normalne — ten produkt ' +
+          'po prostu nie ma stałych towarzyszy. Zrób opis bez tej sekcji.');
+        button.textContent = '🤷 Brak propozycji';
       } else {
         const clean = !partial && !analysis.unverified;
-        ui.finish(`Gotowe — ${analysis.candidates.length} kandydatów (N=${analysis.N})${partialNote}`, clean);
+        ui.finish(`Gotowe — ${analysis.candidates.length} propozycji`, clean);
         ui.result(delivered.text, mainSku);
         if (analysis.unverified) {
-          ui.detail('Nie sprawdzono stanu magazynowego ani grupy — mogą tu być ' +
+          ui.detail('Nie udało mi się sprawdzić dostępności, więc mogą tu być ' +
             'produkty niedostępne lub niewysyłkowe. Zobacz konsolę.');
         } else if (partial) {
-          ui.detail(`Wynik z ${analysis.N} faktur, nie z pełnej próby — traktuj ostrożnie.`);
+          ui.detail(`Zatrzymane w trakcie — wynik z ${analysis.N} faktur zamiast z wszystkich. ` +
+            'Możesz go użyć, ale pełne sprawdzenie dałoby pewniejszą listę.');
         } else {
-          ui.detail(delivered.copied ? 'SKU są już w schowku.' : 'Zapis do schowka zawiódł — użyj przycisku Kopiuj.');
+          ui.detail(delivered.copied
+            ? `Znalezione na podstawie ${analysis.N} faktur. Numery są już skopiowane — ` +
+              'możesz je wkleić albo kliknąć „Otwórz generator opisów".'
+            : 'Kopiowanie nie zadziałało — kliknij „Kopiuj" poniżej.');
         }
         button.textContent = delivered.copied
-          ? `✅ Gotowe, SKU w schowku: ${delivered.text}`
-          : `✅ Gotowe: ${analysis.candidates.length} kandydatów — SKU w konsoli`;
+          ? `✅ Gotowe, skopiowane: ${delivered.text}`
+          : `✅ Gotowe: ${analysis.candidates.length} propozycji — kliknij „Kopiuj"`;
       }
       await sleep(2500);
 
@@ -1670,17 +1674,19 @@
         // Przerwanie użytkownika — świadomie NIE eksportujemy nic. Wynik
         // z niepełnej próby wyglądałby jak normalna rekomendacja, a nie jest.
         console.warn('[Savpol Historia Faktur] Przerwano przez użytkownika.');
-        ui.finish('⏹️ Przerwano', false);
-        ui.detail('Nie zapisano CSV ani schowka — próba była niepełna.');
+        ui.finish('⏹️ Zatrzymane', false);
+        ui.detail('Zatrzymane, zanim cokolwiek policzyłem — nic nie zostało zapisane. ' +
+          'Możesz uruchomić od nowa.');
         button.textContent = '⏹️ Przerwano';
       } else {
         console.error('[Savpol Historia Faktur] Błąd:', err);
         diag('BLAD', 'Przebieg zakończony błędem: ' + String(err && err.message || err));
         describeDom('błąd przebiegu');
-        ui.finish('⚠️ Błąd — zobacz konsolę', false);
-        ui.detail(String(err && err.message || err) +
-          ' — kliknij „Pobierz log diagnostyczny" i prześlij plik.');
-        button.textContent = '⚠️ Błąd — zobacz konsolę';
+        ui.finish('⚠️ Coś poszło nie tak', false);
+        ui.detail('Nie udało się dokończyć. Kliknij „Zapisz szczegóły błędu" ' +
+          'i wyślij plik osobie, która opiekuje się skryptem. Szczegóły: ' +
+          String(err && err.message || err));
+        button.textContent = '⚠️ Coś poszło nie tak';
       }
       setTimeout(() => { button.textContent = originalText; }, 3000);
     } finally {
@@ -1733,7 +1739,7 @@
 
     box.innerHTML = [
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
-      '  <strong style="flex:1;font-size:13px">Historia faktur</strong>',
+      '  <strong style="flex:1;font-size:13px">Szukam produktów do opisu</strong>',
       '  <button data-role="stop" type="button" style="cursor:pointer;font:inherit;font-size:12px;',
       '    padding:2px 8px;border:0;border-radius:4px;background:#5a3a3a;color:#ffd9d4">Przerwij</button>',
       '  <span data-role="close" title="Zamknij panel" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
@@ -1749,11 +1755,11 @@
       '<div data-role="detail" style="margin-top:8px;font-size:12px;opacity:.7;word-break:break-word"></div>',
       '<button data-role="diag" type="button" style="width:100%;margin-top:8px;cursor:pointer;',
       '    font:inherit;font-size:11px;padding:4px 8px;border:1px solid rgba(255,255,255,.2);',
-      '    border-radius:4px;background:transparent;color:#f5f7fa;opacity:.65">Pobierz log diagnostyczny</button>',
+      '    border-radius:4px;background:transparent;color:#f5f7fa;opacity:.65">Zapisz szczegóły błędu</button>',
       '<div data-role="resultbox" style="display:none;margin-top:10px;padding-top:10px;',
       '    border-top:1px solid rgba(255,255,255,.15)">',
       '  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;',
-      '      margin-bottom:4px">SKU do cross-sellingu</div>',
+      '      margin-bottom:4px">Produkty do sekcji „Często kupowane razem"</div>',
       '  <div style="display:flex;gap:6px;align-items:stretch">',
       '    <input data-role="skus" readonly style="flex:1;min-width:0;font:12px ui-monospace,Consolas,monospace;',
       '        padding:5px 7px;border:1px solid rgba(255,255,255,.2);border-radius:4px;',
@@ -1764,7 +1770,7 @@
       '  </div>',
       '  <button data-role="gen" type="button" style="display:none;width:100%;margin-top:6px;',
       '      cursor:pointer;font:inherit;font-size:12px;padding:6px 10px;border:0;border-radius:4px;',
-      '      background:#36b37e;color:#04231a;font-weight:600">Otwórz generator PDP</button>',
+      '      background:#36b37e;color:#04231a;font-weight:600">Otwórz generator opisów</button>',
       '</div>'
     ].join('');
 
@@ -1788,8 +1794,8 @@
     // więc plik trafia do Pobranych i przesyła go człowiek.
     el('diag').addEventListener('click', () => {
       downloadDiagReport(resultAnchorSku || getMainProductSku());
-      el('diag').textContent = 'Pobrano log';
-      setTimeout(() => { el('diag').textContent = 'Pobierz log diagnostyczny'; }, 2500);
+      el('diag').textContent = 'Zapisane — wyślij ten plik';
+      setTimeout(() => { el('diag').textContent = 'Zapisz szczegóły błędu'; }, 2500);
     });
     // getMainProductSku() czyta panel filtrów widoku historii, który w tym
     // momencie jest już zamknięty, więc jest tu wyłącznie zapasem.
@@ -1797,13 +1803,14 @@
     el('gen').addEventListener('click', () => {
       const anchor = resultAnchorSku || getMainProductSku();
       if (!anchor) {
-        el('detail').textContent = 'Nie udało się odczytać SKU produktu — skopiuj SKU ręcznie.';
+        el('detail').textContent = 'Nie odczytałem numeru produktu. Skopiuj numery ' +
+          'przyciskiem „Kopiuj" i wklej je w generatorze ręcznie.';
         console.warn('[Cross-sell] Brak SKU anchora, nie otwieram generatora.');
         return;
       }
       openGenerator(anchor, el('skus').value);
-      el('gen').textContent = 'Otwarto w nowej karcie';
-      setTimeout(() => { el('gen').textContent = 'Otwórz generator PDP'; }, 2500);
+      el('gen').textContent = 'Otwarte w nowej karcie';
+      setTimeout(() => { el('gen').textContent = 'Otwórz generator opisów'; }, 2500);
     });
 
     el('copy').addEventListener('click', async () => {
@@ -1811,7 +1818,7 @@
       if (!text) return;
       el('skus').select();
       const ok = await copySkusToClipboard(text);
-      el('copy').textContent = ok ? 'Skopiowano' : 'Zaznacz i Ctrl+C';
+      el('copy').textContent = ok ? 'Skopiowane' : 'Naciśnij Ctrl+C';
       setTimeout(() => { el('copy').textContent = 'Kopiuj'; }, 2000);
     });
     el('stop').addEventListener('click', () => {
@@ -2141,7 +2148,7 @@
         console.warn('[Savpol] Nie odczytałem SKU — czy produkt jest zaznaczony?');
         diag('BLAD', 'Otwórz w esavpol: brak SKU zaznaczonego produktu');
         describeDom('brak SKU do otwarcia w sklepie');
-        btn.querySelector('.caption').textContent = 'Wpisz SKU w wyszukiwarkę';
+        btn.querySelector('.caption').textContent = 'Najpierw wyszukaj produkt';
         setTimeout(() => {
           btn.querySelector('.caption').textContent = ESAVPOL_BUTTON_TEXT;
         }, 2500);
@@ -2162,8 +2169,9 @@
     btn.id = BUTTON_ID;
     btn.className = 'csButton _csControl csButtonAction csAutogenerateButton UnderlinedButton icon-left';
     btn.style.cursor = 'pointer';
-    btn.innerHTML = '<div class="caption" title="' + ORIGINAL_BUTTON_TEXT +
-      ' (w trakcie pracy: kliknij ponownie, żeby przerwać)">' + ORIGINAL_BUTTON_TEXT + '</div>';
+    btn.innerHTML = '<div class="caption" title="Znajduje produkty kupowane razem ' +
+      'z zaznaczonym produktem. Trwa około 3 minut — w trakcie kliknij ponownie, ' +
+      'żeby zatrzymać.">' + ORIGINAL_BUTTON_TEXT + '</div>';
     btn.addEventListener('click', () => runFullPipeline(btn));
     toolbar.appendChild(btn);
   }

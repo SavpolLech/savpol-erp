@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.15.0)
+## Stan obecny (v2.16.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -670,6 +670,31 @@ nie warunek pracy.
 
 Kontrakt endpointu: `docs/integracja-historia-faktur.md` oraz
 `docs/integracja-erp.md` w repo `esavpol-pdp`.
+
+## Komunikaty pisane dla marketingu, nie dla programisty (v2.16.0)
+
+Ze skryptu korzysta dział marketingu, nie osoby techniczne. Komunikaty niosły
+słownictwo, które dla nich nic nie znaczy — „repo", „N=87", „sygnał zbyt słaby",
+„kandydaci", „SKU w schowku", „próba NIEPEŁNA", „BEZ weryfikacji stanu i grupy",
+„zobacz konsolę". Konsola i logi zostają techniczne; zmieniło się wyłącznie to,
+co widzi użytkowniczka.
+
+Zasady, którymi się kierowałem:
+
+- **Nazywaj rzecz, nie mechanizm.** „Produkty do sekcji »Często kupowane razem«"
+  zamiast „SKU do cross-sellingu". „Generator opisów" zamiast „generator PDP".
+- **Powiedz, co robić dalej.** Każdy komunikat kończący pracę mówi, jaki jest
+  następny krok — wkleić, kliknąć, zrobić opis bez tej sekcji, wysłać plik.
+- **Brak wyniku to nie awaria.** „Sygnał zbyt słaby (N=10)" brzmiało jak błąd
+  skryptu. Teraz: ten produkt nie ma stałych towarzyszy, zrób opis bez tej sekcji.
+- **Czas z góry.** „To potrwa około 3 minut" na starcie i w pytaniu o powtórzenie —
+  bez tego trzyminutowa cisza wygląda na zawieszenie.
+- **Błąd wskazuje drogę wyjścia,** a nie konsolę: „Zapisz szczegóły błędu
+  i wyślij plik osobie, która opiekuje się skryptem". Techniczna treść zostaje,
+  ale na końcu.
+
+Liczba faktur nadal się pojawia, bo mówi o wiarygodności wyniku — ale jako
+„na podstawie 87 faktur", nie „N=87".
 
 ## Roadmap
 
