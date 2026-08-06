@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.13.1
+// @version      2.13.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1829,10 +1829,20 @@
     return typeof GM_getValue === 'function' ? GM_getValue(key, fallback) : fallback;
   }
 
-  // SKU zaznaczonego produktu w siatce katalogu. ERP oznacza zaznaczenie
-  // różnie w zależności od wersji widoku, więc sprawdzamy kilka wariantów,
-  // zanim spadniemy na panel filtrów.
+  // SKU produktu, który chcemy otworzyć w sklepie.
+  //
+  // Kolejność źródeł wynika z tego, jak ten widok jest naprawdę używany:
+  // do katalogu wpisuje się SKU w wyszukiwarkę i patrzy na wynik. To pole
+  // jest więc najpewniejszym źródłem — pewniejszym niż zaznaczenie wiersza,
+  // bo ERP oznacza zaznaczenie różnie zależnie od widoku i wcale nie musi
+  // być żadne.
   function getSelectedCatalogSku() {
+    // 1. Wyszukiwarka katalogu, o ile wpisano w nią SKU, a nie nazwę.
+    const input = findVisibleCatalogSearchInput();
+    const typed = input && (input.value || '').trim();
+    if (typed && EXCLUSIONS.skuPattern.test(typed)) return typed;
+
+    // 2. Zaznaczony wiersz siatki — kilka wariantów oznaczenia.
     const rows = Array.from(document.querySelectorAll('tr.cs-grid-data-row'))
       .filter(r => r.offsetParent !== null);
     const selected = rows.find(r =>
@@ -1840,11 +1850,28 @@
       r.classList.contains('selected') ||
       r.classList.contains('csSelectedRow') ||
       r.getAttribute('aria-selected') === 'true');
-    if (selected) {
-      const cell = selected.querySelector('td[data-datafield="Item"]');
+    const fromRow = r => {
+      const cell = r && r.querySelector('td[data-datafield="Item"]');
       const sku = cell && (cell.getAttribute('title') || cell.textContent);
-      if (sku && sku.trim()) return sku.trim();
+      return sku && sku.trim() ? sku.trim() : null;
+    };
+    if (selected) {
+      const sku = fromRow(selected);
+      if (sku) return sku;
     }
+
+    // 3. Jeden wynik na liście nie pozostawia wątpliwości, o który produkt chodzi.
+    const grid = getVisibleCatalogGrid();
+    const gridRows = grid
+      ? Array.from(grid.querySelectorAll('tr.cs-grid-data-row'))
+      : [];
+    if (gridRows.length === 1) {
+      const sku = fromRow(gridRows[0]);
+      if (sku) return sku;
+    }
+
+    // 4. Panel filtrów widoku historii — działa tylko wtedy, gdy historia
+    //    jest otwarta, więc zostaje na końcu.
     return getMainProductSku();
   }
 
@@ -1922,7 +1949,7 @@
         console.warn('[Savpol] Nie odczytałem SKU — czy produkt jest zaznaczony?');
         diag('BLAD', 'Otwórz w esavpol: brak SKU zaznaczonego produktu');
         describeDom('brak SKU do otwarcia w sklepie');
-        btn.querySelector('.caption').textContent = 'Zaznacz produkt';
+        btn.querySelector('.caption').textContent = 'Wpisz SKU w wyszukiwarkę';
         setTimeout(() => {
           btn.querySelector('.caption').textContent = ESAVPOL_BUTTON_TEXT;
         }, 2500);

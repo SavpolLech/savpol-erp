@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.13.0)
+## Stan obecny (v2.13.2)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -617,11 +617,15 @@ Dopasowanie SKU idzie po treści całej karty z granicą cyfrową
 pierwszy wynik i mówi o tym w konsoli. Wyniki dociągają się asynchronicznie,
 więc próba jest ponawiana 20 razy co 500 ms.
 
-**Odczyt zaznaczonego SKU w katalogu** sprawdza kilka wariantów oznaczenia
-wiersza (`k-state-selected`, `selected`, `csSelectedRow`, `aria-selected`),
-bo ERP oznacza je różnie zależnie od widoku, i dopiero potem spada na panel
-filtrów. Gdy nie znajdzie nic, robi zrzut DOM do logu diagnostycznego —
-zamiast zgadywać, który wariant jest ten właściwy.
+**Skąd bierze się SKU** (v2.13.2): najpierw z **wyszukiwarki katalogu**, o ile
+wpisano w nią SKU, a nie nazwę. To odpowiada temu, jak ten widok jest naprawdę
+używany — SKU wpisuje się w pole szukania i patrzy na wynik. Pierwsza wersja
+opierała się na zaznaczeniu wiersza i nie działała: zaznaczenia zwyczajnie
+nie ma, a ERP oznacza je różnie zależnie od widoku.
+
+Dalsze źródła w kolejności: zaznaczony wiersz (cztery warianty klasy),
+jedyny wiersz na liście wyników, panel filtrów historii. Gdy żadne nie zadziała,
+przycisk mówi „Wpisz SKU w wyszukiwarkę" i robi zrzut DOM do logu.
 
 Przycisk główny nazywa się teraz **„🧩 Zbuduj opis"**: cross-selling i tak
 był tylko etapem, a wynikiem pracy jest opis produktu.
