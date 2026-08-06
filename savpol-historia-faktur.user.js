@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.17.0
+// @version      2.17.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -412,12 +412,18 @@
 
     allLabel.click();
 
-    // Czekaj aż lista faktycznie się odświeży (zamiast sztywnego sleep)
-    await waitFor(() => {
-      const rows = Array.from(document.querySelectorAll('tr.cs-grid-data-row'))
-        .filter(row => row.offsetParent !== null);
-      return rows.length > 0;
-    }, 40, 300);
+    // Czekamy na WIERSZE FAKTUR, nie na "jakikolwiek widoczny wiersz".
+    // Poprzedni warunek spełniała natychmiast siatka katalogu, która w tym
+    // momencie jest jeszcze widoczna — więc w praktyce nie czekał na nic
+    // i zbieranie ruszało, zanim lista historii się przeładowała. Objaw:
+    // pierwszy przebieg kończył się zerem, drugi (na gotowej już liście)
+    // działał poprawnie.
+    const ready = await waitFor(() => getFaRows().length > 0, 40, 300);
+    if (!ready) {
+      diag('BLAD', 'Lista faktur nie załadowała się po ustawieniu filtrów. Pager: ' +
+        describePager(getVisiblePager()));
+      describeDom('lista faktur pusta po filtrach');
+    }
 
     await sleep(500); // dodatkowy zapas na pełne wyrenderowanie
   }
@@ -658,6 +664,13 @@
 
     while (invoicesProcessed < maxCount && pageNum <= MAX_PAGES) {
       throwIfAborted();
+
+      // Siatka bywa w trakcie przeładowania — pusta strona to najczęściej
+      // "jeszcze się ładuje", nie "nie ma faktur". Bez tej pauzy przebieg
+      // kończył się zerem, mimo że sekundę później dane były na miejscu.
+      if (pageNum === 1 && getFaRows().length === 0) {
+        await waitFor(() => getFaRows().length > 0, 20, 300);
+      }
 
       // Numery dokumentów FA na bieżącej stronie, które jeszcze nie były przetworzone
       const faDocNumbers = getFaRows()

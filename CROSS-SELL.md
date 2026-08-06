@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.17.0)
+## Stan obecny (v2.17.1)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -731,6 +731,42 @@ Warunek jest niezależny od czasu, więc usuwa wyścig zamiast go tylko skracać
 **Wniosek na przyszłość:** rozpoznawanie siatki po jednej kolumnie jest zbyt
 słabe w ERP, gdzie kilka widoków dzieli te same nazwy pól. Rozpoznawaj po
 kombinacji „ma X i nie ma Y" — tak samo działa `panelLooksLikeCatalog()`.
+
+## Znów „dopiero za drugim razem", tym razem po filtrach (v2.17.1)
+
+Inna przyczyna niż w v2.16.1, ten sam objaw. Log diagnostyczny z konta
+pracownika: przebieg kończył się błędem po **3,2 sekundy**, a w zrzucie widać
+`Pagery: … strona=1 | stron=0 | rekordow=0` — lista faktur była jeszcze
+w trakcie przeładowania, gdy skrypt już próbował z niej czytać.
+
+Winny warunek w `setFilters()`:
+
+```javascript
+await waitFor(() => {
+  const rows = …querySelectorAll('tr.cs-grid-data-row')
+    .filter(row => row.offsetParent !== null);
+  return rows.length > 0;
+}, 40, 300);
+```
+
+„Jakikolwiek widoczny wiersz" spełniała **siatka katalogu**, która w tym
+momencie jest jeszcze widoczna (w logu: siatka #52, 16 wierszy, widoczna=true).
+Warunek był więc spełniony natychmiast i w praktyce nie czekał na nic. Drugie
+uruchomienie działało, bo lista historii była już załadowana z poprzedniej próby.
+
+Naprawa dwustopniowa:
+
+1. `setFilters()` czeka na `getFaRows().length > 0` — czyli na wiersze faktur,
+   nie na cokolwiek. Gdy się nie doczeka, zapisuje stan pagera i zrzut DOM.
+2. `collectAllInvoices()` traktuje pustą **pierwszą** stronę jako „jeszcze się
+   ładuje" i czeka do 6 sekund, zamiast od razu kończyć przebieg zerem.
+
+**Powtarzalny wzorzec, wart zapamiętania:** warunki oczekiwania w tym ERP nie
+mogą być formułowane jako „czy w dokumencie jest cokolwiek" — kilkadziesiąt
+siatek żyje równolegle (w tym logu 63) i zawsze któraś pasuje. Warunek musi
+wskazywać **konkretne dane, na które czekamy**. Ta sama pomyłka co przy
+rozpoznawaniu siatki po jednej kolumnie (v2.16.1) i przy szukaniu zakładki
+katalogu po nazwie (v2.9.1).
 
 ## Roadmap
 
