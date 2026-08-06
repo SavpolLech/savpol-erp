@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.11.0)
+## Stan obecny (v2.11.1)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -530,6 +530,43 @@ sekcji komplementów.
 `0000263` (proszek 5kg) przechodzi próg gramatury, ale mediana zakupu to 5 worków
 (25kg) — to opakowanie przemysłowe. W katalogu istnieje `0008137`, ten sam proszek
 w worku 1kg, ze stanem magazynowym. To wzorcowy przypadek dla podstawiania wariantów.
+
+## Pusty wynik na koncie innego użytkownika (v2.11.1)
+
+Objaw: skrypt otwierał historię, ustawiał filtry, po czym w konsoli leciało
+`Nie udało się otworzyć faktury: <numer>`, a zaraz po tym `Nie znaleziono
+wiersza dla <numer>` dla każdego kolejnego dokumentu. Wynik: zero danych.
+
+Przyczyna łańcuchowa. `getVisibleInvoiceGrid()` wymagał dwóch kolumn: `Item`
+(SKU) i `PositionItemDesc` (nazwa). **Układ kolumn w tym ERP jest konfigurowany
+per użytkownik**, więc na innym koncie siatka pozycji może nie mieć kolumny
+z opisem. Oczekiwanie na siatkę kończyło się timeoutem, a pętla robiła
+`continue` **bez zamknięcia właśnie otwartej zakładki faktury**. Otwarta
+zakładka przykrywała listę historii, więc `getFaRows()` od tej chwili nie
+znajdował już nic — stąd lawina „Nie znaleziono wiersza". Pierwszy błąd był
+prawdziwy, cała reszta to jego skutek.
+
+Naprawa:
+
+- `getVisibleInvoiceGrid()` wymaga już tylko kolumny `Item`. To jedyna, bez
+  której nie da się nic policzyć; `extractInvoiceRows()` toleruje brak nazwy
+  i ilości.
+- Po nieudanym otwarciu skrypt **zamyka zakładkę i czeka na powrót listy**,
+  zanim przejdzie do kolejnego dokumentu.
+- `MAX_CONSECUTIVE_FAILURES = 3` — trzy nieudane otwarcia z rzędu kończą
+  zbieranie z jawnym komunikatem, zamiast mielić 100 dokumentów na sucho.
+- `describeVisibleGrids()` wypisuje przy błędzie liczbę wierszy i listę
+  `data-datafield` każdej widocznej siatki. Bez tego diagnoza układu kolumn
+  na cudzym koncie to zgadywanka — ten sam błąd popełniliśmy trzy razy przy
+  wykrywaniu zakładki katalogu.
+- Zero pozycji bez przerwania rzuca teraz błąd z opisem przyczyny, a nie
+  „sygnał zbyt słaby". Ten komunikat sugerowałby, że dane są, tylko za rzadkie.
+
+**Pułapka do zapamiętania:** brak kolumny `PositionItemDesc` nie blokuje już
+przebiegu, ale wtedy `row.product` jest pusty i **wszystkie reguły nazwowe
+w `EXCLUSIONS` przestają filtrować po cichu** — chłodnia i mroźnia trafiłyby
+do rekomendacji. Dlatego skrypt raz na przebieg krzyczy w konsoli, gdy pozycje
+przychodzą bez nazw. Zostaje wtedy tylko filtr po grupie produktu z katalogu.
 
 ## Roadmap
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.11.0
+// @version      2.11.1
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -24,6 +24,7 @@
   const MAX_INVOICES = 100;                       // limit pobieranych faktur
   const HISTORY_START_DATE = new Date(2024, 0, 1); // od stycznia 2024
   const MAX_PAGES = 50;                            // zabezpieczenie przed nieskończoną pętlą paginacji
+  const MAX_CONSECUTIVE_FAILURES = 3;              // tyle nieudanych otwarć faktur z rzędu kończy zbieranie
 
   const EXPORT_RAW_HISTORY = true;                 // dodatkowy CSV z pełną historią (debug reguł)
 
@@ -364,12 +365,30 @@
       .filter(row => row.offsetParent !== null);
   }
 
+  // Siatka pozycji faktury. Wymagamy TYLKO kolumny Item (SKU) — to jedyna,
+  // bez której nie da się nic policzyć. Wcześniej wymagany był też
+  // PositionItemDesc, ale układ kolumn w tym ERP jest konfigurowany PER
+  // UŻYTKOWNIK, więc na innym koncie brak tej kolumny blokował cały przebieg.
   function getVisibleInvoiceGrid() {
     return Array.from(document.querySelectorAll('.cs-grid-data-table'))
       .find(t => t.offsetParent !== null
         && t.querySelectorAll('tr.cs-grid-data-row').length > 0
-        && t.querySelector('td[data-datafield="Item"]')
-        && t.querySelector('td[data-datafield="PositionItemDesc"]'));
+        && t.querySelector('td[data-datafield="Item"]'));
+  }
+
+  // Zrzut widocznych siatek do diagnozy — jakie kolumny faktycznie są dostępne.
+  function describeVisibleGrids() {
+    const grids = Array.from(document.querySelectorAll('.cs-grid-data-table'))
+      .filter(t => t.offsetParent !== null);
+    if (!grids.length) return '(brak widocznych siatek)';
+    return grids.map((t, i) => {
+      const row = t.querySelector('tr.cs-grid-data-row') || t.querySelector('tbody tr');
+      const fields = row
+        ? Array.from(row.querySelectorAll('td[data-datafield]')).map(td => td.dataset.datafield)
+        : [];
+      return '#' + (i + 1) + ' wierszy=' + t.querySelectorAll('tr.cs-grid-data-row').length
+        + ' kolumny=[' + fields.join(', ') + ']';
+    }).join(' || ');
   }
 
   function extractInvoiceRows(docNumber) {
@@ -464,6 +483,8 @@
   // jest oznaczany jako częściowy na każdym wyjściu (nakładka, konsola, nazwa CSV).
   async function collectAllInvoices(maxCount, onProgress, sink) {
     const results = sink || [];
+    let consecutiveFailures = 0;
+    let warnedMissingNames = false;
     const processedDocs = new Set();
     let invoicesProcessed = 0;
     let pageNum = 1;
@@ -502,13 +523,40 @@
 
         const grid = await waitFor(() => getVisibleInvoiceGrid());
         if (!grid) {
-          console.error('Nie udało się otworzyć faktury:', targetDoc);
+          consecutiveFailures++;
+          console.error('[Savpol Historia Faktur] Nie udało się otworzyć faktury ' + targetDoc +
+            '. Widoczne siatki: ' + describeVisibleGrids());
+
+          // ODZYSKIWANIE. Bez tego jedna nieudana faktura kładła cały przebieg:
+          // otwarta zakładka przykrywała listę historii, więc każdy kolejny
+          // dokument kończył się "Nie znaleziono wiersza" i wynik był pusty.
+          const stray = document.querySelector('li.k-state-active .csCloseButton_span');
+          if (stray) stray.click();
+          await waitFor(() => visibleGridRows().length > 0);
+          await sleep(300);
+
+          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            console.error('[Savpol Historia Faktur] ' + consecutiveFailures +
+              ' nieudanych otwarć z rzędu — przerywam zbieranie. Zebrano ' +
+              invoicesProcessed + ' faktur.');
+            return results;
+          }
           continue;
         }
+        consecutiveFailures = 0;
         await sleep(300);
 
         const docNumber = getActiveTabDocNumber() || targetDoc;
         const invoiceRows = extractInvoiceRows(docNumber);
+
+        // Bez kolumny z nazwą produktu WSZYSTKIE reguły nazwowe przestają
+        // działać po cichu — chłodnia i mroźnia trafiłyby do rekomendacji.
+        if (!warnedMissingNames && invoiceRows.length && invoiceRows.every(r => !r.product)) {
+          warnedMissingNames = true;
+          console.error('[Savpol Historia Faktur] Pozycje faktur nie mają nazw produktów ' +
+            '(brak kolumny PositionItemDesc w tej siatce). Wykluczenia nazwowe NIE zadziałają — ' +
+            'dodaj kolumnę z opisem pozycji w konfiguracji widoku. Kolumny: ' + describeVisibleGrids());
+        }
         invoicesProcessed++;
 
         if (onProgress) onProgress(`${docNumber}: ${invoiceRows.length} pozycji`, { done: invoicesProcessed, total: maxCount });
@@ -1304,6 +1352,15 @@
         const err = new Error('Przerwano przed odczytaniem pierwszej faktury');
         err.isAbort = true;
         throw err;
+      }
+
+      // Zero pozycji bez przerwania to awaria odczytu, nie słaby sygnał —
+      // "sygnał zbyt słaby" sugerowałby, że dane są, tylko za rzadkie.
+      if (data.length === 0) {
+        throw new Error('Nie odczytano żadnej pozycji faktury. Najczęstsza przyczyna: ' +
+          'siatka pozycji nie ma kolumny "Item" (SKU) w konfiguracji widoku tego ' +
+          'użytkownika. Zobacz w konsoli listę kolumn przy komunikacie o nieudanym ' +
+          'otwarciu faktury.');
       }
       // Dalsze etapy mają już przebiegać do końca — inaczej sam fakt przerwania
       // ubiłby analizę, dla której faktury właśnie zebraliśmy.
