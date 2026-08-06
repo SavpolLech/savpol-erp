@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.18.0)
+## Stan obecny (v2.19.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -830,6 +830,22 @@ faktur anchora i w 2% wszystkich → prawdziwy sygnał, choć liczbowo słabszy.
 Wymaga oszacowania tła, czyli udziału każdego SKU w ogóle faktur — i to jest
 brakujący argument za gromadzeniem historii w repo. Im więcej plików w archiwum,
 tym lepsze tło. Do zrobienia po tym, jak archiwum urośnie.
+
+## Pole z SKU i przycisk „Kopiuj" usunięte (v2.19.0)
+
+Lista SKU w schowku była przez wiele wersji **głównym wynikiem pracy** — stąd
+pole do kopiuj-wklej w nakładce i cała konfiguracja `CLIPBOARD`. Odkąd generator
+dostaje SKU w URL (`&cross=`), nikt tych numerów stamtąd nie przepisywał.
+W panelu zostaje sam przycisk „Otwórz generator opisów".
+
+Kopiowanie do schowka (`deliverSkus`) **zostaje**, ale po cichu: nic nie kosztuje,
+a jest drogą awaryjną, gdy otwarcie generatora zawiedzie. Numery lecą też do
+konsoli, jak dotąd.
+
+Warto to zapamiętać jako wzorzec: interfejs narastał wokół pośredniego wyniku
+(SKU do przeklejenia), który przestał być potrzebny, gdy powstało połączenie
+z generatorem. Element nie zniknął sam — trzeba było zauważyć, że nikt go już
+nie używa.
 
 ## Roadmap
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.18.0
+// @version      2.19.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -101,9 +101,9 @@
   const PROGRESS = {
     ENABLE: true,
     // 0 = nakładka zostaje do zamknięcia krzyżykiem albo do kolejnego przebiegu.
-    // Domyślnie zostaje, bo końcowy panel jest nośnikiem WYNIKU (SKU + przycisk
-    // Kopiuj), nie tylko postępu — autoukrywanie zabierało go, zanim dało się
-    // użyć. Wartość > 0 = liczba ms do samoukrycia.
+    // Domyślnie zostaje, bo końcowy panel jest nośnikiem WYNIKU (przycisk
+    // otwarcia generatora), nie tylko postępu — autoukrywanie zabierało go,
+    // zanim dało się użyć. Wartość > 0 = liczba ms do samoukrycia.
     //
     // Sama ta wartość nie wystarcza: ERP przerysowuje widok i potrafi wyrzucić
     // element z DOM, więc nakładka jest dodatkowo doczepiana z powrotem —
@@ -1747,11 +1747,12 @@
           ui.detail(delivered.copied
             ? `Znalezione na podstawie ${analysis.N} faktur. Numery są już skopiowane — ` +
               'możesz je wkleić albo kliknąć „Otwórz generator opisów".'
-            : 'Kopiowanie nie zadziałało — kliknij „Kopiuj" poniżej.');
+            : 'Numery są w konsoli — kliknij „Otwórz generator opisów", ' +
+              'on dostaje je bezpośrednio.');
         }
         button.textContent = delivered.copied
           ? `✅ Gotowe, skopiowane: ${delivered.text}`
-          : `✅ Gotowe: ${analysis.candidates.length} propozycji — kliknij „Kopiuj"`;
+          : `✅ Gotowe: ${analysis.candidates.length} propozycji`;
       }
       await sleep(2500);
 
@@ -1851,20 +1852,13 @@
       '<button data-role="diag" type="button" style="width:100%;margin-top:8px;cursor:pointer;',
       '    font:inherit;font-size:11px;padding:4px 8px;border:1px solid rgba(255,255,255,.2);',
       '    border-radius:4px;background:transparent;color:#f5f7fa;opacity:.65">Zapisz szczegóły błędu</button>',
+      // Pole z listą SKU i przycisk „Kopiuj" usunięte w v2.19.0 — od czasu,
+      // gdy generator dostaje SKU w URL, nikt ich stąd nie przepisywał.
+      // Numery nadal lecą do schowka po cichu (deliverSkus) jako droga awaryjna.
       '<div data-role="resultbox" style="display:none;margin-top:10px;padding-top:10px;',
       '    border-top:1px solid rgba(255,255,255,.15)">',
-      '  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;',
-      '      margin-bottom:4px">Produkty do sekcji „Często kupowane razem"</div>',
-      '  <div style="display:flex;gap:6px;align-items:stretch">',
-      '    <input data-role="skus" readonly style="flex:1;min-width:0;font:12px ui-monospace,Consolas,monospace;',
-      '        padding:5px 7px;border:1px solid rgba(255,255,255,.2);border-radius:4px;',
-      '        background:rgba(0,0,0,.25);color:#f5f7fa">',
-      '    <button data-role="copy" type="button" style="cursor:pointer;font:inherit;font-size:12px;',
-      '        padding:5px 10px;border:0;border-radius:4px;background:#4c9aff;color:#04142e;',
-      '        font-weight:600;white-space:nowrap">Kopiuj</button>',
-      '  </div>',
-      '  <button data-role="gen" type="button" style="display:none;width:100%;margin-top:6px;',
-      '      cursor:pointer;font:inherit;font-size:12px;padding:6px 10px;border:0;border-radius:4px;',
+      '  <button data-role="gen" type="button" style="display:none;width:100%;',
+      '      cursor:pointer;font:inherit;font-size:12px;padding:7px 10px;border:0;border-radius:4px;',
       '      background:#36b37e;color:#04231a;font-weight:600">Otwórz generator opisów</button>',
       '</div>'
     ].join('');
@@ -1884,6 +1878,7 @@
     // bo odwołują się do niej w domknięciu.
     let resultAnchorSku = null;
     let resultHints = null;
+    let resultSkus = '';
     el('close').addEventListener('click', removeProgressOverlay);
 
     // Log struktury DOM do pliku. Skrypt nie ma dostępu do dysku poza pobraniem,
@@ -1899,24 +1894,16 @@
     el('gen').addEventListener('click', () => {
       const anchor = resultAnchorSku || getMainProductSku();
       if (!anchor) {
-        el('detail').textContent = 'Nie odczytałem numeru produktu. Skopiuj numery ' +
-          'przyciskiem „Kopiuj" i wklej je w generatorze ręcznie.';
+        el('detail').textContent = 'Nie odczytałem numeru produktu — otwórz ' +
+          'generator opisów ręcznie. Numery znajdziesz w schowku.';
         console.warn('[Cross-sell] Brak SKU anchora, nie otwieram generatora.');
         return;
       }
-      openGenerator(anchor, el('skus').value, resultHints);
+      openGenerator(anchor, resultSkus, resultHints);
       el('gen').textContent = 'Otwarte w nowej karcie';
       setTimeout(() => { el('gen').textContent = 'Otwórz generator opisów'; }, 2500);
     });
 
-    el('copy').addEventListener('click', async () => {
-      const text = el('skus').value;
-      if (!text) return;
-      el('skus').select();
-      const ok = await copySkusToClipboard(text);
-      el('copy').textContent = ok ? 'Skopiowane' : 'Naciśnij Ctrl+C';
-      setTimeout(() => { el('copy').textContent = 'Kopiuj'; }, 2000);
-    });
     el('stop').addEventListener('click', () => {
       requestAbort();
       el('stop').disabled = true;
@@ -1943,12 +1930,11 @@
         }
         el('time').textContent = fmt(Date.now() - started);
       },
-      // Wynik do kopiuj-wklej. Pole jest readonly, ale zaznaczalne — jeśli
-      // zapis do schowka zawiedzie, zostaje Ctrl+C bez sięgania do konsoli.
+      // Pokazuje przycisk otwarcia generatora i zapamiętuje, z czym go otworzyć.
       result(text, anchorSku, hints) {
         if (!text) return;
         resultHints = hints || null;
-        el('skus').value = text.trim();
+        resultSkus = text.trim();
         el('resultbox').style.display = 'block';
         resultAnchorSku = anchorSku || null;
         if (GENERATOR.ENABLE && (resultAnchorSku || getMainProductSku())) {
