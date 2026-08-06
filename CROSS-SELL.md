@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.10.0)
+## Stan obecny (v2.11.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -47,6 +47,12 @@ w punktach 1-4; został krok 5 (podstawianie wariantów).
   zamykaniu zakładki historii) i wyrzuca element z DOM, więc `progressKeepAlive`
   doczepia **ten sam węzeł** z powrotem co sekundę — nasłuchy i wpisane SKU
   zostają nienaruszone. Pilnowanie kończy się na krzyżyku lub nowym przebiegu.
+- **Generator PDP** (`GENERATOR`) — przycisk „Otwórz generator PDP" w panelu
+  wyniku otwiera `esavpol-pdp.vercel.app/?sku=<anchor>&cross=<SKU po przecinku>`.
+  Generator sam dociąga dane produktu z esavpol.pl, więc krok z otwieraniem
+  sklepu i przeklejaniem danych odpada. Wymaga `@grant GM_openInTab`
+  (`window.open` jako zapas, gdy uprawnienie nie zostało przyznane po
+  aktualizacji). Integracja opisana w `pdp-generator/docs/integracja-erp.md`.
 - **Powrót katalogu na anchora** (`FINISH.SEARCH_ANCHOR`) — po sprawdzeniu
   kandydatów wyszukiwarka katalogu zostawała z SKU ostatniego z nich, więc widok
   pokazywał przypadkowy produkt z rekomendacji. Ostatnią czynnością w katalogu
@@ -63,6 +69,17 @@ Filtr dostępności, grupy i nakładka postępu wymagają DOM-u, więc **nie są
 testowalne offline** —
 analiza co-occurrence, reguły nazwowe i format schowka są. Patrz „Testowanie
 zmian w regułach".
+
+### Anchor dla generatora pochodzi z pipeline'u, nie z DOM
+
+Instrukcja integracji proponowała odczyt anchora przez `getMainProductSku()`
+w momencie kliknięcia przycisku. To by nie działało: ta funkcja czyta panel
+filtrów **widoku historii produktu**, a ten jest zamykany na końcu przebiegu —
+w chwili, gdy panel wyniku jest widoczny, jesteśmy już w katalogu.
+
+Dlatego `ui.result(text, anchorSku)` dostaje SKU wprost z pipeline'u, gdzie
+i tak je znamy. `getMainProductSku()` został jako zapas, na wypadek gdyby panel
+historii jednak był otwarty.
 
 ### Przerywanie i wyniki częściowe
 

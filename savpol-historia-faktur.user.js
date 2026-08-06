@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.10.0
+// @version      2.11.0
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
 // @grant        unsafeWindow
 // @grant        GM_setClipboard
+// @grant        GM_openInTab
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -78,6 +79,14 @@
     // element z DOM, więc nakładka jest dodatkowo doczepiana z powrotem —
     // patrz progressKeepAlive przy createProgressOverlay().
     HIDE_AFTER_MS: 0
+  };
+
+  // ---------- Konfiguracja: generator PDP ----------
+  // Generator przyjmuje anchora i cross-sell w URL i sam dociąga dane produktu
+  // z esavpol.pl, więc krok z otwieraniem sklepu i przeklejaniem danych odpada.
+  const GENERATOR = {
+    ENABLE: true,
+    URL: 'https://esavpol-pdp.vercel.app/'
   };
 
   // ---------- Konfiguracja: stan katalogu po zakończeniu ----------
@@ -1169,6 +1178,25 @@
     return { text, copied };
   }
 
+  // Otwiera generator PDP z anchorem i listą cross-sell w URL.
+  function openGenerator(anchorSku, skusText) {
+    const cross = (skusText || '')
+      .split(/[\s,;]+/)
+      .map(x => x.trim())
+      .filter(Boolean)
+      .join(',');
+
+    const url = GENERATOR.URL
+      + '?sku=' + encodeURIComponent(anchorSku)
+      + (cross ? '&cross=' + encodeURIComponent(cross) : '');
+
+    // GM_openInTab omija blokadę popupów; window.open jako zapas, gdyby
+    // uprawnienie nie zostało przyznane po aktualizacji skryptu.
+    if (typeof GM_openInTab === 'function') GM_openInTab(url, { active: true });
+    else window.open(url, '_blank');
+    console.log('[Cross-sell] Otwieram generator PDP:', url);
+  }
+
   function logAnalysis(result) {
     console.log(`[Cross-sell] Anchor: ${result.anchorSku}, N = ${result.N} faktur`);
     console.log(`[Cross-sell] Ranking po wykluczeniach (${result.ranked.length}):`);
@@ -1344,7 +1372,7 @@
       } else {
         const clean = !partial && !analysis.unverified;
         ui.finish(`Gotowe — ${analysis.candidates.length} kandydatów (N=${analysis.N})${partialNote}`, clean);
-        ui.result(delivered.text);
+        ui.result(delivered.text, mainSku);
         if (analysis.unverified) {
           ui.detail('Nie sprawdzono stanu magazynowego ani grupy — mogą tu być ' +
             'produkty niedostępne lub niewysyłkowe. Zobacz konsolę.');
@@ -1453,6 +1481,9 @@
       '        padding:5px 10px;border:0;border-radius:4px;background:#4c9aff;color:#04142e;',
       '        font-weight:600;white-space:nowrap">Kopiuj</button>',
       '  </div>',
+      '  <button data-role="gen" type="button" style="display:none;width:100%;margin-top:6px;',
+      '      cursor:pointer;font:inherit;font-size:12px;padding:6px 10px;border:0;border-radius:4px;',
+      '      background:#36b37e;color:#04231a;font-weight:600">Otwórz generator PDP</button>',
       '</div>'
     ].join('');
 
@@ -1468,6 +1499,23 @@
     }, 1000);
     const el = r => box.querySelector('[data-role="' + r + '"]');
     el('close').addEventListener('click', removeProgressOverlay);
+    // Anchora podaje pipeline (patrz result()). getMainProductSku() czyta panel
+    // filtrów widoku historii, który w tym momencie jest już zamknięty, więc
+    // jest tu wyłącznie zapasem.
+    let resultAnchorSku = null;
+
+    el('gen').addEventListener('click', () => {
+      const anchor = resultAnchorSku || getMainProductSku();
+      if (!anchor) {
+        el('detail').textContent = 'Nie udało się odczytać SKU produktu — skopiuj SKU ręcznie.';
+        console.warn('[Cross-sell] Brak SKU anchora, nie otwieram generatora.');
+        return;
+      }
+      openGenerator(anchor, el('skus').value);
+      el('gen').textContent = 'Otwarto w nowej karcie';
+      setTimeout(() => { el('gen').textContent = 'Otwórz generator PDP'; }, 2500);
+    });
+
     el('copy').addEventListener('click', async () => {
       const text = el('skus').value;
       if (!text) return;
@@ -1504,10 +1552,14 @@
       },
       // Wynik do kopiuj-wklej. Pole jest readonly, ale zaznaczalne — jeśli
       // zapis do schowka zawiedzie, zostaje Ctrl+C bez sięgania do konsoli.
-      result(text) {
+      result(text, anchorSku) {
         if (!text) return;
         el('skus').value = text;
         el('resultbox').style.display = 'block';
+        resultAnchorSku = anchorSku || null;
+        if (GENERATOR.ENABLE && (resultAnchorSku || getMainProductSku())) {
+          el('gen').style.display = 'block';
+        }
       },
       finish(text, ok) {
         el('stop').remove();
