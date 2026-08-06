@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.17.1
+// @version      2.18.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -54,6 +54,21 @@
     MIN_COUNT: 4,
     MIN_SHARE: 5,       // podłoga szumu; przy N<80 zaczyna wiązać mocniej niż MIN_COUNT
     TOP_N: 4,           // ile kandydatów w finalnej liście
+
+    // Progi wielkości próby. Zmierzone, nie wyczute: dla ośmiu skalibrowanych
+    // anchorów losowo przycinaliśmy próbę do K faktur (40 losowań na kombinację)
+    // i sprawdzali, ile z top-4 z pełnej próby wraca w wyniku.
+    //
+    //   K=10 → 5% trafień   K=30 → 44%   K=60 → 74%
+    //   K=20 → 22% trafień  K=50 → 68%   K=80 → 85%
+    //
+    // Przy 20 fakturach trzy z czterech rekomendacji byłyby inne, gdyby dane
+    // były kompletne — to losowanie, nie sygnał. Poniżej MIN_INVOICES nie
+    // liczymy wcale; opis powstaje na regułach kategorii po stronie generatora.
+    MIN_INVOICES: 30,
+    // Między MIN_INVOICES a tym progiem wynik jest użyteczny, ale wymaga
+    // obejrzenia przez człowieka — oznaczamy go jako niepewny.
+    LOW_CONFIDENCE_BELOW: 50,
 
     // Maksymalna gramatura opakowania (kg lub L) dopuszczalna w sprzedaży
     // wysyłkowej. Worki 25kg to czyste B2B; 10kg (np. cukier puder) jeszcze ujdzie.
@@ -1432,7 +1447,12 @@
   }
 
   // Otwiera generator PDP z anchorem i listą cross-sell w URL.
-  function openGenerator(anchorSku, skusText) {
+  // Poza SKU generator dostaje podpowiedzi o jakości danych:
+  //   conf=low   — próba mała, wynik do obejrzenia przez człowieka
+  //   group=…    — grupa produktu z katalogu ERP; przy pustym cross to jedyna
+  //                przesłanka dla generatora, bo jego cross-sell-map.md jest
+  //                indeksowana kategorią, nie numerem produktu.
+  function openGenerator(anchorSku, skusText, hints) {
     const cross = (skusText || '')
       .split(/[\s,;]+/)
       .map(x => x.trim())
@@ -1441,7 +1461,9 @@
 
     const url = GENERATOR.URL
       + '?sku=' + encodeURIComponent(anchorSku)
-      + (cross ? '&cross=' + encodeURIComponent(cross) : '');
+      + (cross ? '&cross=' + encodeURIComponent(cross) : '')
+      + (hints && hints.lowConfidence ? '&conf=low' : '')
+      + (hints && hints.group ? '&group=' + encodeURIComponent(hints.group) : '');
 
     // GM_openInTab omija blokadę popupów; window.open jako zapas, gdyby
     // uprawnienie nie zostało przyznane po aktualizacji skryptu.
@@ -1606,12 +1628,44 @@
         : 'Szukam produktów kupowanych razem z tym...');
       ui.detail('Przeczytane: ' + new Set(data.map(r => r.doc)).size + ' faktur, ' +
         data.length + ' pozycji');
+      let anchorGroup = null;
       const analysis = analyzeCrossSell(data, mainSku);
       analysis.partial = partial;
+
+      // Próba za mała, żeby cokolwiek z niej wnioskować — patrz komentarz przy
+      // CROSS_SELL.MIN_INVOICES. Kandydatów kasujemy świadomie: lista z 15
+      // faktur wygląda jak rekomendacja, a jest losowaniem.
+      analysis.tooFewInvoices = analysis.N < CROSS_SELL.MIN_INVOICES;
+      analysis.lowConfidence = !analysis.tooFewInvoices &&
+        analysis.N < CROSS_SELL.LOW_CONFIDENCE_BELOW;
+      if (analysis.tooFewInvoices) {
+        analysis.candidates = [];
+        analysis.weakSignal = true;
+      }
+
       logAnalysis(analysis);
 
       let historyTabLi = null;
-      if (AVAILABILITY.ENABLE) {
+
+      // Nowy produkt bez sprzedaży: nie ma czego sprawdzać w katalogu, ale
+      // potrzebujemy GRUPY produktu — to jedyna przesłanka, na której generator
+      // może oprzeć propozycje, bo jego mapa cross-sellu jest indeksowana
+      // kategorią. Przy okazji katalog zostaje na anchorze.
+      if (analysis.tooFewInvoices) {
+        historyTabLi = document.querySelector('li.k-state-active');
+        ui.phase('Sprawdzam kategorię produktu...');
+        button.textContent = '🔎 Sprawdzam kategorię...';
+        try {
+          if (await switchToCatalogTab()) {
+            const item = await lookupCatalogItem(mainSku);
+            anchorGroup = item ? item.group : null;
+            console.log('[Cross-sell] Za mało faktur (' + analysis.N + '). ' +
+              'Grupa anchora: ' + (anchorGroup || 'nieodczytana'));
+          }
+        } catch (err) {
+          console.warn('[Cross-sell] Nie odczytałem grupy anchora:', err && err.message || err);
+        }
+      } else if (AVAILABILITY.ENABLE) {
         historyTabLi = document.querySelector('li.k-state-active'); // zapamiętane PRZED przejściem do katalogu
         ui.phase('Sprawdzam, czy te produkty są dostępne...');
         button.textContent = '🔎 Sprawdzam dostępność...';
@@ -1660,7 +1714,16 @@
       // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
       const delivered = await deliverSkus(analysis.candidates);
 
-      if (analysis.weakSignal) {
+      if (analysis.tooFewInvoices) {
+        ui.finish('Za mało sprzedaży, żeby coś policzyć', false);
+        ui.detail(`Ten produkt ma tylko ${analysis.N} faktur — za mało, żeby ` +
+          'wiarygodnie stwierdzić, co się z nim kupuje. Kliknij „Otwórz generator ' +
+          'opisów": zaproponuje produkty na podstawie kategorii.');
+        // Pole SKU zostaje puste, ale przycisk generatora ma się pokazać —
+        // to teraz jedyna droga dalej dla tego produktu.
+        ui.result(' ', mainSku, { group: anchorGroup, noHistory: true });
+        button.textContent = '🆕 Za mało sprzedaży — użyj generatora';
+      } else if (analysis.weakSignal) {
         ui.finish('Brak propozycji dla tego produktu', false);
         ui.detail(`Sprawdziłem ${analysis.N} faktur i żaden produkt nie powtarza się ` +
           'w nich dość często, żeby go polecać. To normalne — ten produkt ' +
@@ -1669,10 +1732,14 @@
       } else {
         const clean = !partial && !analysis.unverified;
         ui.finish(`Gotowe — ${analysis.candidates.length} propozycji`, clean);
-        ui.result(delivered.text, mainSku);
+        ui.result(delivered.text, mainSku, { lowConfidence: analysis.lowConfidence });
         if (analysis.unverified) {
           ui.detail('Nie udało mi się sprawdzić dostępności, więc mogą tu być ' +
             'produkty niedostępne lub niewysyłkowe. Zobacz konsolę.');
+        } else if (analysis.lowConfidence) {
+          ui.detail(`Wynik z ${analysis.N} faktur — to niedużo, więc potraktuj go ` +
+            'jako podpowiedź, nie pewnik. Zerknij, czy te produkty pasują ' +
+            'do siebie, zanim użyjesz ich w opisie.');
         } else if (partial) {
           ui.detail(`Zatrzymane w trakcie — wynik z ${analysis.N} faktur zamiast z wszystkich. ` +
             'Możesz go użyć, ale pełne sprawdzenie dałoby pewniejszą listę.');
@@ -1816,6 +1883,7 @@
     // Anchora podaje pipeline (patrz result()); deklaracja przed nasłuchami,
     // bo odwołują się do niej w domknięciu.
     let resultAnchorSku = null;
+    let resultHints = null;
     el('close').addEventListener('click', removeProgressOverlay);
 
     // Log struktury DOM do pliku. Skrypt nie ma dostępu do dysku poza pobraniem,
@@ -1836,7 +1904,7 @@
         console.warn('[Cross-sell] Brak SKU anchora, nie otwieram generatora.');
         return;
       }
-      openGenerator(anchor, el('skus').value);
+      openGenerator(anchor, el('skus').value, resultHints);
       el('gen').textContent = 'Otwarte w nowej karcie';
       setTimeout(() => { el('gen').textContent = 'Otwórz generator opisów'; }, 2500);
     });
@@ -1877,9 +1945,10 @@
       },
       // Wynik do kopiuj-wklej. Pole jest readonly, ale zaznaczalne — jeśli
       // zapis do schowka zawiedzie, zostaje Ctrl+C bez sięgania do konsoli.
-      result(text, anchorSku) {
+      result(text, anchorSku, hints) {
         if (!text) return;
-        el('skus').value = text;
+        resultHints = hints || null;
+        el('skus').value = text.trim();
         el('resultbox').style.display = 'block';
         resultAnchorSku = anchorSku || null;
         if (GENERATOR.ENABLE && (resultAnchorSku || getMainProductSku())) {
@@ -1941,6 +2010,8 @@
         invoices: analysis.N,
         partial: !!partial,
         unverified: !!analysis.unverified,
+        tooFewInvoices: !!analysis.tooFewInvoices,
+        lowConfidence: !!analysis.lowConfidence,
         candidates: analysis.candidates.map(c => c.sku),
         scriptVersion: typeof GM_info !== 'undefined' && GM_info.script
           ? GM_info.script.version : null,

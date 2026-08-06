@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.17.1)
+## Stan obecny (v2.18.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -767,6 +767,69 @@ siatek żyje równolegle (w tym logu 63) i zawsze któraś pasuje. Warunek musi
 wskazywać **konkretne dane, na które czekamy**. Ta sama pomyłka co przy
 rozpoznawaniu siatki po jednej kolumnie (v2.16.1) i przy szukaniu zakładki
 katalogu po nazwie (v2.9.1).
+
+## Ile faktur to za mało — pomiar zamiast przeczucia (v2.18.0)
+
+Nowe produkty mają zero, jedną albo dwie faktury, a marketing chce ich opisywać
+najwięcej. Pytanie „przy ilu fakturach to jeszcze szum" dało się rozstrzygnąć
+danymi, bo mamy dziewięć skalibrowanych historii.
+
+Metoda: dla ośmiu anchorów losowo przycinamy próbę do K faktur (40 losowań na
+kombinację) i sprawdzamy, ile z top-4 z pełnej próby wraca w wyniku.
+Skrypt: `stability.js` (nie w repo, do odtworzenia z tego opisu).
+
+| Faktur | Trafień z pełnego top-4 | Przebiegów bez wyniku |
+|---|---|---|
+| 10 | 5% | 78% |
+| 15 | 11% | 55% |
+| 20 | 22% | 32% |
+| 30 | 44% | 7% |
+| 40 | 57% | 2% |
+| 50 | 68% | 0% |
+| 60 | 74% | 0% |
+| 80 | 85% | 0% |
+
+Przy 20 fakturach **trzy z czterech rekomendacji byłyby inne**, gdyby próba
+była pełna. Stąd progi:
+
+- `MIN_INVOICES: 30` — poniżej nie liczymy wcale. Kandydaci są kasowani
+  świadomie: lista z 15 faktur wygląda jak rekomendacja, a jest losowaniem.
+- `LOW_CONFIDENCE_BELOW: 50` — między 30 a 49 wynik zostaje, ale jest oznaczony
+  jako niepewny (44–68% trafień to jeszcze informacja, tyle że wymaga oka).
+
+Podłoga na 30, nie na 50, bo przy 30 mamy 44% trafień i tylko 7% pustych
+przebiegów — to niesie treść, choć wymaga obejrzenia.
+
+**Ścieżka dla produktu bez sprzedaży:** zamiast błędu skrypt odczytuje z katalogu
+**grupę produktu** i otwiera generator z `?sku=…&group=…` bez `cross`. Grupa jest
+tam jedyną przesłanką, bo `cross-sell-map.md` po tamtej stronie jest indeksowana
+kategorią. Flaga `conf=low` jedzie w URL dla przypadku 30–49, a `tooFewInvoices`
+i `lowConfidence` trafiają do metadanych archiwum.
+
+## Bestsellery udające cross-sell — ZNANE, NIENAPRAWIONE
+
+Przy okazji pomiaru wyszło coś ważniejszego niż próg. Częstość SKU w top-4
+ośmiu różnych anchorów:
+
+```
+0006418: 7/8 anchorów
+0020669: 6/8 anchorów
+wszystkie pozostałe: 1/8
+```
+
+To nie są produkty „kupowane razem z tym" — to bestsellery kupowane **ze
+wszystkim**. Współwystępują, bo są w połowie faktur w firmie, nie dlatego, że
+pasują do orzecha laskowego czy jogurtu Skyr. **Dwa z czterech miejsc w każdej
+rekomendacji idą dziś na produkty, które i tak trafiłyby do koszyka.**
+
+Lekarstwo: **lift** zamiast surowego udziału — udział produktu w fakturach
+anchora podzielić przez jego udział we wszystkich fakturach. Produkt obecny
+w 40% faktur anchora i w 38% wszystkich → brak afinity, wypada. Obecny w 12%
+faktur anchora i w 2% wszystkich → prawdziwy sygnał, choć liczbowo słabszy.
+
+Wymaga oszacowania tła, czyli udziału każdego SKU w ogóle faktur — i to jest
+brakujący argument za gromadzeniem historii w repo. Im więcej plików w archiwum,
+tym lepsze tło. Do zrobienia po tym, jak archiwum urośnie.
 
 ## Roadmap
 
