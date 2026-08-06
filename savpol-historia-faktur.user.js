@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.11.1
+// @version      2.12.0
 // @description  Pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @match        https://erp.savpol.pl/*
@@ -88,6 +88,23 @@
   const GENERATOR = {
     ENABLE: true,
     URL: 'https://esavpol-pdp.vercel.app/'
+  };
+
+  // ---------- Konfiguracja: diagnostyka ----------
+  // ERP renderuje DOM zależnie od uprawnień i konfiguracji widoku KONKRETNEGO
+  // użytkownika: inne kolumny w siatkach, inne zakładki, czasem brak przycisku
+  // akcji. Selektor działający na jednym koncie potrafi trafiać w nic na innym.
+  // Bufor zbiera zrzuty struktury DOM w kluczowych momentach, żeby dało się
+  // zdiagnozować cudzy komputer bez siedzenia przy nim.
+  //
+  // Skrypt nie ma dostępu do dysku, więc log NIE trafia do repo sam — zapisuje
+  // się przez pobranie pliku (przycisk „Pobierz log" w panelu). Plik można
+  // przesłać i wrzucić do katalogu diagnostyka/ ręcznie.
+  const DIAGNOSTICS = {
+    ENABLE: true,
+    MAX_ENTRIES: 3000,
+    // Zrzut HTML jest odcinany — chodzi o strukturę, nie o treść dokumentów.
+    HTML_SNIPPET_CHARS: 1500
   };
 
   // ---------- Konfiguracja: stan katalogu po zakończeniu ----------
@@ -377,6 +394,102 @@
   }
 
   // Zrzut widocznych siatek do diagnozy — jakie kolumny faktycznie są dostępne.
+  // ---------- Diagnostyka ----------
+  const diagBuffer = [];
+  let diagStarted = null;
+
+  function diagStamp() {
+    if (diagStarted === null) diagStarted = Date.now();
+    return ((Date.now() - diagStarted) / 1000).toFixed(1) + 's';
+  }
+
+  function diag(tag, message) {
+    if (!DIAGNOSTICS.ENABLE) return;
+    if (diagBuffer.length >= DIAGNOSTICS.MAX_ENTRIES) return;
+    diagBuffer.push('[' + diagStamp() + '] ' + tag + ': ' + message);
+  }
+
+  // Struktura, nie treść. Wypisujemy to, na czym opierają się selektory:
+  // zakładki, siatki wraz z listą data-datafield, pager, wyszukiwarki.
+  function describeDom(label) {
+    if (!DIAGNOSTICS.ENABLE) return;
+    const lines = ['--- ZRZUT DOM: ' + label + ' ---', 'URL: ' + location.href];
+
+    const tabs = Array.from(document.querySelectorAll('li.k-item[aria-controls]'));
+    lines.push('Zakładki k-item[aria-controls]: ' + tabs.length +
+      ' (widocznych: ' + tabs.filter(li => li.offsetParent !== null).length + ')');
+    tabs.forEach((li, i) => {
+      const panel = document.getElementById(li.getAttribute('aria-controls'));
+      const sig = panel ? panelLooksLikeCatalog(panel) : null;
+      lines.push('  tab#' + i +
+        ' widoczna=' + (li.offsetParent !== null) +
+        ' aktywna=' + li.classList.contains('k-state-active') +
+        ' etykieta="' + tabLabel(li).slice(0, 60) + '"' +
+        ' panel=' + (panel ? 'jest' : 'BRAK') +
+        (sig ? ' szukajka=' + sig.hasSearch + ' siatkaZeStanem=' + sig.hasStockGrid : ''));
+    });
+
+    const grids = Array.from(document.querySelectorAll('.cs-grid-data-table'));
+    lines.push('Siatki .cs-grid-data-table: ' + grids.length);
+    grids.forEach((t, i) => {
+      const rows = t.querySelectorAll('tr.cs-grid-data-row');
+      const row = rows[0] || t.querySelector('tbody tr');
+      const fields = row
+        ? Array.from(row.querySelectorAll('td[data-datafield]')).map(td => td.dataset.datafield)
+        : [];
+      lines.push('  siatka#' + i + ' widoczna=' + (t.offsetParent !== null) +
+        ' wierszy=' + rows.length +
+        ' przyciskAkcji=' + (t.querySelector('.csButtonAction') !== null) +
+        ' kolumny=[' + fields.join(', ') + ']');
+    });
+
+    const pagers = Array.from(document.querySelectorAll('.csDataPager'));
+    lines.push('Pagery: ' + pagers.length +
+      (pagers.length ? ' | widoczny: ' + describePager(getVisiblePager()) : ''));
+    lines.push('Wyszukiwarki .csDBEditSearch: ' +
+      document.querySelectorAll('.csDBEditSearch input.Input').length);
+
+    diag('DOM', lines.join('\n'));
+  }
+
+  // Awaryjnie: surowy HTML kontenera, gdy sam opis struktury nie wystarcza
+  // do zrozumienia, czym różni się układ na innym koncie.
+  function diagHtml(label, node) {
+    if (!DIAGNOSTICS.ENABLE || !node) return;
+    diag('HTML', label + ': ' +
+      node.outerHTML.replace(/\s+/g, ' ').slice(0, DIAGNOSTICS.HTML_SNIPPET_CHARS));
+  }
+
+  function buildDiagReport(mainSku) {
+    return [
+      'Savpol Historia Faktur — log diagnostyczny',
+      'Wersja skryptu: ' + (typeof GM_info !== 'undefined' && GM_info.script
+        ? GM_info.script.version : 'nieznana'),
+      'Produkt (anchor): ' + (mainSku || 'nieznany'),
+      'URL: ' + location.href,
+      'User agent: ' + navigator.userAgent,
+      'Wpisów: ' + diagBuffer.length +
+        (diagBuffer.length >= DIAGNOSTICS.MAX_ENTRIES ? ' (bufor pełny, dalsze pominięte)' : ''),
+      '',
+      diagBuffer.join('\n')
+    ].join('\n');
+  }
+
+  function downloadDiagReport(mainSku) {
+    const blob = new Blob(['﻿' + buildDiagReport(mainSku)],
+      { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'savpol_diagnostyka_' + (mainSku || 'produkt') + '.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Dostępne z konsoli, gdyby panel zniknął albo trzeba było zajrzeć w trakcie.
+  unsafeWindow.savpolDiag = () => buildDiagReport(null);
+  unsafeWindow.savpolDiagDownload = sku => downloadDiagReport(sku);
+
   function describeVisibleGrids() {
     const grids = Array.from(document.querySelectorAll('.cs-grid-data-table'))
       .filter(t => t.offsetParent !== null);
@@ -511,13 +624,25 @@
           const c = r.querySelector('td[data-datafield="DocNumber"]');
           return c && c.getAttribute('title') === targetDoc;
         });
-        if (!row) { console.warn('Nie znaleziono wiersza dla', targetDoc); continue; }
+        if (!row) {
+          console.warn('Nie znaleziono wiersza dla', targetDoc);
+          diag('BLAD', 'Nie znaleziono wiersza dla ' + targetDoc +
+            ' (wierszy w widocznej siatce: ' + getFaRows().length + ')');
+          continue;
+        }
 
         processedDocs.add(targetDoc);
 
         const docNumberCell = row.querySelector('td[data-datafield="DocNumber"]');
         const btn = docNumberCell.querySelector('.csButtonAction');
-        if (!btn) { console.warn('Brak przycisku dla', targetDoc); continue; }
+        if (!btn) {
+          console.warn('Brak przycisku dla', targetDoc);
+          // Brak .csButtonAction bywa kwestią uprawnień — użytkownik widzi
+          // dokument, ale nie ma prawa go otworzyć.
+          diag('BLAD', 'Brak przycisku akcji dla ' + targetDoc);
+          diagHtml('wiersz bez przycisku', row);
+          continue;
+        }
 
         btn.click();
 
@@ -526,6 +651,10 @@
           consecutiveFailures++;
           console.error('[Savpol Historia Faktur] Nie udało się otworzyć faktury ' + targetDoc +
             '. Widoczne siatki: ' + describeVisibleGrids());
+          diag('BLAD', 'Nie udało się otworzyć faktury ' + targetDoc +
+            ' (porażka ' + consecutiveFailures + ')');
+          // Pełny zrzut tylko przy pierwszej porażce — kolejne są jej skutkiem.
+          if (consecutiveFailures === 1) describeDom('nieudane otwarcie faktury');
 
           // ODZYSKIWANIE. Bez tego jedna nieudana faktura kładła cały przebieg:
           // otwarta zakładka przykrywała listę historii, więc każdy kolejny
@@ -543,6 +672,7 @@
           }
           continue;
         }
+        if (invoicesProcessed === 0) describeDom('pierwsza faktura otwarta');
         consecutiveFailures = 0;
         await sleep(300);
 
@@ -583,6 +713,9 @@
       if (!moved) {
         console.warn('[Savpol Historia Faktur] Nie udało się przejść do kolejnej strony — przerywam. ' +
           'Zebrano ' + invoicesProcessed + ' faktur. Stan pagera: ' + describePager(getVisiblePager()));
+        diag('BLAD', 'Paginacja stanęła. Zebrano ' + invoicesProcessed +
+          ' faktur. Pager: ' + describePager(getVisiblePager()));
+        describeDom('zablokowana paginacja');
         break;
       }
       pageNum++;
@@ -895,6 +1028,7 @@
       console.warn('[Cross-sell] Zakładka katalogu nieaktywna — przełączam ponownie.');
       const back = await switchToCatalogTab();
       if (!back) {
+        describeDom('brak zakładki katalogu');
         throw new Error('Nie udało się wrócić na zakładkę "Katalog" — przerywam, ' +
           'żeby nie wpisywać SKU w widoku historii faktur.');
       }
@@ -1322,11 +1456,17 @@
     ABORT.running = true;
     ABORT.requested = false;
     const ui = PROGRESS.ENABLE ? createProgressOverlay() : noopProgress();
+    diagBuffer.length = 0;
+    diagStarted = Date.now();
+    describeDom('start przebiegu');
     try {
       ui.phase('Otwieram historię produktu...');
       button.textContent = 'Otwieram historię...';
       const opened = openHistory();
-      if (!opened) throw new Error('Nie znaleziono przycisku "Historia produktu". Czy produkt jest zaznaczony?');
+      if (!opened) {
+        describeDom('brak przycisku "Historia produktu"');
+        throw new Error('Nie znaleziono przycisku "Historia produktu". Czy produkt jest zaznaczony?');
+      }
       await sleep(500);
 
       const mainSku = await waitFor(getMainProductSku);
@@ -1457,8 +1597,11 @@
         button.textContent = 'Przerwano';
       } else {
         console.error('[Savpol Historia Faktur] Błąd:', err);
+        diag('BLAD', 'Przebieg zakończony błędem: ' + String(err && err.message || err));
+        describeDom('błąd przebiegu');
         ui.finish('Błąd — zobacz konsolę', false);
-        ui.detail(String(err && err.message || err));
+        ui.detail(String(err && err.message || err) +
+          ' — kliknij „Pobierz log diagnostyczny" i prześlij plik.');
         button.textContent = 'Błąd — zobacz konsolę';
       }
       setTimeout(() => { button.textContent = originalText; }, 3000);
@@ -1526,6 +1669,9 @@
       '  <span data-role="time"></span>',
       '</div>',
       '<div data-role="detail" style="margin-top:8px;font-size:12px;opacity:.7;word-break:break-word"></div>',
+      '<button data-role="diag" type="button" style="width:100%;margin-top:8px;cursor:pointer;',
+      '    font:inherit;font-size:11px;padding:4px 8px;border:1px solid rgba(255,255,255,.2);',
+      '    border-radius:4px;background:transparent;color:#f5f7fa;opacity:.65">Pobierz log diagnostyczny</button>',
       '<div data-role="resultbox" style="display:none;margin-top:10px;padding-top:10px;',
       '    border-top:1px solid rgba(255,255,255,.15)">',
       '  <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;opacity:.6;',
@@ -1555,11 +1701,20 @@
       }
     }, 1000);
     const el = r => box.querySelector('[data-role="' + r + '"]');
-    el('close').addEventListener('click', removeProgressOverlay);
-    // Anchora podaje pipeline (patrz result()). getMainProductSku() czyta panel
-    // filtrów widoku historii, który w tym momencie jest już zamknięty, więc
-    // jest tu wyłącznie zapasem.
+    // Anchora podaje pipeline (patrz result()); deklaracja przed nasłuchami,
+    // bo odwołują się do niej w domknięciu.
     let resultAnchorSku = null;
+    el('close').addEventListener('click', removeProgressOverlay);
+
+    // Log struktury DOM do pliku. Skrypt nie ma dostępu do dysku poza pobraniem,
+    // więc plik trafia do Pobranych i przesyła go człowiek.
+    el('diag').addEventListener('click', () => {
+      downloadDiagReport(resultAnchorSku || getMainProductSku());
+      el('diag').textContent = 'Pobrano log';
+      setTimeout(() => { el('diag').textContent = 'Pobierz log diagnostyczny'; }, 2500);
+    });
+    // getMainProductSku() czyta panel filtrów widoku historii, który w tym
+    // momencie jest już zamknięty, więc jest tu wyłącznie zapasem.
 
     el('gen').addEventListener('click', () => {
       const anchor = resultAnchorSku || getMainProductSku();

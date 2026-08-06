@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.11.1)
+## Stan obecny (v2.12.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -567,6 +567,33 @@ przebiegu, ale wtedy `row.product` jest pusty i **wszystkie reguły nazwowe
 w `EXCLUSIONS` przestają filtrować po cichu** — chłodnia i mroźnia trafiłyby
 do rekomendacji. Dlatego skrypt raz na przebieg krzyczy w konsoli, gdy pozycje
 przychodzą bez nazw. Zostaje wtedy tylko filtr po grupie produktu z katalogu.
+
+## Log diagnostyczny (v2.12.0)
+
+**ERP renderuje DOM zależnie od uprawnień i konfiguracji widoku KONKRETNEGO
+użytkownika.** Ta sama strona na dwóch kontach potrafi mieć inne kolumny
+w siatce, inny zestaw zakładek i brak `.csButtonAction` w wierszu, gdy ktoś
+widzi dokument, ale nie ma prawa go otworzyć. Selektor działający u jednej
+osoby trafia wtedy w nic u drugiej — i tak właśnie wyglądała awaria opisana
+wyżej. Diagnoza zdalna bez wglądu w cudzy DOM to zgadywanka; przy wykrywaniu
+zakładki katalogu kosztowała trzy podejścia.
+
+Skrypt zbiera więc bufor zrzutów struktury: zakładki `li.k-item[aria-controls]`
+z sygnaturą panelu, wszystkie siatki z liczbą wierszy i **listą kolumn
+`data-datafield`**, stan pagera, liczbę wyszukiwarek, wersję skryptu i user
+agent. Zrzuty lecą na starcie przebiegu, przy pierwszej otwartej fakturze
+i przy każdej awarii (nieudane otwarcie, brak wiersza, brak przycisku,
+zablokowana paginacja, brak zakładki katalogu, błąd przebiegu). Przy serii
+porażek pełny zrzut robi się tylko raz — kolejne są skutkiem pierwszej.
+
+**Skrypt nie zapisze logu do repo sam** — działa w przeglądarce, bez dostępu
+do dysku. Log wychodzi przez pobranie pliku: przycisk „Pobierz log
+diagnostyczny" w panelu wyników (panel nie znika sam, więc jest czas nawet
+po błędzie) albo z konsoli `savpolDiag()` / `savpolDiagDownload('<sku>')`.
+Pliki wrzucamy ręcznie do `diagnostyka/` — instrukcja w `diagnostyka/README.md`.
+
+W logu jest struktura, nie treść dokumentów. Numery faktur pojawiają się
+w komunikatach o błędach; nazwy kontrahentów i kwoty nie.
 
 ## Roadmap
 
