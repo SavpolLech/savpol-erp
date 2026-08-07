@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.21.0
+// @version      2.21.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -486,6 +486,10 @@
   // ---------- Diagnostyka ----------
   const diagBuffer = [];
   let diagStarted = null;
+  // Anchor zapamiętany na czas przebiegu. Raport czytał go z panelu filtrów,
+  // który przy zapisie logu bywa już zamknięty — stąd „Produkt: nieznany"
+  // w logach przysyłanych przez użytkowników.
+  let diagAnchorSku = null;
 
   function diagStamp() {
     if (diagStarted === null) diagStarted = Date.now();
@@ -554,7 +558,7 @@
       'Savpol Historia Faktur — log diagnostyczny',
       'Wersja skryptu: ' + (typeof GM_info !== 'undefined' && GM_info.script
         ? GM_info.script.version : 'nieznana'),
-      'Produkt (anchor): ' + (mainSku || 'nieznany'),
+      'Produkt (anchor): ' + (mainSku || diagAnchorSku || 'nieznany'),
       'URL: ' + location.href,
       'User agent: ' + navigator.userAgent,
       'Wpisów: ' + diagBuffer.length +
@@ -1596,6 +1600,7 @@
       await sleep(500);
 
       const mainSku = await waitFor(getMainProductSku);
+      diagAnchorSku = mainSku;
       ui.detail('Produkt: ' + (mainSku || '?') + '. To potrwa około 3 minut.');
 
       // Przy trzech osobach bez koordynacji łatwo zrobić ten sam produkt dwa
@@ -1808,6 +1813,16 @@
 
       await closeHistoryTab(AVAILABILITY.ENABLE ? historyTabLi : null);
 
+      // Log MUSI odnotować także przebieg udany. Bez tego wpis kończy się na
+      // „pierwsza faktura otwarta" i po logu nie da się orzec, czy praca się
+      // udała, czy urwała w połowie — dokładnie taki log dostaliśmy od
+      // użytkowniczki i nie dało się z niego nic wywnioskować.
+      diag('KONIEC', 'Przebieg zakończony. Faktur: ' + analysis.N +
+        ', kandydatów: ' + analysis.candidates.length +
+        (analysis.unverified ? ', BEZ weryfikacji w katalogu' : '') +
+        (partial ? ', próba przerwana' : '') +
+        '. Archiwum: wysłano ' + upload.sent + ', w kolejce ' + upload.left + '.');
+
       if (upload.left) {
         ui.detail('Uwaga: wyniki nie zapisały się w archiwum (' + upload.left +
           ' w kolejce). Zaloguj się w generatorze opisów — wyślą się same ' +
@@ -1820,6 +1835,7 @@
         // Przerwanie użytkownika — świadomie NIE eksportujemy nic. Wynik
         // z niepełnej próby wyglądałby jak normalna rekomendacja, a nie jest.
         console.warn('[Savpol Historia Faktur] Przerwano przez użytkownika.');
+        diag('KONIEC', 'Przerwane przez użytkownika przed policzeniem wyniku.');
         ui.finish('⏹️ Zatrzymane', false);
         ui.detail('Zatrzymane, zanim cokolwiek policzyłem — nic nie zostało zapisane. ' +
           'Możesz uruchomić od nowa.');

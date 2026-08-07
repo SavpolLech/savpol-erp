@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.21.0)
+## Stan obecny (v2.21.1)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -907,6 +907,26 @@ stanem przejściowym, nie odpowiedzią.
 błędem 400). Efekt uboczny: sprawdzanie duplikatu nie wie, że ten produkt
 już ktoś oglądał. Przy nowościach to nawet pożądane — za miesiąc faktury mogą
 już być — ale warto o tym pamiętać.
+
+## Log, z którego nic nie wynikało (v2.21.1)
+
+Użytkowniczka przysłała log diagnostyczny bez ani jednego wpisu o błędzie —
+tylko „start przebiegu" i „pierwsza faktura otwarta". Nie dało się z niego
+orzec, czy przebieg się udał, czy urwał w połowie, bo **log odnotowywał
+wyłącznie awarie**. Cisza znaczyła jednocześnie „wszystko dobrze"
+i „coś się stało, ale nie w miejscu, które logujemy".
+
+Doszły więc wpisy `KONIEC`: liczba faktur, liczba kandydatów, stan weryfikacji
+w katalogu, czy próba była przerwana i ile historii poszło do archiwum.
+Osobny wpis przy przerwaniu przez użytkownika.
+
+Druga usterka tego samego logu: `Produkt (anchor): nieznany`. Raport czytał SKU
+z panelu filtrów, który przy zapisie bywa już zamknięty. Anchor jest teraz
+zapamiętywany na czas przebiegu (`diagAnchorSku`).
+
+**Wniosek ogólny:** log, który zapisuje tylko awarie, jest bezużyteczny w chwili,
+gdy użytkownik nie potrafi nazwać tego, co zobaczył — a to najczęstszy powód
+przysłania logu.
 
 ## Roadmap
 
