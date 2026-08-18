@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.21.1)
+## Stan obecny (v2.22.0)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -927,6 +927,21 @@ zapamiętywany na czas przebiegu (`diagAnchorSku`).
 **Wniosek ogólny:** log, który zapisuje tylko awarie, jest bezużyteczny w chwili,
 gdy użytkownik nie potrafi nazwać tego, co zobaczył — a to najczęstszy powód
 przysłania logu.
+
+## Koniec z zapisem SKU do schowka (v2.22.0)
+
+Ostatnia pozostałość po czasach, gdy lista SKU była głównym wynikiem pracy
+i przepisywało się ją ręcznie. Generator dostaje numery w URL od v2.13, pole
+z listą zniknęło w v2.19 — sam zapis do schowka został i **nadpisywał ludziom
+zawartość schowka** przy każdym przebiegu, nie dając nic w zamian.
+
+Usunięte: `CLIPBOARD`, `copySkusToClipboard()`, `deliverSkus()` oraz uprawnienie
+`@grant GM_setClipboard`. Zostało `skusToText()` (buduje listę dla URL-a)
+i `reportSkus()`, które wypisuje ją w konsoli — to jedyny ślad, gdyby otwarcie
+karty generatora zawiodło.
+
+Uwaga przy aktualizacji: usunięcie `@grant` też jest zmianą uprawnień, więc
+Tampermonkey pokaże ekran zgody i do jego kliknięcia zostawi starą wersję.
 
 ## Roadmap
 

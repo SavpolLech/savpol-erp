@@ -1,15 +1,14 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.21.1
-// @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, zwraca SKU do cross-sellingu w schowku i CSV
+// @version      2.22.0
+// @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
 // @downloadURL  https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
 // @match        https://erp.savpol.pl/*
 // @match        https://esavpol.pl/*
 // @grant        unsafeWindow
-// @grant        GM_setClipboard
 // @grant        GM_openInTab
 // @grant        GM_setValue
 // @grant        GM_getValue
@@ -36,7 +35,7 @@
   const MAX_CONSECUTIVE_FAILURES = 3;              // tyle nieudanych otwarć faktur z rzędu kończy zbieranie
 
   // Pliki CSV na dysk. Były potrzebne do kalibracji reguł na realnych danych;
-  // teraz wynikiem pracy są SKU w schowku i opis w generatorze, a pobrane pliki
+  // teraz wynikiem pracy jest opis w generatorze, a pobrane pliki
   // tylko zaśmiecają Pobrane. Zostają jako flagi, bo przy dostrajaniu reguł
   // surowa historia znów bywa potrzebna.
   const EXPORT_RAW_HISTORY = false;                // CSV z pełną historią faktur (debug reguł)
@@ -180,13 +179,8 @@
     SEARCH_ANCHOR: true
   };
 
-  // ---------- Konfiguracja: SKU do schowka ----------
-  // Główny wynik pracy skryptu: lista SKU rozdzielona przecinkami, gotowa
-  // do wklejenia (np. 0020669,0006418,0003863,0005105).
-  const CLIPBOARD = {
-    ENABLE: true,
-    SEPARATOR: ','
-  };
+  // Separator listy SKU przekazywanej do generatora.
+  const SKU_SEPARATOR = ',';
 
   // ---------- Przerywanie pracy ----------
   // Przebieg trwa kilka minut i nie da się go ubić inaczej niż przeładowaniem
@@ -1429,55 +1423,25 @@
     URL.revokeObjectURL(url);
   }
 
-  // ---------- Wynik główny: SKU do schowka ----------
-  // GM_setClipboard działa bez gestu użytkownika i bez uprawnień przeglądarki,
-  // dlatego jest ścieżką pierwszego wyboru. navigator.clipboard zostaje jako
-  // zapas, gdy skrypt działa bez @grant (np. po ręcznej edycji nagłówka).
+  // ---------- Lista SKU dla generatora ----------
+  // Do v2.22.0 lista trafiała też do schowka — została po czasach, gdy była
+  // głównym wynikiem pracy i przepisywało się ją ręcznie. Generator dostaje ją
+  // dziś w URL, więc zapis do schowka tylko nadpisywał ludziom zawartość.
   function skusToText(candidates) {
-    return candidates.map(c => (c.sku || '').trim()).filter(Boolean).join(CLIPBOARD.SEPARATOR);
+    return candidates.map(c => (c.sku || '').trim()).filter(Boolean).join(SKU_SEPARATOR);
   }
 
-  function copySkusToClipboard(text) {
-    if (!text) return Promise.resolve(false);
-
-    if (typeof GM_setClipboard === 'function') {
-      try {
-        GM_setClipboard(text, 'text');
-        return Promise.resolve(true);
-      } catch (err) {
-        console.warn('[Cross-sell] GM_setClipboard zawiodło, próbuję navigator.clipboard:', err);
-      }
-    }
-
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      return navigator.clipboard.writeText(text).then(() => true).catch(err => {
-        console.warn('[Cross-sell] navigator.clipboard zawiodło:', err);
-        return false;
-      });
-    }
-
-    return Promise.resolve(false);
-  }
-
-  // Wynik wypisujemy zawsze, niezależnie od tego, czy zapis do schowka się udał —
-  // wtedy zostaje do skopiowania ręcznie z konsoli.
-  async function deliverSkus(candidates) {
+  // Wynik wypisujemy w konsoli niezależnie od tego, co zrobi generator —
+  // to jedyny ślad, gdyby otwarcie karty zawiodło.
+  function reportSkus(candidates) {
     const text = skusToText(candidates);
     if (!text) {
-      console.warn('[Cross-sell] Brak SKU do skopiowania.');
-      return { text, copied: false };
+      console.warn('[Cross-sell] Brak SKU do przekazania.');
+      return text;
     }
-
     console.log('%c[Cross-sell] SKU do cross-sellingu:', 'font-weight:bold');
     console.log(text);
-
-    if (!CLIPBOARD.ENABLE) return { text, copied: false };
-
-    const copied = await copySkusToClipboard(text);
-    console.log(copied
-      ? '[Cross-sell] Skopiowano do schowka.'
-      : '[Cross-sell] NIE udało się zapisać do schowka — skopiuj z linii powyżej.');
-    return { text, copied };
+    return text;
   }
 
   // Otwiera generator PDP z anchorem i listą cross-sell w URL.
@@ -1755,8 +1719,7 @@
       queueHistoryUpload(mainSku, data, analysis, partial);
       const upload = await flushHistoryQueue();
 
-      // Główny wynik pracy: SKU rozdzielone przecinkami w schowku.
-      const delivered = await deliverSkus(analysis.candidates);
+      const skusText = reportSkus(analysis.candidates);
 
       // Rozstrzyga BRAK KANDYDATÓW, nie próg — przy 12 fakturach i jednym
       // kandydacie mamy co pokazać, a o wiarygodności rozstrzyga generator.
@@ -1784,7 +1747,7 @@
       } else {
         const clean = !partial && !analysis.unverified;
         ui.finish(`Gotowe — ${analysis.candidates.length} propozycji`, clean);
-        ui.result(delivered.text, mainSku, {
+        ui.result(skusText, mainSku, {
           invoices: analysis.N,
           group: anchorGroup
         });
@@ -1799,15 +1762,10 @@
           ui.detail(`Zatrzymane w trakcie — wynik z ${analysis.N} faktur zamiast z wszystkich. ` +
             'Możesz go użyć, ale pełne sprawdzenie dałoby pewniejszą listę.');
         } else {
-          ui.detail(delivered.copied
-            ? `Znalezione na podstawie ${analysis.N} faktur. Numery są już skopiowane — ` +
-              'możesz je wkleić albo kliknąć „Otwórz generator opisów".'
-            : 'Numery są w konsoli — kliknij „Otwórz generator opisów", ' +
-              'on dostaje je bezpośrednio.');
+          ui.detail(`Znalezione na podstawie ${analysis.N} faktur. ` +
+            'Kliknij „Otwórz generator opisów" — dostanie te numery od razu.');
         }
-        button.textContent = delivered.copied
-          ? `✅ Gotowe, skopiowane: ${delivered.text}`
-          : `✅ Gotowe: ${analysis.candidates.length} propozycji`;
+        button.textContent = `✅ Gotowe: ${skusText}`;
       }
       await sleep(2500);
 
@@ -1918,9 +1876,9 @@
       '<button data-role="diag" type="button" style="width:100%;margin-top:8px;cursor:pointer;',
       '    font:inherit;font-size:11px;padding:4px 8px;border:1px solid rgba(255,255,255,.2);',
       '    border-radius:4px;background:transparent;color:#f5f7fa;opacity:.65">Zapisz szczegóły błędu</button>',
-      // Pole z listą SKU i przycisk „Kopiuj" usunięte w v2.19.0 — od czasu,
-      // gdy generator dostaje SKU w URL, nikt ich stąd nie przepisywał.
-      // Numery nadal lecą do schowka po cichu (deliverSkus) jako droga awaryjna.
+      // Pole z listą SKU i przycisk „Kopiuj" usunięte w v2.19.0, zapis do
+      // schowka w v2.22.0 — generator dostaje numery w URL, a w konsoli zostaje
+      // ślad na wypadek, gdyby otwarcie karty zawiodło.
       '<div data-role="resultbox" style="display:none;margin-top:10px;padding-top:10px;',
       '    border-top:1px solid rgba(255,255,255,.15)">',
       '  <button data-role="gen" type="button" style="display:none;width:100%;',
@@ -1961,7 +1919,7 @@
       const anchor = resultAnchorSku || getMainProductSku();
       if (!anchor) {
         el('detail').textContent = 'Nie odczytałem numeru produktu — otwórz ' +
-          'generator opisów ręcznie. Numery znajdziesz w schowku.';
+          'generator opisów ręcznie. Numery są wypisane w konsoli przeglądarki.';
         console.warn('[Cross-sell] Brak SKU anchora, nie otwieram generatora.');
         return;
       }
