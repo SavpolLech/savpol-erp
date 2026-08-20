@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.22.0
+// @version      2.23.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -152,6 +152,21 @@
     // Link produktu poznajemy po kształcie adresu (slug + co najmniej 6 cyfr),
     // nie po klasie CSS — klasy w sklepie się zmieniają, kształt nie.
     PRODUCT_LINK_RE: /^\/[a-z0-9ąćęłńóśźż-]+-\d{6,}$/i
+  };
+
+  // ---------- Konfiguracja: masowy odczyt EAN ----------
+  // Druga funkcja skryptu, niezależna od cross-sellingu: wklejasz listę SKU
+  // z arkusza, dostajesz kolumnę EAN-ów w tej samej kolejności.
+  //
+  // EAN jest KOLUMNĄ SIATKI KATALOGU (`td[data-datafield="EAN"]`), więc nie
+  // trzeba otwierać karty produktu — wystarczy wyszukać SKU i odczytać wiersz.
+  const EAN_TOOL = {
+    ENABLE: true,
+    BUTTON_ID: 'savpol-ean-btn',
+    PANEL_ID: 'savpol-ean-panel',
+    // Odstęp po każdym wyszukaniu. Katalog odpowiada szybko, ale przy 150 SKU
+    // pod rząd warto nie zasypywać go żądaniami.
+    DELAY_MS: 200
   };
 
   // ---------- Konfiguracja: diagnostyka ----------
@@ -2291,6 +2306,231 @@
     toolbar.appendChild(btn);
   }
 
+  // ---------- Masowy odczyt EAN ----------
+  const eanRun = { running: false, stop: false };
+
+  function parseSkuList(raw) {
+    // Z arkusza przychodzi kolumna (nowe linie), ale ludzie wklejają też
+    // listy po przecinku albo ze spacjami. Puste wiersze pomijamy — inaczej
+    // rozjechałaby się kolejność względem arkusza.
+    return (raw || '')
+      .split(/[\s,;]+/)
+      .map(x => x.trim())
+      .filter(Boolean);
+  }
+
+  function readEanFromRow(row) {
+    const cell = row.querySelector('td[data-datafield="EAN"]');
+    if (!cell) return '';
+    return (cell.getAttribute('title') || cell.textContent || '').trim();
+  }
+
+  // Jedno SKU potrafi mieć w katalogu kilka kartotek: podstawową i dodatkowe
+  // („Gratis", „Promocja specjalna", „Towar nisko rotujący"), rozpoznawalne po
+  // szarym podpisie pod nazwą. Bierzemy kartotekę BEZ podpisu; gdy każda go ma,
+  // bierzemy pierwszą i mówimy o tym w wyniku.
+  function pickCatalogRowForSku(sku) {
+    const grid = getVisibleCatalogGrid();
+    if (!grid) return { row: null, matches: 0, ambiguous: false };
+
+    const rows = Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row'))
+      .filter(r => {
+        const c = r.querySelector('td[data-datafield="Item"]');
+        return c && (c.getAttribute('title') || '').trim() === sku;
+      });
+    if (!rows.length) return { row: null, matches: 0, ambiguous: false };
+
+    const plain = rows.filter(r => !readCaption(r.querySelector('td[data-datafield="ItemDesc"]')));
+    const chosen = plain[0] || rows[0];
+    return { row: chosen, matches: rows.length, ambiguous: rows.length > 1 && !plain.length };
+  }
+
+  async function fetchEanForSku(sku) {
+    await searchCatalog(sku);
+    const { row, matches, ambiguous } = pickCatalogRowForSku(sku);
+    if (!row) return { sku, ean: '', status: 'nie znaleziono w katalogu' };
+
+    const ean = readEanFromRow(row);
+    if (!ean) return { sku, ean: '', status: 'produkt bez EAN' };
+    if (ambiguous) return { sku, ean, status: 'kilka kartotek (' + matches + ') — sprawdź' };
+    return { sku, ean, status: 'ok' };
+  }
+
+  // Wynik w kolejności WEJŚCIOWEJ — to warunek wklejenia go wprost do arkusza
+  // obok kolumny SKU. Brak EAN zostaje pustą linią, żeby nic się nie przesunęło.
+  function formatEanOutput(results, opts) {
+    return results.map(r => {
+      const ean = r.ean && opts.apostrophe ? "'" + r.ean : r.ean;
+      return opts.withSku ? r.sku + '\t' + ean : ean;
+    }).join('\n');
+  }
+
+  function createEanPanel() {
+    const old = document.getElementById(EAN_TOOL.PANEL_ID);
+    if (old) old.remove();
+
+    const box = document.createElement('div');
+    box.id = EAN_TOOL.PANEL_ID;
+    box.style.cssText = [
+      'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483000',
+      'width:380px', 'padding:14px 16px', 'box-sizing:border-box',
+      'background:#1f2933', 'color:#f5f7fa', 'border-radius:8px',
+      'box-shadow:0 6px 24px rgba(0,0,0,.35)',
+      'font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif'
+    ].join(';');
+
+    const field = 'width:100%;box-sizing:border-box;font:12px ui-monospace,Consolas,monospace;' +
+      'padding:6px 8px;border:1px solid rgba(255,255,255,.2);border-radius:4px;' +
+      'background:rgba(0,0,0,.25);color:#f5f7fa;resize:vertical';
+    const btn = 'cursor:pointer;font:inherit;font-size:12px;padding:6px 10px;border:0;' +
+      'border-radius:4px;font-weight:600';
+
+    box.innerHTML = [
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
+      '  <strong style="flex:1;font-size:13px">Kody EAN dla listy produktów</strong>',
+      '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
+      '</div>',
+      '<div style="font-size:12px;opacity:.75;margin-bottom:6px">',
+      '  Wklej kolumnę SKU z arkusza (jeden pod drugim):</div>',
+      '<textarea data-role="input" rows="5" spellcheck="false" style="' + field + '"></textarea>',
+      '<div style="display:flex;gap:6px;margin-top:8px">',
+      '  <button data-role="start" type="button" style="' + btn + ';flex:1;background:#4c9aff;color:#04142e">Pobierz kody EAN</button>',
+      '  <button data-role="stop" type="button" style="' + btn + ';display:none;background:#5a3a3a;color:#ffd9d4">Przerwij</button>',
+      '</div>',
+      '<div data-role="progress" style="margin-top:8px;font-size:12px;opacity:.8"></div>',
+      '<div data-role="outbox" style="display:none;margin-top:10px;padding-top:10px;',
+      '    border-top:1px solid rgba(255,255,255,.15)">',
+      '  <div style="display:flex;gap:10px;font-size:12px;margin-bottom:6px;opacity:.8">',
+      '    <label style="cursor:pointer"><input data-role="apo" type="checkbox" checked> apostrof</label>',
+      '    <label style="cursor:pointer"><input data-role="withsku" type="checkbox"> z kolumną SKU</label>',
+      '  </div>',
+      '<textarea data-role="output" rows="6" readonly spellcheck="false" style="' + field + '"></textarea>',
+      '  <div style="display:flex;gap:6px;margin-top:6px">',
+      '    <button data-role="copy" type="button" style="' + btn + ';flex:1;background:#36b37e;color:#04231a">Kopiuj do arkusza</button>',
+      '    <button data-role="csv" type="button" style="' + btn + ';background:transparent;color:#f5f7fa;',
+      '        border:1px solid rgba(255,255,255,.2);font-weight:400">CSV</button>',
+      '  </div>',
+      '  <div data-role="problems" style="margin-top:8px;font-size:11px;opacity:.75;',
+      '      max-height:120px;overflow:auto;white-space:pre-wrap"></div>',
+      '</div>'
+    ].join('');
+
+    document.body.appendChild(box);
+    return box;
+  }
+
+  async function runEanTool(panel) {
+    const el = r => panel.querySelector('[data-role="' + r + '"]');
+    const skus = parseSkuList(el('input').value);
+
+    if (!skus.length) {
+      el('progress').textContent = 'Wklej najpierw listę SKU.';
+      return;
+    }
+
+    eanRun.running = true;
+    eanRun.stop = false;
+    el('start').style.display = 'none';
+    el('stop').style.display = 'block';
+
+    const results = [];
+    const started = Date.now();
+
+    try {
+      for (let i = 0; i < skus.length; i++) {
+        if (eanRun.stop) break;
+        const sku = skus[i];
+        el('progress').textContent = 'Sprawdzam ' + (i + 1) + ' z ' + skus.length + ': ' + sku;
+
+        try {
+          results.push(await fetchEanForSku(sku));
+        } catch (err) {
+          // Awaria jednego SKU nie może przerwać całej listy — po 140 udanych
+          // odczytach utrata wyniku byłaby dotkliwsza niż jedna luka.
+          console.warn('[EAN] Błąd przy ' + sku + ':', err && err.message || err);
+          results.push({ sku, ean: '', status: 'błąd odczytu' });
+        }
+
+        await sleep(EAN_TOOL.DELAY_MS);
+      }
+    } finally {
+      eanRun.running = false;
+      el('stop').style.display = 'none';
+      el('start').style.display = 'block';
+    }
+
+    const found = results.filter(r => r.ean).length;
+    const problems = results.filter(r => r.status !== 'ok');
+    const secs = Math.round((Date.now() - started) / 1000);
+
+    el('progress').textContent = 'Gotowe: ' + found + ' z ' + skus.length + ' kodów' +
+      (eanRun.stop ? ' (przerwane)' : '') + ', ' + secs + ' s.';
+    el('outbox').style.display = 'block';
+    el('problems').textContent = problems.length
+      ? 'Do sprawdzenia ręcznie:\n' + problems.map(r => r.sku + ' — ' + r.status).join('\n')
+      : 'Wszystkie SKU odczytane bez zastrzeżeń.';
+
+    const render = () => {
+      el('output').value = formatEanOutput(results, {
+        apostrophe: el('apo').checked,
+        withSku: el('withsku').checked
+      });
+    };
+    render();
+    el('apo').onchange = render;
+    el('withsku').onchange = render;
+
+    el('copy').onclick = () => {
+      el('output').select();
+      const ok = document.execCommand && document.execCommand('copy');
+      el('copy').textContent = ok ? 'Skopiowane' : 'Zaznacz i Ctrl+C';
+      setTimeout(() => { el('copy').textContent = 'Kopiuj do arkusza'; }, 2000);
+    };
+
+    el('csv').onclick = () => {
+      const csv = 'SKU;EAN;status\n' +
+        results.map(r => '"' + r.sku + '";"' + r.ean + '";"' + r.status + '"').join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'ean_z_erp.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    };
+  }
+
+  function insertEanButtonIfNeeded() {
+    if (!EAN_TOOL.ENABLE) return;
+    if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
+    const toolbar = getVisibleToolbar();
+    if (!toolbar) return;
+    if (toolbar.querySelector('#' + EAN_TOOL.BUTTON_ID)) return;
+
+    const b = document.createElement('div');
+    b.id = EAN_TOOL.BUTTON_ID;
+    b.className = 'csButton _csControl csButtonAction csAutogenerateButton UnderlinedButton icon-left';
+    b.style.cursor = 'pointer';
+    b.innerHTML = '<div class="caption" title="Wklej listę SKU z arkusza, ' +
+      'odczytaj kody EAN">🏷️ Kody EAN</div>';
+    b.addEventListener('click', () => {
+      if (eanRun.running) return;
+      const panel = createEanPanel();
+      const el = r => panel.querySelector('[data-role="' + r + '"]');
+      el('close').addEventListener('click', () => {
+        eanRun.stop = true;
+        panel.remove();
+      });
+      el('stop').addEventListener('click', () => {
+        eanRun.stop = true;
+        el('progress').textContent = 'Przerywam po bieżącym produkcie...';
+      });
+      el('start').addEventListener('click', () => runEanTool(panel));
+      el('input').focus();
+    });
+    toolbar.appendChild(b);
+  }
+
   function insertButtonIfNeeded() {
     if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
     const toolbar = getVisibleToolbar();
@@ -2320,6 +2560,7 @@
     setInterval(() => {
       insertButtonIfNeeded();
       insertEsavpolButtonIfNeeded();
+      insertEanButtonIfNeeded();
     }, 1000);
   }
 
