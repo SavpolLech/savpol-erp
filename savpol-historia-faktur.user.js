@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.24.0
+// @version      2.24.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2337,8 +2337,23 @@
       .filter(Boolean);
   }
 
+  // Z arkusza SKU przychodzi często bez wiodących zer (Excel i Sheets traktują
+  // je jak liczby), a katalog ERP wymaga pełnego, siedmioznakowego kodu.
+  // 35776 → 0035776. Sufiks kartoteki dodatkowej (-M, -R) zostaje nietknięty.
+  const SKU_LENGTH = 7;
+
+  function normalizeSku(value) {
+    const raw = String(value || '').trim();
+    const m = raw.match(/^([0-9]{1,8})(-[A-Za-z])?$/);
+    if (!m) return raw;
+    const digits = m[1].length >= SKU_LENGTH ? m[1] : m[1].padStart(SKU_LENGTH, '0');
+    return digits + (m[2] ? m[2].toUpperCase() : '');
+  }
+
+  // Do 8 cyfr uznajemy za SKU (po dopełnieniu zerami). Dłuższe ciągi cyfr to
+  // najpewniej EAN, a nie numer produktu, więc nie porywamy ich do tego trybu.
   function looksLikeSku(value) {
-    return EXCLUSIONS.skuPattern.test(value);
+    return /^[0-9]{1,8}(-[A-Za-z])?$/.test(String(value || '').trim());
   }
 
   // Główny tekst komórki, bez szarego podpisu („Gratis", „Towar nisko
@@ -2373,6 +2388,44 @@
     if (!q.length) return 0;
     const c = new Set(nameTokens(candidate));
     return q.filter(t => c.has(t)).length / q.length;
+  }
+
+  // Odcisk zawartości siatki katalogu. Służy do stwierdzenia, że wyszukiwanie
+  // naprawdę podmieniło wyniki, a nie tylko zostawiło poprzednie na ekranie.
+  function catalogSignature() {
+    const grid = getVisibleCatalogGrid();
+    if (!grid) return '(brak siatki)';
+    const rows = Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row'));
+    return rows.length + '|' + rows
+      .map(r => {
+        const c = r.querySelector('td[data-datafield="Item"]');
+        return c ? (c.getAttribute('title') || '') : '';
+      })
+      .join(',');
+  }
+
+  // Wyszukiwanie z POTWIERDZENIEM, że siatka się przeładowała.
+  //
+  // searchCatalog() czeka tylko na to, że siatka ISTNIEJE — a ona istnieje od
+  // poprzedniego wyszukiwania. Przy odczycie po SKU dawało to najwyżej „nie
+  // znaleziono" (bo porównujemy dokładny numer), ale przy odczycie po NAZWIE
+  // wybieramy najlepszy z widocznych wierszy, więc stara zawartość wracała
+  // jako wynik: kolejne produkty dostawały cenę pierwszego.
+  //
+  // Sygnatura nie zmienia się też wtedy, gdy dwa zapytania dają identyczne
+  // wyniki — to poprawny przypadek, dlatego brak zmiany nie jest błędem,
+  // tylko powodem do ponowienia i ostrzeżenia.
+  async function searchCatalogFresh(query) {
+    const before = catalogSignature();
+    await searchCatalog(query);
+
+    let changed = await waitFor(() => catalogSignature() !== before, 24, 250);
+    if (!changed) {
+      // Druga próba: ERP gubi pojedyncze żądanie częściej, niż by się chciało.
+      await searchCatalog(query);
+      changed = await waitFor(() => catalogSignature() !== before, 24, 250);
+    }
+    return { refreshed: !!changed, unchanged: before === catalogSignature() };
   }
 
   function catalogRows() {
@@ -2442,16 +2495,27 @@
 
   async function fetchRowForEntry(entry, byName) {
     if (!byName) {
-      await searchCatalog(entry);
-      return pickRowBySku(entry);
+      const sku = normalizeSku(entry);
+      await searchCatalogFresh(sku);
+      return pickRowBySku(sku);
     }
+
     let last = { row: null, status: 'nie znaleziono w katalogu' };
     for (const q of nameQueries(entry)) {
       if (eanRun.stop) break;
-      await searchCatalog(q);
+      const { refreshed } = await searchCatalogFresh(q);
       if (!catalogRows().length) continue;
+
       last = pickRowByName(entry);
-      if (last.row) return last;
+      if (!last.row) continue;
+
+      // Brak odświeżenia przy DOBRYM dopasowaniu jest niegroźny (te same
+      // wyniki dla podobnego zapytania). Przy słabym — to najpewniej stara
+      // zawartość siatki i wartość jest cudza. Mówimy o tym wprost.
+      if (!refreshed && (last.score || 0) < 1) {
+        last.status = 'siatka mogła się nie odświeżyć — sprawdź';
+      }
+      return last;
     }
     return last;
   }
@@ -2611,6 +2675,9 @@
 
         const values = {};
         let status = 'nie znaleziono w katalogu';
+        // W wyniku pokazujemy to, czego naprawdę szukaliśmy — inaczej przy
+        // wejściu „35776" nie widać, że odpytaliśmy o „0035776".
+        const shown = byName ? entry : normalizeSku(entry);
         try {
           const hit = await fetchRowForEntry(entry, byName);
           status = hit.status;
@@ -2624,7 +2691,7 @@
           status = 'błąd odczytu';
         }
 
-        results.push({ entry, values, status });
+        results.push({ entry: shown, values, status });
         await sleep(EAN_TOOL.DELAY_MS);
       }
     } finally {

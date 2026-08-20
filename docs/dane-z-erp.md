@@ -41,9 +41,13 @@ Dlatego:
   nazwa → pierwsze 4 znaczące słowa → pierwsze 2 → pierwsze. Jeden literowy
   rozjazd w środku nazwy nie musi wtedy kończyć się pustym wierszem.
 
-Tryb rozpoznawany jest automatycznie: co pasuje do wzorca SKU (6–8 cyfr) idzie
-jako SKU, resztę traktujemy jako nazwę. Da się to wymusić przełącznikiem, gdy
-lista jest mieszana i wolisz jednolite zachowanie.
+Tryb rozpoznawany jest automatycznie: ciąg do 8 cyfr idzie jako SKU, resztę
+traktujemy jako nazwę. Da się to wymusić przełącznikiem, gdy lista jest mieszana
+i wolisz jednolite zachowanie.
+
+**SKU jest dopełniane zerami do siedmiu znaków** (`35776` → `0035776`). Arkusze
+traktują SKU jak liczbę i gubią wiodące zera, a katalog ERP wymaga pełnego kodu.
+W kolumnie wyniku widzisz kod po dopełnieniu, żeby było wiadomo, o co pytaliśmy.
 
 ## Formaty pod Google Sheets
 
@@ -68,6 +72,25 @@ i status każdej pozycji.
   problemów pod wynikiem.
 - **Błąd odczytu**: nie przerywa listy. Po 400 udanych odczytach utrata całości
   byłaby dotkliwsza niż jedna luka.
+- **Siatka mogła się nie odświeżyć**: zabezpieczenie opisane niżej zadziałało,
+  ale wynik i tak wygląda podejrzanie. Sprawdź tę pozycję ręcznie.
+
+## Potwierdzanie, że wyniki się przeładowały
+
+`searchCatalog()` czeka na to, że siatka **istnieje** — a ona istnieje od
+poprzedniego wyszukiwania. Przy odczycie po SKU dawało to najwyżej „nie
+znaleziono", bo porównujemy dokładny numer. Przy odczycie po **nazwie**
+wybieramy najlepszy z widocznych wierszy, więc stara zawartość wracała jako
+wynik: kolejne produkty dostawały cenę pierwszego.
+
+Dlatego przed każdym wyszukiwaniem zapisujemy **odcisk zawartości siatki**
+(liczba wierszy plus ich SKU) i czekamy, aż się zmieni. Gdy się nie zmieni,
+zapytanie leci drugi raz — ERP gubi pojedyncze żądania częściej, niż by się
+chciało.
+
+Brak zmiany nie zawsze jest błędem: dwa podobne zapytania mogą dać identyczne
+wyniki. Dlatego alarmujemy dopiero wtedy, gdy **brak odświeżenia zbiega się ze
+słabym dopasowaniem nazwy** — to układ, w którym wartość jest najpewniej cudza.
 
 Lista „do sprawdzenia ręcznie" pod wynikiem jest istotna — bez niej pusta linia
 wygląda tak samo jak produkt, który naprawdę nie ma danej wartości.
