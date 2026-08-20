@@ -75,6 +75,33 @@ pustego wiersza, bo wygląda jak dane.
 Trafienie uzyskane skróconą nazwą, nawet mocne, jest oznaczane statusem
 **„trafione skróconą nazwą — sprawdź"** — nie ginie w tłumie poprawnych.
 
+## Gramatura rozstrzyga, a nie jest ozdobą
+
+„Krem pistacjowy" istnieje w trzech opakowaniach i tylko liczba mówi, o które
+chodzi. Dlatego gramatura, pojemność, liczba sztuk i wymiary są traktowane
+osobno od reszty nazwy:
+
+- **Wychwytywane jako całość**, przed dzieleniem na słowa: `2,5 kg`, `2.5kg`
+  i `2,5KG` dają ten sam token `2.5kg`. Bez tego kropka i spacja rozbijały
+  liczbę na kawałki, których nie dało się porównać.
+- **Nigdy nie obcinane do rdzenia** — inaczej `500g` i `500ml` byłyby tym samym.
+- **Zostają w każdym skróconym zapytaniu.** Skracamy od końca nazwy, a tam
+  właśnie siedzi wielkość opakowania. Zapytanie `krem pistacjowy master`
+  zwracało trzy rozmiary i skrypt musiał zgadywać; teraz leci
+  `krem pistacjowy master 5kg`.
+- **Rozbieżność gramatury ścina wynik poniżej obu progów** (do 0,4). Przy ośmiu
+  słowach różnica jednego tokenu to tylko 0,125 — za mało, żeby odrzucić złe
+  opakowanie. Teraz `Krem pistacjowy 5kg` wobec kartoteki `1kg` dostaje status
+  „SŁABE dopasowanie" zamiast cichego trafienia.
+- Kartoteka **bez gramatury** przy zapytaniu z gramaturą też jest ścinana —
+  brak informacji to nie zgodność.
+
+Gdy szukana nazwa nie podaje gramatury, nic się nie zmienia: dopasowanie działa
+jak wcześniej i kartoteka z gramaturą nie jest za nią karana.
+
+Rozpoznawane jednostki: `kg`, `g`, `mg`, `l`, `ml`, `szt`/`sztuk…`, `cm`, `mm`
+oraz wymiary w formacie `59x28`.
+
 ## Liczba pojedyncza i mnoga
 
 W arkuszu bywa „Worki cukiernicze jednorazowe", w ERP „Worek cukierniczy

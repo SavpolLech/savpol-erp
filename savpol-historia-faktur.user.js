@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.26.1
+// @version      2.27.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2421,15 +2421,48 @@
     return readMainCellText(row.querySelector('td[data-datafield="' + field + '"]'));
   }
 
-  // Tokeny nazwy do porównywania. fold() zdejmuje polskie znaki (także „ł",
-  // którego NFD nie rozkłada), a wszystko poza literami i cyframi staje się
-  // separatorem — dzięki temu „2,5kg", „2.5 kg" i „2,5 KG" dają te same tokeny.
-  function nameTokens(name) {
-    return fold(String(name || ''))
+  // Gramatura, pojemność, liczba sztuk, wymiary. To NAJWAŻNIEJSZA część nazwy
+  // przy odróżnianiu kartotek: „Krem pistacjowy" istnieje w trzech opakowaniach
+  // i tylko ta liczba mówi, o które chodzi.
+  //
+  // Wychwytujemy je jako CAŁOŚĆ, przed zwykłym dzieleniem na słowa, żeby
+  // „2,5 kg", „2.5kg" i „2,5KG" dały ten sam token `2.5kg`. Bez tego kropka
+  // i spacja rozbijałyby liczbę na kawałki, których nie da się porównać.
+  const SIZE_RE = /(\d+(?:[.,]\d+)?)\s*(kg|g|ml|l|szt|sztuk[a-z]*|cm|mm|mg)(?![a-z])/gi;
+  const DIM_RE = /(\d+(?:[.,]\d+)?)\s*x\s*(\d+(?:[.,]\d+)?)/gi;
+
+  function normalizeNumber(n) {
+    return String(n).replace(',', '.').replace(/\.0+$/, '');
+  }
+
+  // Rozbija nazwę na słowa (do porównywania po rdzeniach) i gramatury
+  // (porównywane dosłownie — 500g to nie 500ml i nie 5kg).
+  function nameParts(name) {
+    let text = fold(String(name || ''));
+    const sizes = [];
+
+    text = text.replace(DIM_RE, (_, a, b) => {
+      sizes.push(normalizeNumber(a) + 'x' + normalizeNumber(b));
+      return ' ';
+    });
+    text = text.replace(SIZE_RE, (_, num, unit) => {
+      sizes.push(normalizeNumber(num) + unit.toLowerCase().replace(/^sztuk[a-z]*$/, 'szt'));
+      return ' ';
+    });
+
+    const words = text
       .replace(/[^\p{L}\p{N}]+/gu, ' ')
       .trim()
       .split(' ')
       .filter(Boolean);
+
+    return { words, sizes };
+  }
+
+  // Wszystkie tokeny nazwy: słowa plus gramatury.
+  function nameTokens(name) {
+    const { words, sizes } = nameParts(name);
+    return words.concat(sizes);
   }
 
   // Rdzeń słowa do porównywania mimo odmiany. NIE generujemy form („worek" →
@@ -2460,13 +2493,30 @@
   }
 
   // Udział tokenów szukanej nazwy obecnych w nazwie z ERP. Liczymy względem
-  // zapytania, nie symetrycznie: ERP dopisuje do nazw gramaturę i markę, więc
-  // nazwa z katalogu bywa dłuższa i kara za to byłaby niesłuszna.
+  // zapytania, nie symetrycznie: ERP dopisuje do nazw markę i dopiski
+  // handlowe, więc nazwa z katalogu bywa dłuższa i kara za to byłaby niesłuszna.
+  //
+  // Gramatura jest wyjątkiem od tej pobłażliwości. Gdy szukana nazwa ją podaje,
+  // a kartoteka jej NIE MA albo ma inną, wynik jest ścinany poniżej obu progów.
+  // Bez tego „Krem pistacjowy 5kg" pasował do wersji 1kg i 250g niemal tak samo
+  // dobrze (jeden token różnicy na osiem), a skrypt wybierał zgadując.
+  const SIZE_MISMATCH_SCORE = 0.4;
+
   function nameSimilarity(query, candidate) {
-    const q = nameTokens(query).map(stemToken);
-    if (!q.length) return 0;
-    const c = new Set(nameTokens(candidate).map(stemToken));
-    return q.filter(t => c.has(t)).length / q.length;
+    const qp = nameParts(query);
+    const cp = nameParts(candidate);
+    const all = qp.words.concat(qp.sizes);
+    if (!all.length) return 0;
+
+    const cSet = new Set(cp.words.map(stemToken).concat(cp.sizes));
+    const hit = qp.words.map(stemToken).filter(t => cSet.has(t)).length +
+      qp.sizes.filter(t => cSet.has(t)).length;
+    const score = hit / all.length;
+
+    if (qp.sizes.length && !qp.sizes.every(sz => cp.sizes.includes(sz))) {
+      return Math.min(score, SIZE_MISMATCH_SCORE);
+    }
+    return score;
   }
 
   // Odcisk zawartości siatki katalogu. Służy do stwierdzenia, że wyszukiwanie
@@ -2570,14 +2620,21 @@
     const full = String(name || '').trim();
     const queries = [{ query: full, shortened: false }];
 
-    const tokens = nameTokens(name).filter(t => t.length > 2);
+    const { words, sizes } = nameParts(name);
+    const tokens = words.filter(t => t.length > 2);
     const cfg = EAN_TOOL.NAME_FALLBACK;
+
+    // GRAMATURA ZOSTAJE W KAŻDYM SKRÓCIE. Skracamy od końca nazwy, a tam
+    // właśnie siedzi wielkość opakowania — bez tego zapytanie „krem pistacjowy"
+    // zwracało trzy rozmiary i skrypt musiałby zgadywać, który wziąć.
+    const withSizes = q => sizes.length ? q + ' ' + sizes.join(' ') : q;
 
     const add = count => {
       if (count >= tokens.length) return;              // to nie byłoby skróceniem
       if (count < cfg.MIN_TOKENS) return;              // za mało słów, żeby coś znaczyło
-      const q = tokens.slice(0, count).join(' ');
-      if (q.length < cfg.MIN_CHARS) return;            // trzy krótkie słowa to wciąż za mało
+      const base = tokens.slice(0, count).join(' ');
+      if (base.length < cfg.MIN_CHARS) return;         // trzy krótkie słowa to wciąż za mało
+      const q = withSizes(base);
       if (queries.some(x => x.query === q)) return;
       queries.push({ query: q, shortened: true });
     };
@@ -2598,10 +2655,11 @@
     // przechodzi przez ostrzejszy próg dla zapytań skróconych.
     const head = tokens.slice(0, 4);
     const stemmed = head.filter(t => !/\d/.test(t) && t.length >= 5).length;
-    const stems = head.map(stemForQuery).join(' ');
+    const stemBase = head.map(stemForQuery).join(' ');
+    const stems = withSizes(stemBase);
     if (stemmed >= 2 &&
         tokens.length >= cfg.MIN_TOKENS &&
-        stems.length >= cfg.MIN_CHARS &&
+        stemBase.length >= cfg.MIN_CHARS &&
         !queries.some(x => x.query === stems)) {
       queries.push({ query: stems, shortened: true });
     }
