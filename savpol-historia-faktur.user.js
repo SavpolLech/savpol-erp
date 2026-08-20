@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.23.0
+// @version      2.24.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -154,20 +154,38 @@
     PRODUCT_LINK_RE: /^\/[a-z0-9ąćęłńóśźż-]+-\d{6,}$/i
   };
 
-  // ---------- Konfiguracja: masowy odczyt EAN ----------
-  // Druga funkcja skryptu, niezależna od cross-sellingu: wklejasz listę SKU
-  // z arkusza, dostajesz kolumnę EAN-ów w tej samej kolejności.
+  // ---------- Konfiguracja: masowy odczyt danych z katalogu ----------
+  // Druga funkcja skryptu, niezależna od cross-sellingu: wklejasz kolumnę
+  // z arkusza (SKU albo nazwy), zaznaczasz potrzebne dane, dostajesz każdą
+  // z nich jako osobną kolumnę w tej samej kolejności.
   //
-  // EAN jest KOLUMNĄ SIATKI KATALOGU (`td[data-datafield="EAN"]`), więc nie
-  // trzeba otwierać karty produktu — wystarczy wyszukać SKU i odczytać wiersz.
+  // Wszystko, co czytamy, jest KOLUMNĄ SIATKI KATALOGU, więc nie trzeba
+  // otwierać karty produktu — wystarczy wyszukać i odczytać wiersz.
   const EAN_TOOL = {
     ENABLE: true,
     BUTTON_ID: 'savpol-ean-btn',
     PANEL_ID: 'savpol-ean-panel',
-    // Odstęp po każdym wyszukaniu. Katalog odpowiada szybko, ale przy 150 SKU
-    // pod rząd warto nie zasypywać go żądaniami.
-    DELAY_MS: 200
+    // Odstęp po każdym wyszukaniu. Katalog odpowiada szybko, ale przy 500
+    // pozycjach pod rząd warto nie zasypywać go żądaniami.
+    DELAY_MS: 200,
+    // Próg podobieństwa nazwy (0-1), poniżej którego dopasowanie jest oznaczane
+    // jako niepewne. Dobrany ostrożnie: przy 500 produktach jeden cicho
+    // podstawiony wiersz to błędna cena w arkuszu, której nikt nie wyłapie.
+    NAME_MATCH_MIN: 0.6
   };
+
+  // Kolumny siatki katalogu, które umiemy odczytać. `numeric` znaczy, że
+  // wartość jest liczbą z polskim przecinkiem i można ją przełączyć na kropkę.
+  const DATA_FIELDS = [
+    { key: 'sku',   label: 'SKU',             field: 'Item' },
+    { key: 'name',  label: 'Nazwa z ERP',     field: 'ItemDesc' },
+    { key: 'ean',   label: 'EAN',             field: 'EAN' },
+    { key: 'price', label: 'Cena',            field: 'CSalesPrice',      numeric: true },
+    { key: 'min',   label: 'Cena minimalna',  field: 'CSalesMinPrice',   numeric: true },
+    { key: 'limit', label: 'Cena graniczna',  field: 'CSalesLimitPrice', numeric: true },
+    { key: 'group', label: 'Grupa produktu',  field: 'ItemsGroupTranslatedDesc' },
+    { key: 'stock', label: 'Stan (DYS.)',     field: 'QStockAv',         numeric: true }
+  ];
 
   // ---------- Konfiguracja: diagnostyka ----------
   // ERP renderuje DOM zależnie od uprawnień i konfiguracji widoku KONKRETNEGO
@@ -2306,63 +2324,147 @@
     toolbar.appendChild(btn);
   }
 
-  // ---------- Masowy odczyt EAN ----------
+  // ---------- Masowy odczyt danych z katalogu ----------
   const eanRun = { running: false, stop: false };
 
-  function parseSkuList(raw) {
-    // Z arkusza przychodzi kolumna (nowe linie), ale ludzie wklejają też
-    // listy po przecinku albo ze spacjami. Puste wiersze pomijamy — inaczej
-    // rozjechałaby się kolejność względem arkusza.
+  function parseInputList(raw) {
+    // Nazwy produktów zawierają spacje i przecinki, więc dzielimy WYŁĄCZNIE po
+    // nowych liniach — inaczej „Krem orzechowy, 5kg" rozpadłby się na dwa
+    // zapytania. Kolejność wierszy jest jedyną rzeczą wiążącą wynik z arkuszem.
     return (raw || '')
-      .split(/[\s,;]+/)
-      .map(x => x.trim())
+      .split(/\r?\n/)
+      .map(x => x.replace(/^["']|["']$/g, '').trim())
       .filter(Boolean);
   }
 
-  function readEanFromRow(row) {
-    const cell = row.querySelector('td[data-datafield="EAN"]');
+  function looksLikeSku(value) {
+    return EXCLUSIONS.skuPattern.test(value);
+  }
+
+  // Główny tekst komórki, bez szarego podpisu („Gratis", „Towar nisko
+  // rotujący"), który w tej siatce jest osobnym elementem w tej samej komórce.
+  function readMainCellText(cell) {
     if (!cell) return '';
+    const main = cell.querySelector('.csDBTextBlock:not(.cs-style-label)');
+    if (main) return main.textContent.trim();
     return (cell.getAttribute('title') || cell.textContent || '').trim();
+  }
+
+  function readField(row, field) {
+    return readMainCellText(row.querySelector('td[data-datafield="' + field + '"]'));
+  }
+
+  // Tokeny nazwy do porównywania. fold() zdejmuje polskie znaki (także „ł",
+  // którego NFD nie rozkłada), a wszystko poza literami i cyframi staje się
+  // separatorem — dzięki temu „2,5kg", „2.5 kg" i „2,5 KG" dają te same tokeny.
+  function nameTokens(name) {
+    return fold(String(name || ''))
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim()
+      .split(' ')
+      .filter(Boolean);
+  }
+
+  // Udział tokenów szukanej nazwy obecnych w nazwie z ERP. Liczymy względem
+  // zapytania, nie symetrycznie: ERP dopisuje do nazw gramaturę i markę, więc
+  // nazwa z katalogu bywa dłuższa i kara za to byłaby niesłuszna.
+  function nameSimilarity(query, candidate) {
+    const q = nameTokens(query);
+    if (!q.length) return 0;
+    const c = new Set(nameTokens(candidate));
+    return q.filter(t => c.has(t)).length / q.length;
+  }
+
+  function catalogRows() {
+    const grid = getVisibleCatalogGrid();
+    if (!grid) return [];
+    return Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row'));
   }
 
   // Jedno SKU potrafi mieć w katalogu kilka kartotek: podstawową i dodatkowe
   // („Gratis", „Promocja specjalna", „Towar nisko rotujący"), rozpoznawalne po
-  // szarym podpisie pod nazwą. Bierzemy kartotekę BEZ podpisu; gdy każda go ma,
-  // bierzemy pierwszą i mówimy o tym w wyniku.
-  function pickCatalogRowForSku(sku) {
-    const grid = getVisibleCatalogGrid();
-    if (!grid) return { row: null, matches: 0, ambiguous: false };
+  // szarym podpisie pod nazwą. Bierzemy kartotekę BEZ podpisu.
+  function hasCaption(row) {
+    return !!readCaption(row.querySelector('td[data-datafield="ItemDesc"]'));
+  }
 
-    const rows = Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row'))
-      .filter(r => {
-        const c = r.querySelector('td[data-datafield="Item"]');
-        return c && (c.getAttribute('title') || '').trim() === sku;
+  function pickRowBySku(sku) {
+    const rows = catalogRows().filter(r => readField(r, 'Item') === sku);
+    if (!rows.length) return { row: null, status: 'nie znaleziono w katalogu' };
+    const plain = rows.filter(r => !hasCaption(r));
+    if (plain.length > 1) {
+      return { row: plain[0], status: 'kilka kartotek (' + plain.length + ') — sprawdź' };
+    }
+    if (!plain.length) {
+      return { row: rows[0], status: 'tylko kartoteki dodatkowe — sprawdź' };
+    }
+    return { row: plain[0], status: 'ok' };
+  }
+
+  function pickRowByName(name) {
+    const rows = catalogRows();
+    if (!rows.length) return { row: null, status: 'nie znaleziono w katalogu' };
+
+    const scored = rows
+      .map(r => ({ row: r, score: nameSimilarity(name, readField(r, 'ItemDesc')) }))
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        // Przy równym podobieństwie kartoteka podstawowa ma pierwszeństwo.
+        return (hasCaption(a.row) ? 1 : 0) - (hasCaption(b.row) ? 1 : 0);
       });
-    if (!rows.length) return { row: null, matches: 0, ambiguous: false };
 
-    const plain = rows.filter(r => !readCaption(r.querySelector('td[data-datafield="ItemDesc"]')));
-    const chosen = plain[0] || rows[0];
-    return { row: chosen, matches: rows.length, ambiguous: rows.length > 1 && !plain.length };
+    const best = scored[0];
+    if (best.score < EAN_TOOL.NAME_MATCH_MIN) {
+      return { row: best.row, score: best.score, status: 'SŁABE dopasowanie nazwy — sprawdź' };
+    }
+    // Remis na szczycie znaczy, że nazwa nie rozstrzyga, który produkt to ten.
+    const tie = scored.filter(x => x.score === best.score && !hasCaption(x.row)).length;
+    if (tie > 1) {
+      return { row: best.row, score: best.score, status: 'kilka pasujących nazw — sprawdź' };
+    }
+    if (best.score < 1) {
+      return { row: best.row, score: best.score, status: 'dopasowanie przybliżone' };
+    }
+    return { row: best.row, score: 1, status: 'ok' };
   }
 
-  async function fetchEanForSku(sku) {
-    await searchCatalog(sku);
-    const { row, matches, ambiguous } = pickCatalogRowForSku(sku);
-    if (!row) return { sku, ean: '', status: 'nie znaleziono w katalogu' };
-
-    const ean = readEanFromRow(row);
-    if (!ean) return { sku, ean: '', status: 'produkt bez EAN' };
-    if (ambiguous) return { sku, ean, status: 'kilka kartotek (' + matches + ') — sprawdź' };
-    return { sku, ean, status: 'ok' };
+  // Nazwy bywają dłuższe niż to, co katalog akceptuje w wyszukiwarce, i jeden
+  // literowy rozjazd potrafi dać zero wyników. Skracamy zapytanie do coraz
+  // mniejszej liczby znaczących słów, dopóki coś nie wyjdzie.
+  function nameQueries(name) {
+    const tokens = nameTokens(name).filter(t => t.length > 2);
+    const queries = [name.trim()];
+    if (tokens.length > 4) queries.push(tokens.slice(0, 4).join(' '));
+    if (tokens.length > 2) queries.push(tokens.slice(0, 2).join(' '));
+    if (tokens.length > 1) queries.push(tokens[0]);
+    return queries;
   }
 
-  // Wynik w kolejności WEJŚCIOWEJ — to warunek wklejenia go wprost do arkusza
-  // obok kolumny SKU. Brak EAN zostaje pustą linią, żeby nic się nie przesunęło.
-  function formatEanOutput(results, opts) {
-    return results.map(r => {
-      const ean = r.ean && opts.apostrophe ? "'" + r.ean : r.ean;
-      return opts.withSku ? r.sku + '\t' + ean : ean;
-    }).join('\n');
+  async function fetchRowForEntry(entry, byName) {
+    if (!byName) {
+      await searchCatalog(entry);
+      return pickRowBySku(entry);
+    }
+    let last = { row: null, status: 'nie znaleziono w katalogu' };
+    for (const q of nameQueries(entry)) {
+      if (eanRun.stop) break;
+      await searchCatalog(q);
+      if (!catalogRows().length) continue;
+      last = pickRowByName(entry);
+      if (last.row) return last;
+    }
+    return last;
+  }
+
+  function formatValue(value, fieldDef, opts) {
+    if (!value) return '';
+    if (fieldDef.numeric && opts.dot) return value.replace(/\s/g, '').replace(',', '.');
+    // Apostrof tylko dla kodów: chroni wiodące zero SKU i EAN przed Sheets.
+    // Przy cenach byłby szkodliwy — zrobiłby z nich tekst.
+    if (opts.apostrophe && (fieldDef.key === 'sku' || fieldDef.key === 'ean')) {
+      return "'" + value;
+    }
+    return value;
   }
 
   function createEanPanel() {
@@ -2373,7 +2475,8 @@
     box.id = EAN_TOOL.PANEL_ID;
     box.style.cssText = [
       'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483000',
-      'width:380px', 'padding:14px 16px', 'box-sizing:border-box',
+      'width:420px', 'max-height:88vh', 'overflow:auto',
+      'padding:14px 16px', 'box-sizing:border-box',
       'background:#1f2933', 'color:#f5f7fa', 'border-radius:8px',
       'box-shadow:0 6px 24px rgba(0,0,0,.35)',
       'font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif'
@@ -2385,33 +2488,47 @@
     const btn = 'cursor:pointer;font:inherit;font-size:12px;padding:6px 10px;border:0;' +
       'border-radius:4px;font-weight:600';
 
+    const checks = DATA_FIELDS.map(f =>
+      '<label style="cursor:pointer;white-space:nowrap">' +
+      '<input data-field="' + f.key + '" type="checkbox"' +
+      (['sku', 'name', 'ean'].includes(f.key) ? ' checked' : '') + '> ' + f.label + '</label>'
+    ).join('');
+
     box.innerHTML = [
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
-      '  <strong style="flex:1;font-size:13px">Kody EAN dla listy produktów</strong>',
+      '  <strong style="flex:1;font-size:13px">Dane produktów z ERP</strong>',
       '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
       '</div>',
       '<div style="font-size:12px;opacity:.75;margin-bottom:6px">',
-      '  Wklej kolumnę SKU z arkusza (jeden pod drugim):</div>',
+      '  Wklej kolumnę z arkusza — SKU albo nazwy, po jednym w wierszu:</div>',
       '<textarea data-role="input" rows="5" spellcheck="false" style="' + field + '"></textarea>',
-      '<div style="display:flex;gap:6px;margin-top:8px">',
-      '  <button data-role="start" type="button" style="' + btn + ';flex:1;background:#4c9aff;color:#04142e">Pobierz kody EAN</button>',
+      '<div style="margin-top:8px;font-size:12px;opacity:.75">Szukaj po:</div>',
+      '<div style="display:flex;gap:12px;margin-top:4px;font-size:12px">',
+      '  <label style="cursor:pointer"><input data-role="mode-auto" type="radio" name="savpol-ean-mode" checked> rozpoznaj sam</label>',
+      '  <label style="cursor:pointer"><input data-role="mode-sku" type="radio" name="savpol-ean-mode"> SKU</label>',
+      '  <label style="cursor:pointer"><input data-role="mode-name" type="radio" name="savpol-ean-mode"> nazwie</label>',
+      '</div>',
+      '<div style="margin-top:8px;font-size:12px;opacity:.75">Chcę dostać:</div>',
+      '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:12px">',
+      checks,
+      '</div>',
+      '<div style="display:flex;gap:6px;margin-top:10px">',
+      '  <button data-role="start" type="button" style="' + btn + ';flex:1;background:#4c9aff;color:#04142e">Pobierz dane</button>',
       '  <button data-role="stop" type="button" style="' + btn + ';display:none;background:#5a3a3a;color:#ffd9d4">Przerwij</button>',
       '</div>',
       '<div data-role="progress" style="margin-top:8px;font-size:12px;opacity:.8"></div>',
       '<div data-role="outbox" style="display:none;margin-top:10px;padding-top:10px;',
       '    border-top:1px solid rgba(255,255,255,.15)">',
-      '  <div style="display:flex;gap:10px;font-size:12px;margin-bottom:6px;opacity:.8">',
-      '    <label style="cursor:pointer"><input data-role="apo" type="checkbox" checked> apostrof</label>',
-      '    <label style="cursor:pointer"><input data-role="withsku" type="checkbox"> z kolumną SKU</label>',
+      '  <div style="display:flex;gap:12px;font-size:12px;margin-bottom:8px;opacity:.8">',
+      '    <label style="cursor:pointer"><input data-role="apo" type="checkbox" checked> apostrof w SKU i EAN</label>',
+      '    <label style="cursor:pointer"><input data-role="dot" type="checkbox"> kropka w cenach</label>',
       '  </div>',
-      '<textarea data-role="output" rows="6" readonly spellcheck="false" style="' + field + '"></textarea>',
-      '  <div style="display:flex;gap:6px;margin-top:6px">',
-      '    <button data-role="copy" type="button" style="' + btn + ';flex:1;background:#36b37e;color:#04231a">Kopiuj do arkusza</button>',
-      '    <button data-role="csv" type="button" style="' + btn + ';background:transparent;color:#f5f7fa;',
-      '        border:1px solid rgba(255,255,255,.2);font-weight:400">CSV</button>',
-      '  </div>',
+      '  <div data-role="columns"></div>',
+      '  <button data-role="csv" type="button" style="' + btn + ';width:100%;margin-top:4px;',
+      '      background:transparent;color:#f5f7fa;border:1px solid rgba(255,255,255,.2);',
+      '      font-weight:400">Pobierz wszystko jako CSV</button>',
       '  <div data-role="problems" style="margin-top:8px;font-size:11px;opacity:.75;',
-      '      max-height:120px;overflow:auto;white-space:pre-wrap"></div>',
+      '      max-height:140px;overflow:auto;white-space:pre-wrap"></div>',
       '</div>'
     ].join('');
 
@@ -2419,14 +2536,61 @@
     return box;
   }
 
+  function selectedFields(panel) {
+    return DATA_FIELDS.filter(f => {
+      const cb = panel.querySelector('[data-field="' + f.key + '"]');
+      return cb && cb.checked;
+    });
+  }
+
+  // Każda kolumna w osobnym polu — tak się wkleja do arkusza, kolumna po
+  // kolumnie. Jedna wielka tabela wymagałaby rozbijania jej w Sheets.
+  function renderColumns(panel, results, fields, opts) {
+    const host = panel.querySelector('[data-role="columns"]');
+    host.innerHTML = '';
+
+    fields.forEach(f => {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'margin-bottom:10px';
+      wrap.innerHTML = [
+        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">',
+        '  <span style="flex:1;font-size:11px;text-transform:uppercase;',
+        '      letter-spacing:.04em;opacity:.65">' + f.label + '</span>',
+        '  <button type="button" style="cursor:pointer;font:inherit;font-size:11px;',
+        '      padding:3px 8px;border:0;border-radius:4px;background:#36b37e;',
+        '      color:#04231a;font-weight:600">Kopiuj</button>',
+        '</div>',
+        '<textarea rows="4" readonly spellcheck="false" style="width:100%;box-sizing:border-box;',
+        '    font:12px ui-monospace,Consolas,monospace;padding:6px 8px;',
+        '    border:1px solid rgba(255,255,255,.2);border-radius:4px;',
+        '    background:rgba(0,0,0,.25);color:#f5f7fa;resize:vertical"></textarea>'
+      ].join('');
+
+      const ta = wrap.querySelector('textarea');
+      ta.value = results.map(r => formatValue(r.values[f.key], f, opts)).join('\n');
+
+      const copyBtn = wrap.querySelector('button');
+      copyBtn.addEventListener('click', () => {
+        ta.select();
+        const ok = document.execCommand && document.execCommand('copy');
+        copyBtn.textContent = ok ? 'Skopiowane' : 'Ctrl+C';
+        setTimeout(() => { copyBtn.textContent = 'Kopiuj'; }, 2000);
+      });
+
+      host.appendChild(wrap);
+    });
+  }
+
   async function runEanTool(panel) {
     const el = r => panel.querySelector('[data-role="' + r + '"]');
-    const skus = parseSkuList(el('input').value);
+    const entries = parseInputList(el('input').value);
+    const fields = selectedFields(panel);
 
-    if (!skus.length) {
-      el('progress').textContent = 'Wklej najpierw listę SKU.';
-      return;
-    }
+    if (!entries.length) { el('progress').textContent = 'Wklej najpierw listę.'; return; }
+    if (!fields.length) { el('progress').textContent = 'Zaznacz, jakie dane mam pobrać.'; return; }
+
+    const mode = el('mode-sku').checked ? 'sku'
+      : el('mode-name').checked ? 'name' : 'auto';
 
     eanRun.running = true;
     eanRun.stop = false;
@@ -2437,20 +2601,30 @@
     const started = Date.now();
 
     try {
-      for (let i = 0; i < skus.length; i++) {
+      for (let i = 0; i < entries.length; i++) {
         if (eanRun.stop) break;
-        const sku = skus[i];
-        el('progress').textContent = 'Sprawdzam ' + (i + 1) + ' z ' + skus.length + ': ' + sku;
+        const entry = entries[i];
+        const byName = mode === 'name' || (mode === 'auto' && !looksLikeSku(entry));
 
+        el('progress').textContent = 'Sprawdzam ' + (i + 1) + ' z ' + entries.length +
+          ': ' + entry.slice(0, 40);
+
+        const values = {};
+        let status = 'nie znaleziono w katalogu';
         try {
-          results.push(await fetchEanForSku(sku));
+          const hit = await fetchRowForEntry(entry, byName);
+          status = hit.status;
+          if (hit.row) {
+            fields.forEach(f => { values[f.key] = readField(hit.row, f.field); });
+          }
         } catch (err) {
-          // Awaria jednego SKU nie może przerwać całej listy — po 140 udanych
-          // odczytach utrata wyniku byłaby dotkliwsza niż jedna luka.
-          console.warn('[EAN] Błąd przy ' + sku + ':', err && err.message || err);
-          results.push({ sku, ean: '', status: 'błąd odczytu' });
+          // Awaria jednej pozycji nie może przerwać listy — po 400 udanych
+          // odczytach utrata całości byłaby dotkliwsza niż jedna luka.
+          console.warn('[Dane z ERP] Błąd przy „' + entry + '":', err && err.message || err);
+          status = 'błąd odczytu';
         }
 
+        results.push({ entry, values, status });
         await sleep(EAN_TOOL.DELAY_MS);
       }
     } finally {
@@ -2459,42 +2633,36 @@
       el('start').style.display = 'block';
     }
 
-    const found = results.filter(r => r.ean).length;
+    const ok = results.filter(r => r.status === 'ok').length;
     const problems = results.filter(r => r.status !== 'ok');
     const secs = Math.round((Date.now() - started) / 1000);
 
-    el('progress').textContent = 'Gotowe: ' + found + ' z ' + skus.length + ' kodów' +
-      (eanRun.stop ? ' (przerwane)' : '') + ', ' + secs + ' s.';
+    el('progress').textContent = 'Gotowe: ' + ok + ' z ' + entries.length +
+      ' bez zastrzeżeń' + (eanRun.stop ? ' (przerwane)' : '') + ', ' + secs + ' s.';
     el('outbox').style.display = 'block';
     el('problems').textContent = problems.length
-      ? 'Do sprawdzenia ręcznie:\n' + problems.map(r => r.sku + ' — ' + r.status).join('\n')
-      : 'Wszystkie SKU odczytane bez zastrzeżeń.';
+      ? 'Do sprawdzenia ręcznie (' + problems.length + '):\n' +
+        problems.map(r => '• ' + r.entry + ' — ' + r.status).join('\n')
+      : 'Wszystkie pozycje odczytane bez zastrzeżeń.';
 
-    const render = () => {
-      el('output').value = formatEanOutput(results, {
-        apostrophe: el('apo').checked,
-        withSku: el('withsku').checked
-      });
-    };
+    const render = () => renderColumns(panel, results, fields, {
+      apostrophe: el('apo').checked,
+      dot: el('dot').checked
+    });
     render();
     el('apo').onchange = render;
-    el('withsku').onchange = render;
-
-    el('copy').onclick = () => {
-      el('output').select();
-      const ok = document.execCommand && document.execCommand('copy');
-      el('copy').textContent = ok ? 'Skopiowane' : 'Zaznacz i Ctrl+C';
-      setTimeout(() => { el('copy').textContent = 'Kopiuj do arkusza'; }, 2000);
-    };
+    el('dot').onchange = render;
 
     el('csv').onclick = () => {
-      const csv = 'SKU;EAN;status\n' +
-        results.map(r => '"' + r.sku + '";"' + r.ean + '";"' + r.status + '"').join('\n');
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const head = ['szukane'].concat(fields.map(f => f.label), ['status']).join(';');
+      const body = results.map(r => ['"' + r.entry + '"']
+        .concat(fields.map(f => '"' + (r.values[f.key] || '') + '"'), ['"' + r.status + '"'])
+        .join(';')).join('\n');
+      const blob = new Blob(['\uFEFF' + head + '\n' + body], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'ean_z_erp.csv';
+      a.download = 'dane_z_erp.csv';
       a.click();
       URL.revokeObjectURL(url);
     };
@@ -2511,8 +2679,8 @@
     b.id = EAN_TOOL.BUTTON_ID;
     b.className = 'csButton _csControl csButtonAction csAutogenerateButton UnderlinedButton icon-left';
     b.style.cursor = 'pointer';
-    b.innerHTML = '<div class="caption" title="Wklej listę SKU z arkusza, ' +
-      'odczytaj kody EAN">🏷️ Kody EAN</div>';
+    b.innerHTML = '<div class="caption" title="Wklej listę SKU albo nazw z arkusza, ' +
+      'odczytaj wybrane dane">🏷️ Dane z ERP</div>';
     b.addEventListener('click', () => {
       if (eanRun.running) return;
       const panel = createEanPanel();
@@ -2523,7 +2691,7 @@
       });
       el('stop').addEventListener('click', () => {
         eanRun.stop = true;
-        el('progress').textContent = 'Przerywam po bieżącym produkcie...';
+        el('progress').textContent = 'Przerywam po bieżącej pozycji...';
       });
       el('start').addEventListener('click', () => runEanTool(panel));
       el('input').focus();
