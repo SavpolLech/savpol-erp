@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.26.0
+// @version      2.26.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1168,9 +1168,13 @@
   // wyszukiwania i przy przełączonej zakładce SKU trafiały właśnie tam.
   // Objaw: skrypt szukał kandydatów w historii faktur zamiast w katalogu.
   function findVisibleCatalogSearchInput() {
+    // BEZ zapasowego przeszukiwania całego dokumentu. Gdy nie wiemy, który
+    // panel jest katalogiem, lepiej nie wpisać nic niż wpisać SKU w pierwsze
+    // widoczne pole wyszukiwania — tak trafiało ono w „Handlowiec" na pulpicie
+    // celów sprzedażowych, wyprowadzając skrypt z katalogu.
     const panel = getCatalogPanel();
-    const scope = panel || document;
-    const widget = Array.from(scope.querySelectorAll('.csDBEditSearch'))
+    if (!panel) return null;
+    const widget = Array.from(panel.querySelectorAll('.csDBEditSearch'))
       .find(w => w.offsetParent !== null);
     return widget ? widget.querySelector('input.Input') : null;
   }
@@ -1199,7 +1203,14 @@
     }
 
     const input = await waitFor(findVisibleCatalogSearchInput);
-    if (!input) throw new Error('Nie znaleziono pola wyszukiwania katalogu.');
+    if (!input) {
+      // Zapamiętana zakładka mogła zostać zamknięta albo przerysowana.
+      // Kasujemy ją, żeby następna próba rozpoznała katalog od nowa zamiast
+      // trzymać się nieistniejącego panelu.
+      knownCatalogPanelId = null;
+      diag('BLAD', 'Brak pola wyszukiwania w panelu katalogu.');
+      throw new Error('Nie znaleziono pola wyszukiwania katalogu.');
+    }
     const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
     nativeSetter.call(input, query);
     input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1284,28 +1295,52 @@
     return { hasSearch, hasStockGrid, score: (hasSearch ? 2 : 0) + (hasStockGrid ? 2 : 0) };
   }
 
+  // Raz rozpoznany panel katalogu zapamiętujemy po aria-controls.
+  //
+  // Powód: sygnatura katalogu opiera się na kolumnie stanu w siatce, a przy
+  // wyszukiwaniu z ZEREM WYNIKÓW nie ma żadnej komórki, więc sygnatura znika.
+  // Skrypt spadał wtedy do reguły zapasowej i brał PIERWSZEGO kandydata
+  // z wyszukiwarką — czyli zakładkę najbardziej z lewej (panel sterowania).
+  // Efekt: kolejne nazwy wpisywane w pole „Handlowiec" na pulpicie, wyjście
+  // z katalogu i zablokowany przebieg.
+  let knownCatalogPanelId = null;
+
+  function rememberCatalogTab(tab) {
+    const id = tab && tab.getAttribute('aria-controls');
+    if (id) knownCatalogPanelId = id;
+    return tab;
+  }
+
   function findCatalogTabLi() {
     const candidates = listTabCandidates();
+
+    // 0. Zakładka rozpoznana wcześniej w tym przebiegu. Pusty wynik
+    //    wyszukiwania nie odbiera jej tożsamości.
+    if (knownCatalogPanelId) {
+      const known = candidates.find(t => t.li.getAttribute('aria-controls') === knownCatalogPanelId);
+      if (known) return known.li;
+    }
 
     // 1. Panel z pełną sygnaturą katalogu.
     const full = candidates.find(t => {
       const m = panelLooksLikeCatalog(t.panel);
       return m.hasSearch && m.hasStockGrid;
     });
-    if (full) return full.li;
+    if (full) return rememberCatalogTab(full.li);
 
-    // 2. Panel z wyszukiwarką i jakąkolwiek siatką — katalog przed pierwszym
-    //    wyszukaniem może nie mieć jeszcze wiersza z kolumną stanu.
+    // 2. Panel z wyszukiwarką i siatką produktów. Wymagamy kolumny `Item`,
+    //    a nie „jakiejkolwiek siatki" — siatkę ma też pulpit z celami
+    //    sprzedażowymi i przy pustym wyniku wygrywał, bo jest pierwszy.
     const partial = candidates.find(t =>
       t.panel.querySelector('.csDBEditSearch input.Input') !== null
-      && t.panel.querySelector('.cs-grid-data-table') !== null);
-    if (partial) return partial.li;
+      && t.panel.querySelector('td[data-datafield="Item"]') !== null);
+    if (partial) return rememberCatalogTab(partial.li);
 
     // 3. Ostatnia deska ratunku: etykieta. Zostawiona, bo gdy panel jest jeszcze
     //    niezaładowany, nazwa to jedyna wskazówka. Karty produktu ("Katalog: X")
     //    odrzucamy jawnie.
     const byLabel = candidates.find(t => /^katalog$/i.test(tabLabel(t.li)));
-    return byLabel ? byLabel.li : null;
+    return byLabel ? rememberCatalogTab(byLabel.li) : null;
   }
 
   // Panel treści zakładki katalogu. Kendo wiąże zakładkę z panelem przez

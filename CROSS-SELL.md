@@ -18,7 +18,7 @@ Klientem e-commerce ma być mała lokalna cukiernia. Dane pokazują, co jest kup
 razem, ale nie mówią, co kupi klient online — dlatego filtry gramatury i dostępności
 są tak samo ważne jak sam co-occurrence.
 
-## Stan obecny (v2.22.0)
+## Stan obecny (v2.26.1)
 
 Skalibrowane na **siedmiu** anchorach (tabela w „Kalibracja"). Roadmapa zamknięta
 w punktach 1-4; został krok 5 (podstawianie wariantów).
@@ -942,6 +942,41 @@ karty generatora zawiodło.
 
 Uwaga przy aktualizacji: usunięcie `@grant` też jest zmianą uprawnień, więc
 Tampermonkey pokaże ekran zgody i do jego kliknięcia zostawi starą wersję.
+
+## Pusty wynik wyszukiwania wyprowadzał skrypt z katalogu (v2.26.1)
+
+Objaw zgłoszony przy masowym odczycie danych: po nazwie, która nie zwracała
+żadnego rekordu, skrypt przełączał się na **pierwszą zakładkę z lewej** (panel
+sterowania z celami sprzedażowymi), wpisywał tam kolejne nazwy w pole
+„Handlowiec", zmieniał URL i zacinał się.
+
+Dwie przyczyny, obie moje:
+
+**1. Sygnatura katalogu opierała się na danych, nie na tożsamości panelu.**
+`findCatalogTabLi()` rozpoznawał katalog po kolumnie stanu (`QStockAv`)
+w siatce. Przy zerze wyników nie ma ani jednej komórki, więc sygnatura znikała
+— a reguła zapasowa brzmiała „panel z wyszukiwarką i JAKĄKOLWIEK siatką"
+i wygrywał pierwszy kandydat w DOM, czyli pulpit.
+
+Naprawa dwustopniowa: raz rozpoznana zakładka jest **zapamiętywana po
+`aria-controls`** (`knownCatalogPanelId`) i brana z pierwszeństwem — pusty wynik
+nie odbiera panelowi tożsamości. Reguła zapasowa wymaga teraz kolumny `Item`,
+a nie dowolnej siatki.
+
+**2. `findVisibleCatalogSearchInput()` szukał w całym dokumencie**, gdy panel
+katalogu był nieznany (`const scope = panel || document`). To ten fallback
+zamienił drobne pomylenie zakładki w katastrofę: SKU trafiało w pierwsze
+widoczne pole wyszukiwania na stronie. Usunięty — bez znanego panelu funkcja
+zwraca `null` i wyszukiwanie kończy się jawnym błędem.
+
+**Wniosek, trzeci raz ten sam:** stan przejściowy (pusta siatka, siatka
+w trakcie ładowania) nie może odbierać elementom tożsamości. Rozpoznawanie
+po zawartości działa, dopóki zawartość jest — a potem cicho wskazuje coś
+innego. Jeśli coś zostało raz zidentyfikowane, warto to zapamiętać.
+
+**Zasada ogólna:** fallback typu „skoro nie wiem gdzie, to weź pierwsze
+pasujące w całym dokumencie" jest gorszy od porażki. Porażka zatrzymuje
+przebieg; taki fallback pisze dane w losowe miejsce cudzego formularza.
 
 ## Roadmap
 
