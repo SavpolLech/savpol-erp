@@ -75,6 +75,39 @@ pustego wiersza, bo wygląda jak dane.
 Trafienie uzyskane skróconą nazwą, nawet mocne, jest oznaczane statusem
 **„trafione skróconą nazwą — sprawdź"** — nie ginie w tłumie poprawnych.
 
+## Liczba pojedyncza i mnoga
+
+W arkuszu bywa „Worki cukiernicze jednorazowe", w ERP „Worek cukierniczy
+jednorazowy". Skrypt **nie generuje form** — polska odmiana to nie doklejenie
+końcówki i każda taka próba byłaby zgadywaniem. Zamiast tego działa w dwóch
+miejscach:
+
+**Porównywanie** obcina końcówki po obu stronach, więc formy schodzą się same:
+
+| W arkuszu | W ERP | Rdzeń |
+|---|---|---|
+| worki | worek | `wor` |
+| cukiernicze | cukierniczy | `cukiernic` |
+| jednorazowe | jednorazowy | `jednorazow` |
+
+**Tokeny z cyframi zostają nietknięte.** Inaczej `500g` i `500ml` spłaszczyłyby
+się do tego samego rdzenia, a gramatura to często jedyna rzecz odróżniająca dwie
+kartoteki tego samego towaru.
+
+**Wyszukiwanie** dostaje dodatkowe, ostatnie zapytanie zbudowane z rdzeni
+(`wor cukiernic jednorazo masterli`). Bez niego samo porównywanie by nie
+pomogło — katalog musi najpierw cokolwiek zwrócić. Tu obcinamy tylko słowa
+od pięciu znaków, żeby nie robić z „Krem" ciągu „kre".
+
+**Zastrzeżenie:** nie mam potwierdzonego, czy wyszukiwarka katalogu dopasowuje
+początki słów. Jeśli wymaga całych, to zapytanie po prostu nic nie zwróci i nic
+się nie zepsuje — tyle że odmiana nadal nie będzie działać przy wyszukiwaniu.
+Widać to po statusach: jeśli produkty w liczbie mnogiej kończą jako „nie
+znaleziono", to znaczy, że ta droga nie działa i trzeba szukać innej.
+
+Zapytanie po rdzeniach liczy się jako skrócone, więc obowiązuje je ostrzejszy
+próg 0,8.
+
 ## Formaty pod Google Sheets
 
 **Apostrof (domyślnie włączony) tylko dla SKU i EAN.** Bez niego Sheets zje

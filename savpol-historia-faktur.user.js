@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.25.0
+// @version      2.26.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2397,13 +2397,40 @@
       .filter(Boolean);
   }
 
+  // Rdzeń słowa do porównywania mimo odmiany. NIE generujemy form („worek" →
+  // „worki"), bo polska odmiana to nie doklejenie końcówki — zamiast tego
+  // porównujemy słowa po obcięciu końcówki, co działa w obie strony:
+  //
+  //   worek / worki             → wor
+  //   cukierniczy / cukiernicze → cukiernic
+  //   jednorazowy / jednorazowe → jednorazow
+  //
+  // Tokeny z CYFRAMI zostają nietknięte. Inaczej „500g" i „500ml" spłaszczyłyby
+  // się do tego samego rdzenia i gramatura przestałaby odróżniać produkty —
+  // a to jedyna rzecz, która często dzieli dwie kartoteki tego samego towaru.
+  function stemToken(token) {
+    if (/\d/.test(token)) return token;
+    if (token.length >= 5) return token.slice(0, token.length - 2);
+    if (token.length === 4) return token.slice(0, 3);
+    return token;
+  }
+
+  // Wersja do BUDOWY ZAPYTANIA — łagodniejsza niż ta do porównywania.
+  // Przy porównywaniu obcinamy też słowa czteroliterowe, bo tam skrót niczego
+  // nie psuje: porównujemy dwa rdzenie tą samą miarą. W zapytaniu wysyłanym do
+  // ERP „Krem" musi zostać „Krem" — „kre" nie znaczy już nic.
+  function stemForQuery(token) {
+    if (/\d/.test(token)) return token;
+    return token.length >= 5 ? token.slice(0, token.length - 2) : token;
+  }
+
   // Udział tokenów szukanej nazwy obecnych w nazwie z ERP. Liczymy względem
   // zapytania, nie symetrycznie: ERP dopisuje do nazw gramaturę i markę, więc
   // nazwa z katalogu bywa dłuższa i kara za to byłaby niesłuszna.
   function nameSimilarity(query, candidate) {
-    const q = nameTokens(query);
+    const q = nameTokens(query).map(stemToken);
     if (!q.length) return 0;
-    const c = new Set(nameTokens(candidate));
+    const c = new Set(nameTokens(candidate).map(stemToken));
     return q.filter(t => c.has(t)).length / q.length;
   }
 
@@ -2522,6 +2549,28 @@
 
     add(5);
     add(cfg.MIN_TOKENS);
+
+    // Ostatnia próba: pierwsze słowa obcięte do rdzeni — jedyny sposób, żeby
+    // „Worki cukiernicze jednorazowe" trafiły w „Worek cukierniczy jednorazowy".
+    // Same reguły dopasowania nie wystarczą, bo wyszukiwarka katalogu musi
+    // najpierw cokolwiek zwrócić.
+    //
+    // Obcinamy TYLKO słowa od 5 znaków. Krótkie zostają w całości, żeby nie
+    // robić z „Krem" ciągu „kre", który nie znaczy już nic.
+    //
+    // Czy katalog dopasowuje początki słów — nie mamy potwierdzonego. To tani
+    // strzał: gdy nie zadziała, nie będzie wyników i lecimy dalej. Wynik i tak
+    // przechodzi przez ostrzejszy próg dla zapytań skróconych.
+    const head = tokens.slice(0, 4);
+    const stemmed = head.filter(t => !/\d/.test(t) && t.length >= 5).length;
+    const stems = head.map(stemForQuery).join(' ');
+    if (stemmed >= 2 &&
+        tokens.length >= cfg.MIN_TOKENS &&
+        stems.length >= cfg.MIN_CHARS &&
+        !queries.some(x => x.query === stems)) {
+      queries.push({ query: stems, shortened: true });
+    }
+
     return queries;
   }
 
