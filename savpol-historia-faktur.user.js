@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.24.1
+// @version      2.25.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -171,7 +171,24 @@
     // Próg podobieństwa nazwy (0-1), poniżej którego dopasowanie jest oznaczane
     // jako niepewne. Dobrany ostrożnie: przy 500 produktach jeden cicho
     // podstawiony wiersz to błędna cena w arkuszu, której nikt nie wyłapie.
-    NAME_MATCH_MIN: 0.6
+    NAME_MATCH_MIN: 0.6,
+
+    // Skracanie zapytania, gdy pełna nazwa nic nie zwróci. Musi być
+    // RESTRYKCYJNE. Pierwsza wersja schodziła aż do jednego słowa i „Worek
+    // cukierniczy jednorazowy Masterline Green 59x28 cm - One Way" kończył
+    // jako zapytanie „worek" — to już nie jest szukanie tego produktu, tylko
+    // losowanie z całej kategorii. Cichy fałszywy wynik jest gorszy od pustego
+    // wiersza, bo wygląda jak dane.
+    NAME_FALLBACK: {
+      // Zapytanie nigdy nie schodzi poniżej tylu znaczących słów...
+      MIN_TOKENS: 3,
+      // ...ani poniżej tylu znaków. Trzy krótkie słowa nadal bywają za ogólne.
+      MIN_CHARS: 12,
+      // Wynik ze SKRÓCONEGO zapytania musi trafić mocniej niż z pełnego.
+      // Skrócone zapytanie z natury pasuje do wielu produktów, więc zwykły
+      // próg by tu nie wystarczył.
+      MIN_SCORE: 0.8
+    }
   };
 
   // Kolumny siatki katalogu, które umiemy odczytać. `numeric` znaczy, że
@@ -2482,14 +2499,29 @@
   }
 
   // Nazwy bywają dłuższe niż to, co katalog akceptuje w wyszukiwarce, i jeden
-  // literowy rozjazd potrafi dać zero wyników. Skracamy zapytanie do coraz
-  // mniejszej liczby znaczących słów, dopóki coś nie wyjdzie.
+  // literowy rozjazd potrafi dać zero wyników. Skracamy więc zapytanie — ale
+  // tylko do granicy, poniżej której przestaje ono opisywać KONKRETNY produkt.
+  //
+  // Zwraca listę obiektów, bo wynik ze skróconego zapytania jest oceniany
+  // surowiej niż z pełnego (patrz NAME_FALLBACK.MIN_SCORE).
   function nameQueries(name) {
+    const full = String(name || '').trim();
+    const queries = [{ query: full, shortened: false }];
+
     const tokens = nameTokens(name).filter(t => t.length > 2);
-    const queries = [name.trim()];
-    if (tokens.length > 4) queries.push(tokens.slice(0, 4).join(' '));
-    if (tokens.length > 2) queries.push(tokens.slice(0, 2).join(' '));
-    if (tokens.length > 1) queries.push(tokens[0]);
+    const cfg = EAN_TOOL.NAME_FALLBACK;
+
+    const add = count => {
+      if (count >= tokens.length) return;              // to nie byłoby skróceniem
+      if (count < cfg.MIN_TOKENS) return;              // za mało słów, żeby coś znaczyło
+      const q = tokens.slice(0, count).join(' ');
+      if (q.length < cfg.MIN_CHARS) return;            // trzy krótkie słowa to wciąż za mało
+      if (queries.some(x => x.query === q)) return;
+      queries.push({ query: q, shortened: true });
+    };
+
+    add(5);
+    add(cfg.MIN_TOKENS);
     return queries;
   }
 
@@ -2501,21 +2533,32 @@
     }
 
     let last = { row: null, status: 'nie znaleziono w katalogu' };
-    for (const q of nameQueries(entry)) {
+    for (const { query, shortened } of nameQueries(entry)) {
       if (eanRun.stop) break;
-      const { refreshed } = await searchCatalogFresh(q);
+      const { refreshed } = await searchCatalogFresh(query);
       if (!catalogRows().length) continue;
 
-      last = pickRowByName(entry);
-      if (!last.row) continue;
+      const hit = pickRowByName(entry);
+      if (!hit.row) continue;
+
+      // Wynik ze skróconego zapytania przyjmujemy TYLKO przy mocnym trafieniu.
+      // Skrócone zapytanie pasuje do wielu produktów, więc przeciętne
+      // podobieństwo znaczy tu „coś z tej półki", a nie „ten produkt".
+      if (shortened && (hit.score || 0) < EAN_TOOL.NAME_FALLBACK.MIN_SCORE) {
+        last = { row: null, status: 'nie znaleziono — nazwa zbyt ogólna' };
+        continue;
+      }
 
       // Brak odświeżenia przy DOBRYM dopasowaniu jest niegroźny (te same
       // wyniki dla podobnego zapytania). Przy słabym — to najpewniej stara
       // zawartość siatki i wartość jest cudza. Mówimy o tym wprost.
-      if (!refreshed && (last.score || 0) < 1) {
-        last.status = 'siatka mogła się nie odświeżyć — sprawdź';
+      if (!refreshed && (hit.score || 0) < 1) {
+        hit.status = 'siatka mogła się nie odświeżyć — sprawdź';
       }
-      return last;
+      if (shortened && hit.status === 'ok') {
+        hit.status = 'trafione skróconą nazwą — sprawdź';
+      }
+      return hit;
     }
     return last;
   }

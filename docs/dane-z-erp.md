@@ -37,9 +37,8 @@ Dlatego:
   im bez obejrzenia.
 - Gdy kilka kartotek pasuje **równie dobrze**, status mówi „kilka pasujących
   nazw". Skrypt nie zgaduje po cichu.
-- Zapytanie jest **skracane etapami**, gdy pełna nazwa nic nie zwróci: cała
-  nazwa → pierwsze 4 znaczące słowa → pierwsze 2 → pierwsze. Jeden literowy
-  rozjazd w środku nazwy nie musi wtedy kończyć się pustym wierszem.
+- Zapytanie bywa **skracane**, gdy pełna nazwa nic nie zwróci — ale
+  restrykcyjnie, patrz niżej.
 
 Tryb rozpoznawany jest automatycznie: ciąg do 8 cyfr idzie jako SKU, resztę
 traktujemy jako nazwę. Da się to wymusić przełącznikiem, gdy lista jest mieszana
@@ -48,6 +47,33 @@ i wolisz jednolite zachowanie.
 **SKU jest dopełniane zerami do siedmiu znaków** (`35776` → `0035776`). Arkusze
 traktują SKU jak liczbę i gubią wiodące zera, a katalog ERP wymaga pełnego kodu.
 W kolumnie wyniku widzisz kod po dopełnieniu, żeby było wiadomo, o co pytaliśmy.
+
+## Skracanie zapytania — celowo restrykcyjne
+
+Gdy pełna nazwa nic nie zwraca (literówka, inny szyk, dopisek z arkusza),
+skrypt próbuje krótszej wersji: **pierwsze 5 znaczących słów**, potem
+**pierwsze 3**. I na tym koniec.
+
+Pierwsza wersja schodziła aż do jednego słowa i „Worek cukierniczy jednorazowy
+Masterline Green 59x28 cm - One Way" kończył jako zapytanie **„worek"** — to nie
+jest już szukanie tego produktu, tylko losowanie z całej kategorii.
+
+Trzy zabezpieczenia, wszystkie w `EAN_TOOL.NAME_FALLBACK`:
+
+| Ustawienie | Wartość | Po co |
+|---|---|---|
+| `MIN_TOKENS` | 3 | zapytanie nigdy nie schodzi poniżej trzech znaczących słów |
+| `MIN_CHARS` | 12 | trzy krótkie słowa (`ser bio 1kg`) nadal bywają za ogólne |
+| `MIN_SCORE` | 0,8 | wynik ze **skróconego** zapytania musi trafić mocniej niż z pełnego |
+
+`MIN_SCORE` jest tu najważniejszy. Skrócone zapytanie z natury pasuje do wielu
+produktów, więc przeciętne podobieństwo znaczy „coś z tej półki", a nie „ten
+produkt". Gdy trafienie nie sięga 0,8, pozycja dostaje status **„nie znaleziono
+— nazwa zbyt ogólna"** i **pustą wartość**. Cichy fałszywy wynik jest gorszy od
+pustego wiersza, bo wygląda jak dane.
+
+Trafienie uzyskane skróconą nazwą, nawet mocne, jest oznaczane statusem
+**„trafione skróconą nazwą — sprawdź"** — nie ginie w tłumie poprawnych.
 
 ## Formaty pod Google Sheets
 
