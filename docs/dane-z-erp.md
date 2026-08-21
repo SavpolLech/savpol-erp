@@ -5,15 +5,20 @@ cross-sellingu. Przycisk **🏷️ Dane z ERP** w pasku katalogu.
 
 ## Jak używać
 
-1. W arkuszu zaznacz kolumnę z SKU **albo z nazwami** i skopiuj.
+1. W arkuszu zaznacz kolumnę z SKU, **EAN-ami albo nazwami** i skopiuj.
 2. W ERP, w katalogu produktów, kliknij **🏷️ Dane z ERP**.
 3. Wklej listę, zaznacz potrzebne dane, kliknij **Pobierz dane**.
 4. Każda wybrana informacja pojawia się jako **osobna kolumna z własnym
    przyciskiem „Kopiuj"** — wklejasz kolumnę po kolumnie w odpowiednie miejsca
    arkusza.
 
-Dostępne dane (wszystkie z siatki katalogu): SKU, nazwa z ERP, EAN, cena,
-cena minimalna, cena graniczna, grupa produktu, stan DYS.
+Dostępne dane z siatki katalogu: SKU, nazwa z ERP, EAN, cena, cena minimalna,
+cena graniczna, grupa produktu, stan DYS.
+
+Osobna sekcja **„Z historii sprzedaży"** liczy statystyki cen realnych
+transakcji — podłogę cenową, mediany i percentyle. Jest dużo wolniejsza (kilka
+sekund na produkt, bo wymaga otwarcia historii), dlatego jest domyślnie
+odznaczona. Co znaczą te liczby i którą brać: [polityka-cenowa.md](polityka-cenowa.md).
 
 Wynik jest **w kolejności wejściowej**, a brak wartości zostawia pustą linię —
 dzięki temu wklejenie obok kolumny źródłowej nie przesuwa wierszy. Kolejność
@@ -40,8 +45,9 @@ Dlatego:
 - Zapytanie bywa **skracane**, gdy pełna nazwa nic nie zwróci — ale
   restrykcyjnie, patrz niżej.
 
-Tryb rozpoznawany jest automatycznie: ciąg do 8 cyfr idzie jako SKU, resztę
-traktujemy jako nazwę. Da się to wymusić przełącznikiem, gdy lista jest mieszana
+Tryb rozpoznawany jest automatycznie: ciąg do 8 cyfr idzie jako SKU, 12–14 cyfr
+jako **EAN**, resztę traktujemy jako nazwę. EAN jest identyfikatorem, więc jest
+tak pewny jak SKU i zawsze lepszy od nazwy — jeśli masz go w arkuszu, użyj go. Da się to wymusić przełącznikiem, gdy lista jest mieszana
 i wolisz jednolite zachowanie.
 
 **SKU jest dopełniane zerami do siedmiu znaków** (`35776` → `0035776`). Arkusze

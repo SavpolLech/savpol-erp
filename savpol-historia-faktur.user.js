@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.27.0
+// @version      2.28.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -191,6 +191,32 @@
     }
   };
 
+  // ---------- Konfiguracja: statystyki cen sprzedaży ----------
+  // Do analizy polityki cenowej: jak nisko można zejść z ceną w e-commerce,
+  // nie podcinając klientów B2B, którzy kupują ten produkt od nas dziś.
+  //
+  // Dane idą z siatki HISTORII PRODUKTU, gdzie każdy wiersz to jedna pozycja
+  // faktury: cena netto po rabacie, ilość, kontrahent, data. Nie trzeba
+  // otwierać dokumentów — wszystko jest na liście.
+  const PRICE_STATS = {
+    ENABLE: true,
+    // Polityka cenowa ma się opierać na cenach AKTUALNYCH. Ceny z 2024 roku
+    // niosą inne koszty zakupu i inne umowy.
+    MONTHS_BACK: 12,
+    // Poniżej tylu transakcji percentyle są fikcją — zwracamy je, ale
+    // z ostrzeżeniem w statusie.
+    MIN_TRANSACTIONS: 5,
+    // Percentyl traktowany jako PODŁOGA CENOWA (patrz docs/polityka-cenowa.md).
+    FLOOR_PERCENTILE: 25,
+    // Kontrahenci pomijani w statystyce — np. konto własnego e-commerce, które
+    // zaniżałoby podłogę własnymi cenami. Dopasowanie: fragment nazwy, bez
+    // wielkości liter. Puste = nie pomijamy nikogo.
+    EXCLUDE_CUSTOMERS: [],
+    // Iloraz P90/P10, od którego mówimy o rozwarstwieniu cen: znak, że są dwie
+    // grupy klientów i sama mediana nie opisuje rynku.
+    SPREAD_ALERT: 1.15
+  };
+
   // Kolumny siatki katalogu, które umiemy odczytać. `numeric` znaczy, że
   // wartość jest liczbą z polskim przecinkiem i można ją przełączyć na kropkę.
   const DATA_FIELDS = [
@@ -202,6 +228,23 @@
     { key: 'limit', label: 'Cena graniczna',  field: 'CSalesLimitPrice', numeric: true },
     { key: 'group', label: 'Grupa produktu',  field: 'ItemsGroupTranslatedDesc' },
     { key: 'stock', label: 'Stan (DYS.)',     field: 'QStockAv',         numeric: true }
+  ];
+
+  // Dane liczone z historii sprzedaży. Osobna lista, bo ich pobranie wymaga
+  // otwarcia historii produktu — jest DUŻO wolniejsze niż odczyt katalogu.
+  const SALES_FIELDS = [
+    { key: 'txn',      label: 'Transakcji' },
+    { key: 'volume',   label: 'Wolumen',            numeric: true },
+    { key: 'floor',    label: 'PODŁOGA (P25 wol.)', numeric: true },
+    { key: 'median',   label: 'Mediana (wol.)',     numeric: true },
+    { key: 'p10',      label: 'P10 (wol.)',         numeric: true },
+    { key: 'p90',      label: 'P90 (wol.)',         numeric: true },
+    { key: 'minPrice', label: 'Cena min. w historii', numeric: true },
+    { key: 'maxPrice', label: 'Cena maks. w historii', numeric: true },
+    { key: 'medianTx', label: 'Mediana (transakcje)', numeric: true },
+    { key: 'floorTx',  label: 'PODŁOGA (P25 transakcje)', numeric: true },
+    { key: 'p90Tx',    label: 'P90 (transakcje)',   numeric: true },
+    { key: 'spread',   label: 'Rozwarstwienie',     numeric: true }
   ];
 
   // ---------- Konfiguracja: diagnostyka ----------
@@ -2408,6 +2451,25 @@
     return /^[0-9]{1,8}(-[A-Za-z])?$/.test(String(value || '').trim());
   }
 
+  // EAN: 8, 12, 13 albo 14 cyfr. Wyszukiwarka katalogu obsługuje je tak samo
+  // dobrze jak SKU, a to identyfikator — pewniejszy od nazwy.
+  function looksLikeEan(value) {
+    return /^[0-9]{12,14}$/.test(String(value || '').trim());
+  }
+
+  function pickRowByEan(ean) {
+    const rows = catalogRows().filter(r => readField(r, 'EAN') === ean);
+    if (!rows.length) return { row: null, status: 'nie znaleziono EAN w katalogu' };
+    const plain = rows.filter(r => !hasCaption(r));
+    if (plain.length > 1) {
+      return { row: plain[0], status: 'kilka kartotek z tym EAN (' + plain.length + ') — sprawdź' };
+    }
+    if (!plain.length) {
+      return { row: rows[0], status: 'tylko kartoteki dodatkowe — sprawdź' };
+    }
+    return { row: plain[0], score: 1, status: 'ok' };
+  }
+
   // Główny tekst komórki, bez szarego podpisu („Gratis", „Towar nisko
   // rotujący"), który w tej siatce jest osobnym elementem w tej samej komórce.
   function readMainCellText(cell) {
@@ -2517,6 +2579,217 @@
       return Math.min(score, SIZE_MISMATCH_SCORE);
     }
     return score;
+  }
+
+  // ---------- Statystyki cen: odczyt z historii produktu ----------
+
+  // Jedna pozycja faktury z siatki historii. Wszystko z listy — bez wchodzenia
+  // w dokumenty, bo ta siatka ma już cenę jednostkową po rabacie.
+  function readSalesRow(row) {
+    const price = parsePlNumber(readField(row, 'FNetPriceADis'));
+    const qty = parsePlNumber(readField(row, 'dQuantity'));
+    return {
+      price: price === null ? 0 : price,
+      qty: qty === null ? 0 : qty,
+      customer: readField(row, 'CustomerDesc'),
+      date: readField(row, 'DocDate'),
+      sku: readField(row, 'Item')
+    };
+  }
+
+  function isExcludedCustomer(name) {
+    const n = fold(name || '');
+    return PRICE_STATS.EXCLUDE_CUSTOMERS.some(x => x && n.includes(fold(x)));
+  }
+
+  function priceWindowStart() {
+    const d = new Date();
+    d.setMonth(d.getMonth() - PRICE_STATS.MONTHS_BACK);
+    return d;
+  }
+
+  // Data z ERP przychodzi jako YYYY-MM-DD w atrybucie title.
+  function parseErpDate(text) {
+    const m = String(text || '').match(/(\d{4})-(\d{2})-(\d{2})/);
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  }
+
+  // Przechodzi po WSZYSTKICH stronach listy historii i zbiera pozycje.
+  // Świadomie nie otwieramy dokumentów: to ta sama pętla co w cross-sellu,
+  // ale bez najdroższego kroku, więc jeden produkt to sekundy, nie minuty.
+  async function collectSalesRows(sku, onProgress) {
+    const rows = [];
+    const since = priceWindowStart();
+    const seenDocs = new Set();
+    let page = 1;
+
+    while (page <= MAX_PAGES) {
+      if (eanRun.stop) break;
+
+      const faRows = getFaRows();
+      if (!faRows.length && page === 1) {
+        await waitFor(() => getFaRows().length > 0, 20, 300);
+      }
+
+      let newOnPage = 0;
+      for (const row of getFaRows()) {
+        const parsed = readSalesRow(row);
+        const docCell = row.querySelector('td[data-datafield="DocNumber"]');
+        const doc = docCell ? (docCell.getAttribute('title') || '') : '';
+        const key = doc + '|' + parsed.sku + '|' + parsed.price + '|' + parsed.qty;
+        if (seenDocs.has(key)) continue;
+        seenDocs.add(key);
+        newOnPage++;
+
+        if (parsed.sku && parsed.sku !== sku) continue;      // czyjaś pozycja
+        if (isExcludedCustomer(parsed.customer)) continue;
+        const d = parseErpDate(parsed.date);
+        if (d && d < since) continue;                        // poza okresem
+        if (parsed.qty <= 0) continue;                       // korekty i zwroty
+        rows.push(parsed);
+      }
+
+      if (onProgress) onProgress(rows.length, page);
+
+      const pager = getVisiblePager();
+      if (!pagerHasNextPage(pager)) break;
+      if (!newOnPage && page > 1) break;   // ta sama strona w kółko
+      const moved = await goToNextPage(pager);
+      if (!moved) break;
+      page++;
+    }
+
+    return rows;
+  }
+
+  // Pełny odczyt statystyk dla jednego produktu: zaznacz w katalogu, otwórz
+  // historię, ustaw filtry, zbierz pozycje, zamknij zakładkę.
+  async function fetchPriceStats(row, sku, onProgress) {
+    const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
+    if (descCell) descCell.click();
+    await sleep(200);
+
+    if (!openHistory()) {
+      return { values: {}, notes: ['nie udało się otworzyć historii produktu'] };
+    }
+    const historyTabLi = document.querySelector('li.k-state-active');
+
+    try {
+      await sleep(400);
+      await setFilters();
+      const salesRows = await collectSalesRows(sku, onProgress);
+      const stats = computePriceStats(salesRows);
+      if (!salesRows.length) {
+        stats.notes = stats.notes.length ? stats.notes : ['brak sprzedaży w okresie'];
+      }
+      return stats;
+    } catch (err) {
+      console.warn('[Ceny] Błąd przy ' + sku + ':', err && err.message || err);
+      return { values: {}, notes: ['błąd odczytu historii'] };
+    } finally {
+      await closeHistoryTab(historyTabLi);
+      await sleep(300);
+      // Po zamknięciu historii wracamy do katalogu — kolejne SKU szuka tam.
+      if (!isCatalogTabActive()) await switchToCatalogTab();
+    }
+  }
+
+  // ---------- Statystyki cen: czysta matematyka ----------
+
+  // Polski zapis liczby z ERP: „1 234,56" → 1234.56. Spacje bywają twarde.
+  function parsePlNumber(text) {
+    const raw = String(text || '').replace(/[\s\u00a0]/g, '').replace(',', '.');
+    if (!raw || !/^-?\d+(\.\d+)?$/.test(raw)) return null;
+    return parseFloat(raw);
+  }
+
+  // Percentyl WAŻONY WOLUMENEM. Waga to ilość, bo klient kupujący 500 kg po
+  // 102 zł znaczy dla polityki cenowej więcej niż ktoś, kto wziął 2 kg po 114.
+  //
+  // Metoda „lower weighted percentile": pierwsza cena, przy której narastający
+  // wolumen sięga progu. Bez interpolacji — interpolowana cena to kwota, po
+  // której nikt nigdy nie kupił, a tu chcemy liczb z faktur.
+  function weightedPercentile(rows, q) {
+    if (!rows.length) return null;
+    const sorted = rows.slice().sort((a, b) => a.price - b.price);
+    const total = sorted.reduce((sum, r) => sum + r.qty, 0);
+    if (total <= 0) return null;
+    const target = total * q;
+    let acc = 0;
+    for (const r of sorted) {
+      acc += r.qty;
+      if (acc >= target) return r.price;
+    }
+    return sorted[sorted.length - 1].price;
+  }
+
+  // Percentyl PO TRANSAKCJACH, bez wagi. Odpowiada na inne pytanie niż wersja
+  // ważona: „ile UMÓW jest powyżej tej kwoty", a nie „ile towaru".
+  //
+  // Różnica bywa duża i to nie usterka. Gdy jeden klient bierze 500 kg po
+  // 102 zł, a dwóch po 114, to 90% WOLUMENU idzie po 102 — więc ważone P90
+  // wynosi 102. Ale 17% TRANSAKCJI jest po 114, więc transakcyjne P90 to 114.
+  // Do pytania „czy ktoś kupuje drożej" właściwa jest wersja transakcyjna.
+  function unweightedPercentile(rows, q) {
+    if (!rows.length) return null;
+    const p = rows.map(r => r.price).sort((a, b) => a - b);
+    const idx = Math.min(p.length - 1, Math.max(0, Math.ceil(q * p.length) - 1));
+    return p[idx];
+  }
+
+  function unweightedMedian(rows) {
+    if (!rows.length) return null;
+    const p = rows.map(r => r.price).sort((a, b) => a - b);
+    const mid = Math.floor(p.length / 2);
+    return p.length % 2 ? p[mid] : (p[mid - 1] + p[mid]) / 2;
+  }
+
+  function round2(n) {
+    return n === null || n === undefined ? null : Math.round(n * 100) / 100;
+  }
+
+  // Wyjście z przecinkiem, jak wszystkie liczby w tym narzędziu — przełącznik
+  // „kropka w cenach" zamienia je jednolicie na kropkę.
+  function plNum(n) {
+    if (n === null || n === undefined) return '';
+    return String(n).replace('.', ',');
+  }
+
+  // Zwraca liczby do arkusza plus ostrzeżenia, gdy próba jest za mała albo
+  // ceny są rozwarstwione i jedna liczba nie opisuje rynku.
+  function computePriceStats(rows) {
+    const clean = rows.filter(r => r.price > 0 && r.qty > 0);
+    if (!clean.length) return { values: {}, notes: ['brak transakcji w okresie'] };
+
+    const p10 = weightedPercentile(clean, 0.10);
+    const p90 = weightedPercentile(clean, 0.90);
+    const floorQ = PRICE_STATS.FLOOR_PERCENTILE / 100;
+
+    const values = {
+      txn: String(clean.length),
+      volume: plNum(round2(clean.reduce((s, r) => s + r.qty, 0))),
+      floor: plNum(round2(weightedPercentile(clean, floorQ))),
+      median: plNum(round2(weightedPercentile(clean, 0.50))),
+      p10: plNum(round2(p10)),
+      p90: plNum(round2(p90)),
+      minPrice: plNum(round2(Math.min.apply(null, clean.map(r => r.price)))),
+      maxPrice: plNum(round2(Math.max.apply(null, clean.map(r => r.price)))),
+      medianTx: plNum(round2(unweightedMedian(clean))),
+      p90Tx: plNum(round2(unweightedPercentile(clean, 0.90))),
+      floorTx: plNum(round2(unweightedPercentile(clean, PRICE_STATS.FLOOR_PERCENTILE / 100)))
+    };
+
+    const spread = p10 > 0 ? p90 / p10 : null;
+    values.spread = plNum(round2(spread));
+
+    const notes = [];
+    if (clean.length < PRICE_STATS.MIN_TRANSACTIONS) {
+      notes.push('tylko ' + clean.length + ' transakcji — percentyle niewiarygodne');
+    }
+    if (spread !== null && spread >= PRICE_STATS.SPREAD_ALERT) {
+      notes.push('ceny rozwarstwione (P90/P10 = ' + round2(spread) + ') — dwie grupy klientów');
+    }
+    return { values, notes };
   }
 
   // Odcisk zawartości siatki katalogu. Służy do stwierdzenia, że wyszukiwanie
@@ -2667,8 +2940,14 @@
     return queries;
   }
 
-  async function fetchRowForEntry(entry, byName) {
-    if (!byName) {
+  async function fetchRowForEntry(entry, mode) {
+    if (mode === 'ean') {
+      const ean = String(entry).trim();
+      await searchCatalogFresh(ean);
+      return pickRowByEan(ean);
+    }
+
+    if (mode === 'sku') {
       const sku = normalizeSku(entry);
       await searchCatalogFresh(sku);
       return pickRowBySku(sku);
@@ -2743,6 +3022,11 @@
       (['sku', 'name', 'ean'].includes(f.key) ? ' checked' : '') + '> ' + f.label + '</label>'
     ).join('');
 
+    const salesChecks = SALES_FIELDS.map(f =>
+      '<label style="cursor:pointer;white-space:nowrap">' +
+      '<input data-field="' + f.key + '" type="checkbox"> ' + f.label + '</label>'
+    ).join('');
+
     box.innerHTML = [
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
       '  <strong style="flex:1;font-size:13px">Dane produktów z ERP</strong>',
@@ -2755,11 +3039,17 @@
       '<div style="display:flex;gap:12px;margin-top:4px;font-size:12px">',
       '  <label style="cursor:pointer"><input data-role="mode-auto" type="radio" name="savpol-ean-mode" checked> rozpoznaj sam</label>',
       '  <label style="cursor:pointer"><input data-role="mode-sku" type="radio" name="savpol-ean-mode"> SKU</label>',
+      '  <label style="cursor:pointer"><input data-role="mode-ean" type="radio" name="savpol-ean-mode"> EAN</label>',
       '  <label style="cursor:pointer"><input data-role="mode-name" type="radio" name="savpol-ean-mode"> nazwie</label>',
       '</div>',
       '<div style="margin-top:8px;font-size:12px;opacity:.75">Chcę dostać:</div>',
       '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:12px">',
       checks,
+      '</div>',
+      '<div style="margin-top:10px;font-size:12px;opacity:.75">',
+      '  Z historii sprzedaży (wolne — kilka sekund na produkt):</div>',
+      '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:12px">',
+      salesChecks,
       '</div>',
       '<div style="display:flex;gap:6px;margin-top:10px">',
       '  <button data-role="start" type="button" style="' + btn + ';flex:1;background:#4c9aff;color:#04142e">Pobierz dane</button>',
@@ -2785,11 +3075,19 @@
     return box;
   }
 
-  function selectedFields(panel) {
-    return DATA_FIELDS.filter(f => {
+  function selectedFrom(list, panel) {
+    return list.filter(f => {
       const cb = panel.querySelector('[data-field="' + f.key + '"]');
       return cb && cb.checked;
     });
+  }
+
+  function selectedFields(panel) {
+    return selectedFrom(DATA_FIELDS, panel);
+  }
+
+  function selectedSalesFields(panel) {
+    return PRICE_STATS.ENABLE ? selectedFrom(SALES_FIELDS, panel) : [];
   }
 
   // Każda kolumna w osobnym polu — tak się wkleja do arkusza, kolumna po
@@ -2833,12 +3131,15 @@
   async function runEanTool(panel) {
     const el = r => panel.querySelector('[data-role="' + r + '"]');
     const entries = parseInputList(el('input').value);
-    const fields = selectedFields(panel);
+    const catalogFields = selectedFields(panel);
+    const salesFields = selectedSalesFields(panel);
+    const fields = catalogFields.concat(salesFields);
 
     if (!entries.length) { el('progress').textContent = 'Wklej najpierw listę.'; return; }
     if (!fields.length) { el('progress').textContent = 'Zaznacz, jakie dane mam pobrać.'; return; }
 
     const mode = el('mode-sku').checked ? 'sku'
+      : el('mode-ean').checked ? 'ean'
       : el('mode-name').checked ? 'name' : 'auto';
 
     eanRun.running = true;
@@ -2853,7 +3154,9 @@
       for (let i = 0; i < entries.length; i++) {
         if (eanRun.stop) break;
         const entry = entries[i];
-        const byName = mode === 'name' || (mode === 'auto' && !looksLikeSku(entry));
+        const entryMode = mode !== 'auto' ? mode
+          : looksLikeEan(entry) ? 'ean'
+          : looksLikeSku(entry) ? 'sku' : 'name';
 
         el('progress').textContent = 'Sprawdzam ' + (i + 1) + ' z ' + entries.length +
           ': ' + entry.slice(0, 40);
@@ -2862,12 +3165,27 @@
         let status = 'nie znaleziono w katalogu';
         // W wyniku pokazujemy to, czego naprawdę szukaliśmy — inaczej przy
         // wejściu „35776" nie widać, że odpytaliśmy o „0035776".
-        const shown = byName ? entry : normalizeSku(entry);
+        const shown = entryMode === 'sku' ? normalizeSku(entry) : entry;
         try {
-          const hit = await fetchRowForEntry(entry, byName);
+          const hit = await fetchRowForEntry(entry, entryMode);
           status = hit.status;
           if (hit.row) {
-            fields.forEach(f => { values[f.key] = readField(hit.row, f.field); });
+            catalogFields.forEach(f => { values[f.key] = readField(hit.row, f.field); });
+
+            if (salesFields.length) {
+              const sku = readField(hit.row, 'Item');
+              el('progress').textContent = 'Historia sprzedaży ' + (i + 1) + ' z ' +
+                entries.length + ': ' + sku;
+              const stats = await fetchPriceStats(hit.row, sku, (n, page) => {
+                el('progress').textContent = 'Historia sprzedaży ' + sku +
+                  ': ' + n + ' pozycji, strona ' + page;
+              });
+              salesFields.forEach(f => { values[f.key] = stats.values[f.key] || ''; });
+              if (stats.notes.length) {
+                status = status === 'ok' ? stats.notes.join('; ')
+                  : status + '; ' + stats.notes.join('; ');
+              }
+            }
           }
         } catch (err) {
           // Awaria jednej pozycji nie może przerwać listy — po 400 udanych
