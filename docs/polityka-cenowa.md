@@ -64,6 +64,7 @@ osobna kolumna do wklejenia.
 | P90 (wol.) / (transakcje) | górny segment |
 | Cena min./maks. w historii | do wychwycenia deali jednorazowych |
 | Rozwarstwienie | P90/P10 — powyżej 1,15 sygnalizowane w statusie |
+| Okres (od–do) | **faktyczny** zakres dat użytej próby |
 
 **Liczbę transakcji czytaj przed wszystkim innym.** Percentyl z trzech faktur to
 nie statystyka. Poniżej `MIN_TRANSACTIONS` (5) status mówi wprost „percentyle
@@ -93,6 +94,19 @@ zostaje jako druga linia obrony, gdyby filtr nie zadziałał.
 bywa za mała. Nie wydłużamy go po cichu — status powie „tylko N transakcji",
 a `FROM_YEAR_START: false` przywraca okno kroczące `MONTHS_BACK` (12 miesięcy),
 gdy świadomie chcesz szerszej próby.
+
+**Limit 100 najnowszych transakcji** (`MAX_TRANSACTIONS`). Bestsellery mają
+w roku setki pozycji i przewijanie ich stron zajmowało większość czasu
+przebiegu, a percentyl ze 100 pozycji jest praktycznie tak samo stabilny jak
+z 800. Liczą się najnowsze, bo lista historii jest sortowana od najnowszych.
+
+Skutek uboczny jest realny: **przy trafieniu w limit próba obejmuje krótszy
+okres niż zamówiony.** Produkt z 400 transakcjami od stycznia zostanie policzony
+z ostatnich kilku tygodni. Dlatego limit jest zgłaszany w statusie, a kolumna
+**„Okres (od–do)"** pokazuje faktyczny zakres dat — bez niej nie dałoby się
+odróżnić „cena stabilna od stycznia" od „cena z ostatnich dwóch tygodni".
+Jeśli przy jakimś produkcie okres wyjdzie podejrzanie krótki, podnieś limit
+dla tego przebiegu.
 
 Dalej odsiewane: ilości zerowe i ujemne (korekty, zwroty), ceny zerowe
 (gratisy), kontrahenci z listy `EXCLUDE_CUSTOMERS`.

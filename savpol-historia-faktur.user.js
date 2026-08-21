@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.30.0
+// @version      2.31.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -209,6 +209,16 @@
     // transakcji", a przełącznik niżej pozwala wrócić do okna kroczącego.
     FROM_YEAR_START: true,
     MONTHS_BACK: 12,          // używane tylko przy FROM_YEAR_START = false
+
+    // Górny limit pozycji na produkt. Bestsellery mają w roku setki transakcji
+    // i przewijanie ich stron zajmowało większość czasu przebiegu, a percentyl
+    // ze 100 pozycji jest praktycznie tak samo stabilny jak z 800.
+    //
+    // Liczą się NAJNOWSZE, bo lista historii jest sortowana od najnowszych.
+    // Skutek uboczny: przy trafieniu w limit próba obejmuje krótszy okres niż
+    // zamówiony — dlatego jest to zgłaszane w statusie, a kolumna „Okres"
+    // pokazuje faktyczny zakres dat.
+    MAX_TRANSACTIONS: 100,
     // Poniżej tylu transakcji percentyle są fikcją — zwracamy je, ale
     // z ostrzeżeniem w statusie.
     MIN_TRANSACTIONS: 5,
@@ -250,7 +260,8 @@
     { key: 'medianTx', label: 'Mediana (transakcje)', numeric: true },
     { key: 'floorTx',  label: 'PODŁOGA (P25 transakcje)', numeric: true },
     { key: 'p90Tx',    label: 'P90 (transakcje)',   numeric: true },
-    { key: 'spread',   label: 'Rozwarstwienie',     numeric: true }
+    { key: 'spread',   label: 'Rozwarstwienie',     numeric: true },
+    { key: 'period',   label: 'Okres (od–do)' }
   ];
 
   // ---------- Konfiguracja: diagnostyka ----------
@@ -2726,7 +2737,14 @@
         if (d && d < since) continue;                        // poza okresem
         if (parsed.qty <= 0) continue;                       // korekty i zwroty
         rows.push(parsed);
+
+        if (rows.length >= PRICE_STATS.MAX_TRANSACTIONS) {
+          rows.capped = true;
+          break;
+        }
       }
+
+      if (rows.capped) break;
 
       if (onProgress) onProgress(rows.length, page);
 
@@ -2936,6 +2954,15 @@
     const clean = rows.filter(r => r.price > 0 && r.qty > 0);
     if (!clean.length) return { values: {}, notes: ['brak transakcji w okresie'] };
 
+    // Faktyczny zakres dat użytej próby. Przy trafieniu w limit będzie krótszy
+    // niż zamówiony — i właśnie dlatego jest pokazywany.
+    const dates = clean.map(r => r.date).filter(Boolean).sort();
+    const period = dates.length
+      ? (dates[0] === dates[dates.length - 1]
+        ? dates[0]
+        : dates[0] + ' – ' + dates[dates.length - 1])
+      : '';
+
     const p10 = weightedPercentile(clean, 0.10);
     const p90 = weightedPercentile(clean, 0.90);
     const floorQ = PRICE_STATS.FLOOR_PERCENTILE / 100;
@@ -2957,7 +2984,13 @@
     const spread = p10 > 0 ? p90 / p10 : null;
     values.spread = plNum(round2(spread));
 
+    values.period = period;
+
     const notes = [];
+    if (rows.capped) {
+      notes.push('ograniczono do ' + PRICE_STATS.MAX_TRANSACTIONS +
+        ' najnowszych transakcji (okres: ' + period + ')');
+    }
     if (clean.length < PRICE_STATS.MIN_TRANSACTIONS) {
       notes.push('tylko ' + clean.length + ' transakcji — percentyle niewiarygodne');
     }
