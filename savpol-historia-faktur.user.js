@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.28.2
+// @version      2.28.3
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2710,45 +2710,87 @@
     return rows;
   }
 
+  // Wszystkie zakładki (nie tylko widoczne) po aria-controls. Do wykrycia,
+  // która zakładka jest nowa po kliknięciu „Historia produktu".
+  function tabIdSet() {
+    return new Set(Array.from(document.querySelectorAll('li.k-item[aria-controls]'))
+      .map(li => li.getAttribute('aria-controls')));
+  }
+
+  function tabLiById(id) {
+    return Array.from(document.querySelectorAll('li.k-item[aria-controls]'))
+      .find(li => li.getAttribute('aria-controls') === id) || null;
+  }
+
+  function closeTabById(id) {
+    const li = tabLiById(id);
+    if (!li) return false;
+    const btn = li.querySelector('.csCloseButton_span');
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }
+
+  // Sprzątanie po poprzednich produktach. Przy odczycie cen dla setek pozycji
+  // każda nieodzyskana zakładka „Pozycje dokumentów" zostaje na ekranie —
+  // i po kilkunastu ERP zaczyna gubić się w tym, co jest aktywne.
+  async function closeStrayHistoryTabs(keepId) {
+    const stray = Array.from(document.querySelectorAll('li.k-item[aria-controls]'))
+      .filter(li => {
+        const id = li.getAttribute('aria-controls');
+        if (!id || id === keepId || id === knownCatalogPanelId) return false;
+        const panel = document.getElementById(id);
+        return panel && panelLooksLikeHistory(panel);
+      });
+    if (!stray.length) return 0;
+
+    for (const li of stray) {
+      const btn = li.querySelector('.csCloseButton_span');
+      if (btn) { btn.click(); await sleep(200); }
+    }
+    diag('INFO', 'Zamknięto zaległe zakładki historii: ' + stray.length);
+    return stray.length;
+  }
+
   // Pełny odczyt statystyk dla jednego produktu: zaznacz w katalogu, otwórz
   // historię, ustaw filtry, zbierz pozycje, zamknij zakładkę.
+  //
+  // Wykrywanie otwartej historii idzie po NOWYM ID ZAKŁADKI, nie po tym, która
+  // jest aktywna ani co jest w jej panelu. Poprzednia wersja wymagała, żeby
+  // aktywna zakładka miała już w panelu wiersz z numerem dokumentu — a przy
+  // domyślnym filtrze wierszy może nie być wcale, więc warunek nigdy się nie
+  // spełniał: skrypt raportował „historia nie otworzyła się" i wychodził
+  // PRZED blokiem finally, czyli nie zamykał tego, co właśnie otworzył.
+  // Stąd mnożące się zakładki „Pozycje dokumentów".
   async function fetchPriceStats(row, sku, onProgress) {
-    // Zakładkę katalogu zapamiętujemy PRZED otwarciem historii. Wcześniej
-    // brałem `li.k-state-active` już PO kliknięciu — a historia otwiera się
-    // asynchronicznie, więc aktywny bywał jeszcze katalog i zamykaliśmy jego
-    // zamiast historii. Zostawało to wyszukiwarkę historii jako jedyną na
-    // ekranie i kolejne produkty leciały właśnie tam.
-    const catalogTabLi = findCatalogTabLi();
+    await closeStrayHistoryTabs(null);
 
     const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
     if (descCell) descCell.click();
     await sleep(200);
 
+    const before = tabIdSet();
     if (!openHistory()) {
-      return { values: {}, notes: ['nie udało się otworzyć historii produktu'] };
+      return { values: {}, notes: ['brak przycisku „Historia produktu"'] };
     }
 
-    // Czekamy na FAKTYCZNE otwarcie historii, a nie na upływ czasu: historia
-    // to panel z numerami dokumentów, którego katalog nie ma.
-    const opened = await waitFor(() => {
-      const active = document.querySelector('li.k-state-active');
-      if (!active || active === catalogTabLi) return null;
-      const id = active.getAttribute('aria-controls');
-      const panel = id ? document.getElementById(id) : null;
-      return panel && panelLooksLikeHistory(panel) ? active : null;
-    }, 30, 200);
+    // Nowa zakładka = ta, której id nie było przed kliknięciem.
+    const newId = await waitFor(() => {
+      const now = Array.from(tabIdSet()).find(id => !before.has(id));
+      return now || null;
+    }, 40, 200);
 
-    if (!opened) {
-      diag('BLAD', 'Historia produktu ' + sku + ' nie otworzyła się.');
+    if (!newId) {
+      diag('BLAD', 'Historia ' + sku + ': nie pojawiła się nowa zakładka.');
+      describeDom('historia nie otworzyła się');
       return { values: {}, notes: ['historia produktu nie otworzyła się'] };
     }
 
-    const historyPanelId = opened.getAttribute('aria-controls');
-    const historyPanel = historyPanelId ? document.getElementById(historyPanelId) : null;
-
+    // Od tego miejsca zakładka JEST nasza i musi zostać zamknięta niezależnie
+    // od tego, co się dalej stanie.
     try {
-      // ERP dorysowuje panel filtrów chwilę po siatce.
-      await sleep(400);
+      const historyPanel = document.getElementById(newId);
+      await waitFor(() => findFilterPanel(historyPanel) !== null, 40, 250);
       await setFilters(historyPanel);
       const salesRows = await collectSalesRows(sku, onProgress);
       const stats = computePriceStats(salesRows);
@@ -2757,7 +2799,7 @@
       }
       return stats;
     } catch (err) {
-      // Komunikat MUSI dojść do arkusza. Poprzednia wersja zamieniała go na
+      // Komunikat MUSI dojść do arkusza. Wcześniejsza wersja zamieniała go na
       // ogólne „błąd odczytu historii" i przy awarii filtrów nie było wiadomo,
       // co się stało — trzeba było pytać użytkownika.
       const msg = String(err && err.message || err);
@@ -2765,13 +2807,11 @@
       diag('BLAD', 'Ceny ' + sku + ': ' + msg);
       return { values: {}, notes: ['historia: ' + msg] };
     } finally {
-      // Zamykamy DOKŁADNIE tę zakładkę, którą otworzyliśmy.
-      const closeBtn = opened.querySelector('.csCloseButton_span');
-      if (closeBtn) closeBtn.click();
+      closeTabById(newId);
       await sleep(400);
+      // Zaległości z wcześniejszych, nieudanych prób też sprzątamy.
+      await closeStrayHistoryTabs(null);
 
-      // I potwierdzamy powrót do katalogu, zamiast założyć, że nastąpił.
-      // Bez tego kolejne SKU trafiało w wyszukiwarkę historii.
       if (!isCatalogTabActive()) {
         const back = await switchToCatalogTab();
         if (!back) {
