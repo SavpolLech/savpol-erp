@@ -82,10 +82,20 @@ Siatka **historii produktu**, kolumny `FNetPriceADis` (cena netto po rabacie),
 otwieramy dokumentów** — jeden produkt to sekundy, nie minuty jak w pipelinie
 cross-sellingu.
 
-Odsiewane: pozycje starsze niż `MONTHS_BACK` (12 miesięcy — polityka cenowa
-ma się opierać na cenach aktualnych, nie na kosztach zakupu z 2024), ilości
-zerowe i ujemne (korekty, zwroty), ceny zerowe (gratisy), kontrahenci z listy
-`EXCLUDE_CUSTOMERS`.
+**Okres: od 1 stycznia bieżącego roku** (`FROM_YEAR_START`). Przez dwa lata
+wstecz cena zmieniała się tak czy inaczej, więc starsze transakcje nie opisują
+dzisiejszych warunków — a im dłuższy okres, tym więcej stron do przewinięcia.
+Data trafia do **filtra w ERP**, nie tylko do odsiewu w skrypcie, więc lista
+jest krótsza u źródła i przebieg jest szybszy. Odsiew po stronie skryptu
+zostaje jako druga linia obrony, gdyby filtr nie zadziałał.
+
+**Uwaga na styczeń i luty:** okno kurczy się wtedy do kilku tygodni i próba
+bywa za mała. Nie wydłużamy go po cichu — status powie „tylko N transakcji",
+a `FROM_YEAR_START: false` przywraca okno kroczące `MONTHS_BACK` (12 miesięcy),
+gdy świadomie chcesz szerszej próby.
+
+Dalej odsiewane: ilości zerowe i ujemne (korekty, zwroty), ceny zerowe
+(gratisy), kontrahenci z listy `EXCLUDE_CUSTOMERS`.
 
 ## Powrót do katalogu po każdym produkcie (v2.28.1)
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.29.0
+// @version      2.30.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -200,9 +200,15 @@
   // otwierać dokumentów — wszystko jest na liście.
   const PRICE_STATS = {
     ENABLE: true,
-    // Polityka cenowa ma się opierać na cenach AKTUALNYCH. Ceny z 2024 roku
-    // niosą inne koszty zakupu i inne umowy.
-    MONTHS_BACK: 12,
+    // Zakres: od 1 STYCZNIA BIEŻĄCEGO ROKU. Polityka cenowa ma się opierać na
+    // cenach aktualnych — przez dwa lata wstecz cena zmieniała się tak czy
+    // inaczej, a im dłuższy okres, tym więcej stron do przewinięcia.
+    //
+    // Uwaga na styczeń i luty: to okno kurczy się do kilku tygodni, więc próba
+    // bywa za mała. Nie wydłużamy go po cichu — status i tak powie „tylko N
+    // transakcji", a przełącznik niżej pozwala wrócić do okna kroczącego.
+    FROM_YEAR_START: true,
+    MONTHS_BACK: 12,          // używane tylko przy FROM_YEAR_START = false
     // Poniżej tylu transakcji percentyle są fikcją — zwracamy je, ale
     // z ostrzeżeniem w statusie.
     MIN_TRANSACTIONS: 5,
@@ -518,7 +524,7 @@
     return dateOk && radioOk;
   }
 
-  async function setFilters(scope) {
+  async function setFilters(scope, startDate) {
     const found = await waitFor(() => findFilterPanel(scope));
     if (!found) {
       diag('BLAD', 'Nie znaleziono panelu filtrów' + (scope ? ' w panelu historii.' : '.'));
@@ -531,7 +537,7 @@
     const dp = unsafeWindow.jQuery(dateInput).data('kendoDatePicker');
     if (!dp) throw new Error('Brak instancji kendoDatePicker.');
 
-    dp.value(HISTORY_START_DATE);
+    dp.value(startDate || HISTORY_START_DATE);
     dp.trigger('change');
     unsafeWindow.jQuery(dateInput).trigger('blur');
     await sleep(300);
@@ -2673,8 +2679,10 @@
     return PRICE_STATS.EXCLUDE_CUSTOMERS.some(x => x && n.includes(fold(x)));
   }
 
-  function priceWindowStart() {
-    const d = new Date();
+  function priceWindowStart(now) {
+    const base = now ? new Date(now) : new Date();
+    if (PRICE_STATS.FROM_YEAR_START) return new Date(base.getFullYear(), 0, 1);
+    const d = new Date(base);
     d.setMonth(d.getMonth() - PRICE_STATS.MONTHS_BACK);
     return d;
   }
@@ -2827,7 +2835,9 @@
     try {
       const historyPanel = document.getElementById(newId);
       await waitFor(() => findFilterPanel(historyPanel) !== null, 40, 250);
-      await setFilters(historyPanel);
+      // Datę filtra ustawiamy na początek okna, żeby ERP zwrócił mniej stron.
+      // Odsiew w JS zostaje jako druga linia obrony, gdy filtr nie zadziała.
+      await setFilters(historyPanel, priceWindowStart());
       const salesRows = await collectSalesRows(sku, onProgress);
       const stats = computePriceStats(salesRows);
       if (!salesRows.length) {
