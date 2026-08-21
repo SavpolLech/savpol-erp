@@ -87,6 +87,35 @@ ma się opierać na cenach aktualnych, nie na kosztach zakupu z 2024), ilości
 zerowe i ujemne (korekty, zwroty), ceny zerowe (gratisy), kontrahenci z listy
 `EXCLUDE_CUSTOMERS`.
 
+## Powrót do katalogu po każdym produkcie (v2.28.1)
+
+Pierwsza wersja policzyła poprawnie jeden produkt i stanęła: kolejne SKU trafiały
+do **wyszukiwarki historii sprzedaży** zamiast do katalogu. Ten sam błąd
+naprawialiśmy już w pipelinie cross-sellingu (v2.7.1) — wrócił nową drogą.
+
+Dwie przyczyny:
+
+**1. Zakładkę do zamknięcia brałem po kliknięciu, nie przed.**
+`document.querySelector('li.k-state-active')` zaraz po `openHistory()` zwracał
+jeszcze **katalog**, bo historia otwiera się asynchronicznie. Zamykaliśmy więc
+katalog, zostawiając historię jako jedyny widok z wyszukiwarką. Teraz zakładka
+katalogu jest zapamiętywana **przed** otwarciem historii, a skrypt czeka na
+faktyczne pojawienie się panelu historii, zamiast odczekać 400 ms.
+
+**2. Historia sprzedaży ma kolumnę `Item` dokładnie tak jak katalog.** Reguła
+zapasowa „panel z wyszukiwarką i kolumną `Item`" opisywała oba, więc po
+zamknięciu katalogu skrypt uznawał historię za katalog. Rozstrzyga `DocNumber`:
+historia jest listą dokumentów i go ma, katalog jest listą kartotek i nie ma.
+Weryfikowana jest teraz także **zapamiętana** zakładka — ERP potrafi przerysować
+panel pod tym samym id.
+
+Po zamknięciu historii skrypt **potwierdza** powrót do katalogu (czeka na pole
+wyszukiwania), zamiast założyć, że nastąpił.
+
+**To czwarty raz ten sam wzorzec** — po v2.16.1, v2.17.1 i v2.26.1. Rozpoznawanie
+widoku po obecności pojedynczej kolumny jest za słabe w ERP, gdzie kilka widoków
+dzieli te same nazwy pól. Zawsze „ma X i **nie ma** Y".
+
 ## Do ustawienia przed pierwszym poważnym użyciem
 
 **`EXCLUDE_CUSTOMERS` jest puste**, więc statystyka obejmuje **także sprzedaż

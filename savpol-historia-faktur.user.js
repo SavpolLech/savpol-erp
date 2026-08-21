@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.28.0
+// @version      2.28.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1331,11 +1331,27 @@
 
   // Sygnatura listy katalogu: wyszukiwarka + siatka z kolumną stanu (QStockAv).
   // Karta produktu i historia faktur nie mają tej kombinacji.
+  // Siatka historii sprzedaży ma kolumnę `Item` DOKŁADNIE TAK JAK katalog, więc
+  // „panel z wyszukiwarką i kolumną Item" opisuje oba. Rozstrzyga `DocNumber`:
+  // historia jest listą dokumentów i go ma, katalog jest listą kartotek i nie ma.
+  //
+  // Bez tego rozróżnienia, gdy zakładka katalogu została zamknięta, skrypt
+  // uznawał historię za katalog i wpisywał w jej wyszukiwarkę kolejne produkty.
+  function panelLooksLikeHistory(panel) {
+    return panel.querySelector('td[data-datafield="DocNumber"]') !== null;
+  }
+
   function panelLooksLikeCatalog(panel) {
     const hasSearch = panel.querySelector('.csDBEditSearch input.Input') !== null;
     const hasStockGrid = Array.from(panel.querySelectorAll('.cs-grid-data-table'))
       .some(t => t.querySelector('td[data-datafield="QStockAv"]'));
-    return { hasSearch, hasStockGrid, score: (hasSearch ? 2 : 0) + (hasStockGrid ? 2 : 0) };
+    const isHistory = panelLooksLikeHistory(panel);
+    return {
+      hasSearch,
+      hasStockGrid,
+      isHistory,
+      score: (hasSearch ? 2 : 0) + (hasStockGrid ? 2 : 0) - (isHistory ? 4 : 0)
+    };
   }
 
   // Raz rozpoznany panel katalogu zapamiętujemy po aria-controls.
@@ -1361,22 +1377,27 @@
     //    wyszukiwania nie odbiera jej tożsamości.
     if (knownCatalogPanelId) {
       const known = candidates.find(t => t.li.getAttribute('aria-controls') === knownCatalogPanelId);
-      if (known) return known.li;
+      // Weryfikujemy nawet zapamiętaną zakładkę: ERP potrafi przerysować panel
+      // pod tym samym id, a wtedy pamięć wskazywałaby na coś innego.
+      if (known && !panelLooksLikeHistory(known.panel)) return known.li;
+      if (known) knownCatalogPanelId = null;
     }
 
     // 1. Panel z pełną sygnaturą katalogu.
     const full = candidates.find(t => {
       const m = panelLooksLikeCatalog(t.panel);
-      return m.hasSearch && m.hasStockGrid;
+      return m.hasSearch && m.hasStockGrid && !m.isHistory;
     });
     if (full) return rememberCatalogTab(full.li);
 
     // 2. Panel z wyszukiwarką i siatką produktów. Wymagamy kolumny `Item`,
     //    a nie „jakiejkolwiek siatki" — siatkę ma też pulpit z celami
     //    sprzedażowymi i przy pustym wyniku wygrywał, bo jest pierwszy.
+    //    Historię odrzucamy jawnie: też ma `Item`.
     const partial = candidates.find(t =>
       t.panel.querySelector('.csDBEditSearch input.Input') !== null
-      && t.panel.querySelector('td[data-datafield="Item"]') !== null);
+      && t.panel.querySelector('td[data-datafield="Item"]') !== null
+      && !panelLooksLikeHistory(t.panel));
     if (partial) return rememberCatalogTab(partial.li);
 
     // 3. Ostatnia deska ratunku: etykieta. Zostawiona, bo gdy panel jest jeszcze
@@ -2665,6 +2686,13 @@
   // Pełny odczyt statystyk dla jednego produktu: zaznacz w katalogu, otwórz
   // historię, ustaw filtry, zbierz pozycje, zamknij zakładkę.
   async function fetchPriceStats(row, sku, onProgress) {
+    // Zakładkę katalogu zapamiętujemy PRZED otwarciem historii. Wcześniej
+    // brałem `li.k-state-active` już PO kliknięciu — a historia otwiera się
+    // asynchronicznie, więc aktywny bywał jeszcze katalog i zamykaliśmy jego
+    // zamiast historii. Zostawało to wyszukiwarkę historii jako jedyną na
+    // ekranie i kolejne produkty leciały właśnie tam.
+    const catalogTabLi = findCatalogTabLi();
+
     const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
     if (descCell) descCell.click();
     await sleep(200);
@@ -2672,10 +2700,23 @@
     if (!openHistory()) {
       return { values: {}, notes: ['nie udało się otworzyć historii produktu'] };
     }
-    const historyTabLi = document.querySelector('li.k-state-active');
+
+    // Czekamy na FAKTYCZNE otwarcie historii, a nie na upływ czasu: historia
+    // to panel z numerami dokumentów, którego katalog nie ma.
+    const opened = await waitFor(() => {
+      const active = document.querySelector('li.k-state-active');
+      if (!active || active === catalogTabLi) return null;
+      const id = active.getAttribute('aria-controls');
+      const panel = id ? document.getElementById(id) : null;
+      return panel && panelLooksLikeHistory(panel) ? active : null;
+    }, 30, 200);
+
+    if (!opened) {
+      diag('BLAD', 'Historia produktu ' + sku + ' nie otworzyła się.');
+      return { values: {}, notes: ['historia produktu nie otworzyła się'] };
+    }
 
     try {
-      await sleep(400);
       await setFilters();
       const salesRows = await collectSalesRows(sku, onProgress);
       const stats = computePriceStats(salesRows);
@@ -2687,10 +2728,21 @@
       console.warn('[Ceny] Błąd przy ' + sku + ':', err && err.message || err);
       return { values: {}, notes: ['błąd odczytu historii'] };
     } finally {
-      await closeHistoryTab(historyTabLi);
-      await sleep(300);
-      // Po zamknięciu historii wracamy do katalogu — kolejne SKU szuka tam.
-      if (!isCatalogTabActive()) await switchToCatalogTab();
+      // Zamykamy DOKŁADNIE tę zakładkę, którą otworzyliśmy.
+      const closeBtn = opened.querySelector('.csCloseButton_span');
+      if (closeBtn) closeBtn.click();
+      await sleep(400);
+
+      // I potwierdzamy powrót do katalogu, zamiast założyć, że nastąpił.
+      // Bez tego kolejne SKU trafiało w wyszukiwarkę historii.
+      if (!isCatalogTabActive()) {
+        const back = await switchToCatalogTab();
+        if (!back) {
+          diag('BLAD', 'Nie udało się wrócić do katalogu po historii ' + sku + '.');
+          describeDom('brak powrotu do katalogu po historii');
+        }
+      }
+      await waitFor(() => findVisibleCatalogSearchInput() !== null, 20, 200);
     }
   }
 
