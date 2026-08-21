@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.31.0
+// @version      2.33.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -165,6 +165,8 @@
     ENABLE: true,
     BUTTON_ID: 'savpol-ean-btn',
     PANEL_ID: 'savpol-ean-panel',
+    // Klucz pamięci zaznaczeń w GM storage.
+    PREFS_KEY: 'dane_z_erp_prefs',
     // Odstęp po każdym wyszukaniu. Katalog odpowiada szybko, ale przy 500
     // pozycjach pod rząd warto nie zasypywać go żądaniami.
     DELAY_MS: 200,
@@ -244,6 +246,17 @@
     { key: 'limit', label: 'Cena graniczna',  field: 'CSalesLimitPrice', numeric: true },
     { key: 'group', label: 'Grupa produktu',  field: 'ItemsGroupTranslatedDesc' },
     { key: 'stock', label: 'Stan (DYS.)',     field: 'QStockAv',         numeric: true }
+  ];
+
+  // Bloki wyjściowe: pola sąsiadujące w arkuszu wychodzą jako JEDNA wklejka
+  // rozdzielona tabulatorami, zamiast kopiowania kolumna po kolumnie.
+  //
+  // Kolejność w bloku to kolejność kolumn w arkuszu i jest celowa —
+  // „cena, graniczna, minimalna" tak, jak leżą w docelowym pliku.
+  // Pole zaznaczone, a nieujęte w żadnym bloku, dostaje własne okno.
+  const OUTPUT_BLOCKS = [
+    { label: 'Ceny z kartoteki', fields: ['price', 'limit', 'min'] },
+    { label: 'Z historii sprzedaży', fields: ['medianTx', 'p90Tx'] }
   ];
 
   // Dane liczone z historii sprzedaży. Osobna lista, bo ich pobranie wymaga
@@ -3283,6 +3296,42 @@
     return box;
   }
 
+  // Zaznaczenia i tryb przeżywają zamknięcie panelu. Przy powtarzalnej pracy
+  // (te same pięć pól przy każdym przebiegu) odklikiwanie ich od nowa to
+  // zbędna robota, a pomyłka w zaznaczeniu kosztuje cały przebieg.
+  function savePrefs(panel) {
+    const fields = DATA_FIELDS.concat(SALES_FIELDS)
+      .filter(f => {
+        const cb = panel.querySelector('[data-field="' + f.key + '"]');
+        return cb && cb.checked;
+      })
+      .map(f => f.key);
+    const mode = panel.querySelector('[data-role="mode-sku"]').checked ? 'sku'
+      : panel.querySelector('[data-role="mode-ean"]').checked ? 'ean'
+      : panel.querySelector('[data-role="mode-name"]').checked ? 'name' : 'auto';
+    gmSet(EAN_TOOL.PREFS_KEY, JSON.stringify({ fields, mode }));
+  }
+
+  function loadPrefs() {
+    const raw = gmGet(EAN_TOOL.PREFS_KEY, null);
+    if (!raw) return null;
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return parsed && Array.isArray(parsed.fields) ? parsed : null;
+    } catch (e) { return null; }
+  }
+
+  function applyPrefs(panel) {
+    const prefs = loadPrefs();
+    if (!prefs) return;
+    DATA_FIELDS.concat(SALES_FIELDS).forEach(f => {
+      const cb = panel.querySelector('[data-field="' + f.key + '"]');
+      if (cb) cb.checked = prefs.fields.includes(f.key);
+    });
+    const radio = panel.querySelector('[data-role="mode-' + prefs.mode + '"]');
+    if (radio) radio.checked = true;
+  }
+
   function selectedFrom(list, panel) {
     return list.filter(f => {
       const cb = panel.querySelector('[data-field="' + f.key + '"]');
@@ -3300,20 +3349,45 @@
 
   // Każda kolumna w osobnym polu — tak się wkleja do arkusza, kolumna po
   // kolumnie. Jedna wielka tabela wymagałaby rozbijania jej w Sheets.
+  // Grupuje zaznaczone pola w bloki wg OUTPUT_BLOCKS. Zwraca listę bloków,
+  // każdy z własną listą pól w zadanej kolejności.
+  function buildOutputBlocks(fields) {
+    const byKey = {};
+    fields.forEach(f => { byKey[f.key] = f; });
+    const used = new Set();
+    const blocks = [];
+
+    OUTPUT_BLOCKS.forEach(def => {
+      const inBlock = def.fields.map(k => byKey[k]).filter(Boolean);
+      if (!inBlock.length) return;
+      inBlock.forEach(f => used.add(f.key));
+      blocks.push({ label: def.label, fields: inBlock });
+    });
+
+    // Reszta — po jednym oknie na pole, jak wcześniej.
+    fields.filter(f => !used.has(f.key))
+      .forEach(f => blocks.push({ label: f.label, fields: [f] }));
+
+    return blocks;
+  }
+
   function renderColumns(panel, results, fields, opts) {
     const host = panel.querySelector('[data-role="columns"]');
     host.innerHTML = '';
 
-    fields.forEach(f => {
+    buildOutputBlocks(fields).forEach(block => {
+      const multi = block.fields.length > 1;
       const wrap = document.createElement('div');
       wrap.style.cssText = 'margin-bottom:10px';
       wrap.innerHTML = [
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">',
         '  <span style="flex:1;font-size:11px;text-transform:uppercase;',
-        '      letter-spacing:.04em;opacity:.65">' + f.label + '</span>',
+        '      letter-spacing:.04em;opacity:.65">' +
+        (multi ? block.fields.map(f => f.label).join(' · ') : block.label) + '</span>',
         '  <button type="button" style="cursor:pointer;font:inherit;font-size:11px;',
         '      padding:3px 8px;border:0;border-radius:4px;background:#36b37e;',
-        '      color:#04231a;font-weight:600">Kopiuj</button>',
+        '      color:#04231a;font-weight:600">' +
+        (multi ? 'Kopiuj ' + block.fields.length + ' kolumny' : 'Kopiuj') + '</button>',
         '</div>',
         '<textarea rows="4" readonly spellcheck="false" style="width:100%;box-sizing:border-box;',
         '    font:12px ui-monospace,Consolas,monospace;padding:6px 8px;',
@@ -3322,14 +3396,20 @@
       ].join('');
 
       const ta = wrap.querySelector('textarea');
-      ta.value = results.map(r => formatValue(r.values[f.key], f, opts)).join('\n');
+      // Tabulator między kolumnami — Sheets rozkłada to na osobne komórki
+      // jednym wklejeniem. Puste wartości zostają puste, żeby nie przesuwać
+      // pozostałych kolumn w wierszu.
+      ta.value = results
+        .map(r => block.fields.map(f => formatValue(r.values[f.key], f, opts)).join('\t'))
+        .join('\n');
 
       const copyBtn = wrap.querySelector('button');
+      const label = copyBtn.textContent;
       copyBtn.addEventListener('click', () => {
         ta.select();
         const ok = document.execCommand && document.execCommand('copy');
         copyBtn.textContent = ok ? 'Skopiowane' : 'Ctrl+C';
-        setTimeout(() => { copyBtn.textContent = 'Kopiuj'; }, 2000);
+        setTimeout(() => { copyBtn.textContent = label; }, 2000);
       });
 
       host.appendChild(wrap);
@@ -3350,6 +3430,7 @@
       : el('mode-ean').checked ? 'ean'
       : el('mode-name').checked ? 'name' : 'auto';
 
+    savePrefs(panel);
     eanRun.running = true;
     eanRun.stop = false;
     el('start').style.display = 'none';
@@ -3472,6 +3553,7 @@
         el('progress').textContent = 'Przerywam po bieżącej pozycji...';
       });
       el('start').addEventListener('click', () => runEanTool(panel));
+      applyPrefs(panel);
       el('input').focus();
     });
     toolbar.appendChild(b);

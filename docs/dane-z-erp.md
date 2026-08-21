@@ -8,9 +8,11 @@ cross-sellingu. Przycisk **🏷️ Dane z ERP** w pasku katalogu.
 1. W arkuszu zaznacz kolumnę z SKU, **EAN-ami albo nazwami** i skopiuj.
 2. W ERP, w katalogu produktów, kliknij **🏷️ Dane z ERP**.
 3. Wklej listę, zaznacz potrzebne dane, kliknij **Pobierz dane**.
-4. Każda wybrana informacja pojawia się jako **osobna kolumna z własnym
-   przyciskiem „Kopiuj"** — wklejasz kolumnę po kolumnie w odpowiednie miejsca
-   arkusza.
+4. Wynik pojawia się w **blokach do wklejenia** — jedno kliknięcie „Kopiuj"
+   wypełnia tyle kolumn arkusza, ile jest w bloku.
+
+**Zaznaczenia i tryb są zapamiętywane** między otwarciami panelu, więc przy
+powtarzalnej pracy nie odklikujesz ich za każdym razem.
 
 Dostępne dane z siatki katalogu: SKU, nazwa z ERP, EAN, cena, cena minimalna,
 cena graniczna, grupa produktu, stan DYS.
@@ -178,6 +180,28 @@ Włącz, jeśli arkusz ma ustawienia regionalne z kropką dziesiętną.
 
 **CSV** zapisuje wszystko razem: szukaną wartość, wszystkie pobrane pola
 i status każdej pozycji.
+
+## Bloki wyjściowe
+
+Pola, które w arkuszu leżą obok siebie, wychodzą jako **jedna wklejka
+rozdzielona tabulatorami** — Sheets rozkłada ją na osobne komórki. Zamiast
+pięciu kopiowań robisz dwa.
+
+| Blok | Kolejność kolumn |
+|---|---|
+| Ceny z kartoteki | Cena → Cena graniczna → Cena minimalna |
+| Z historii sprzedaży | Mediana (transakcje) → P90 (transakcje) |
+
+Kolejność w bloku to kolejność kolumn w arkuszu i jest celowa — odpowiada
+układowi w docelowym pliku, nie kolejności na liście pól. Definicja siedzi
+w `OUTPUT_BLOCKS` na górze skryptu; dopisanie własnego bloku to jedna linia.
+
+Pole zaznaczone, a nieujęte w żadnym bloku, dostaje własne okno — tak jak
+wcześniej. Blok, z którego zaznaczono tylko jedno pole, też wychodzi jako
+jedna kolumna.
+
+Puste wartości zostają puste również w bloku, żeby nie przesuwać pozostałych
+kolumn w wierszu.
 
 ## Co skrypt robi z niejednoznacznościami
 
