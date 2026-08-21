@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.33.0
+// @version      2.34.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2549,7 +2549,12 @@
     if (!rows.length) return { row: null, status: 'nie znaleziono EAN w katalogu' };
 
     const pickBase = (candidates, status) => {
-      const plain = candidates.filter(r => !hasCaption(r));
+      // Dwa niezależne sita na kartoteki dodatkowe: szary podpis („Promocja
+      // specjalna") i sufiks litery w SKU (0000317-G). Kartoteka może mieć
+      // jedno bez drugiego, więc sprawdzamy oba.
+      const noSuffix = candidates.filter(r => !AUX_CARD_SUFFIX.test(readField(r, 'Item')));
+      const pool = noSuffix.length ? noSuffix : candidates;
+      const plain = pool.filter(r => !hasCaption(r));
       if (plain.length === 1) return { row: plain[0], score: 1, status };
       if (plain.length > 1) {
         // Kilka kartotek podstawowych = kilka RÓŻNYCH produktów w wyniku.
@@ -2560,8 +2565,9 @@
         }
         return { row: plain[0], score: 1, status };
       }
-      // Same kartoteki dodatkowe („Promocja specjalna", „Towar nisko rotujący").
-      return { row: candidates[0], status: 'tylko kartoteki dodatkowe — sprawdź' };
+      // Same kartoteki dodatkowe („Promocja specjalna", „Towar nisko rotujący",
+      // sufiksy -G/-M). Nie mają własnej historii, więc to zawsze do sprawdzenia.
+      return { row: pool[0], status: 'tylko kartoteki dodatkowe — sprawdź' };
     };
 
     const exact = rows.filter(r => readField(r, 'EAN') === ean);
@@ -2827,6 +2833,26 @@
     return stray.length;
   }
 
+  // ERP PAMIĘTA ZAZNACZENIA między wyszukiwaniami. Po kilku produktach
+  // w siatce tykało kilka checkboxów naraz i „Historia produktu" zamiast
+  // otworzyć jeden produkt pokazywała dialog „zaznaczyłeś X rekordów".
+  //
+  // Czyścimy tylko checkboxy w WIERSZACH danych — nagłówkowy „zaznacz
+  // wszystko" kliknięty przez pomyłkę zaznaczyłby całą stronę.
+  async function clearCatalogSelection() {
+    const panel = getCatalogPanel();
+    if (!panel) return 0;
+    const checked = Array.from(panel.querySelectorAll('tr.cs-grid-data-row input[type="checkbox"]'))
+      .filter(cb => cb.checked);
+    if (!checked.length) return 0;
+    for (const cb of checked) {
+      cb.click();
+      await sleep(80);
+    }
+    diag('INFO', 'Odznaczono zapamiętane zaznaczenia w katalogu: ' + checked.length);
+    return checked.length;
+  }
+
   // Pełny odczyt statystyk dla jednego produktu: zaznacz w katalogu, otwórz
   // historię, ustaw filtry, zbierz pozycje, zamknij zakładkę.
   //
@@ -2839,6 +2865,7 @@
   // Stąd mnożące się zakładki „Pozycje dokumentów".
   async function fetchPriceStats(row, sku, onProgress) {
     await closeStrayHistoryTabs(null);
+    await clearCatalogSelection();
 
     const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
     if (descCell) descCell.click();
@@ -3064,8 +3091,25 @@
     return !!readCaption(row.querySelector('td[data-datafield="ItemDesc"]'));
   }
 
+  // Kartoteki dodatkowe: ten sam produkt pod SKU z sufiksem litery
+  // (0000317-G, 0000317-M). Nie mają własnej historii sprzedaży i mogą mieć
+  // inne ceny, więc do analizy nie nadają się nigdy.
+  const AUX_CARD_SUFFIX = /-[A-Z]$/i;
+
+  function isAuxCardSku(item, wantedSku) {
+    return item !== wantedSku && AUX_CARD_SUFFIX.test(item) &&
+      item.replace(AUX_CARD_SUFFIX, '') === wantedSku;
+  }
+
   function pickRowBySku(sku) {
-    const rows = catalogRows().filter(r => readField(r, 'Item') === sku);
+    // Wyszukanie „0000317" zwraca też 0000317-G i 0000317-M. Bierzemy wyłącznie
+    // dokładne trafienie — sufiksowane kartoteki odsiewamy, nie wybieramy
+    // między nimi.
+    const rows = catalogRows().filter(r => {
+      const item = readField(r, 'Item');
+      if (isAuxCardSku(item, sku)) return false;
+      return item === sku;
+    });
     if (!rows.length) return { row: null, status: 'nie znaleziono w katalogu' };
     const plain = rows.filter(r => !hasCaption(r));
     if (plain.length > 1) {

@@ -181,6 +181,16 @@ Włącz, jeśli arkusz ma ustawienia regionalne z kropką dziesiętną.
 **CSV** zapisuje wszystko razem: szukaną wartość, wszystkie pobrane pola
 i status każdej pozycji.
 
+## Zapamiętane zaznaczenia w siatce
+
+ERP **pamięta zaznaczone wiersze między wyszukiwaniami**. Po kilku produktach
+w siatce tykało kilka checkboxów naraz i „Historia produktu" zamiast otworzyć
+jeden produkt pokazywała dialog „zaznaczyłeś X rekordów" — przebieg się zacinał.
+
+Dlatego przed wyborem wiersza skrypt odznacza wszystko, co zostało z poprzednich
+produktów. Czyści **tylko checkboxy w wierszach danych** — nagłówkowy „zaznacz
+wszystko" kliknięty przez pomyłkę zaznaczyłby całą stronę.
+
 ## Bloki wyjściowe
 
 Pola, które w arkuszu leżą obok siebie, wychodzą jako **jedna wklejka
@@ -205,10 +215,16 @@ kolumn w wierszu.
 
 ## Co skrypt robi z niejednoznacznościami
 
-- **Kilka kartotek na jedno SKU** (podstawowa plus „Gratis", „Promocja
-  specjalna", „Towar nisko rotujący" — rozpoznawalne po szarym podpisie pod
-  nazwą): bierze kartotekę **bez podpisu**. Gdy jest ich więcej niż jedna albo
-  gdy wszystkie mają podpis, wypisuje pozycję do sprawdzenia.
+- **Kartoteki dodatkowe** — ten sam produkt pod SKU z sufiksem litery
+  (`0000317-G`, `0000317-M`) albo z szarym podpisem pod nazwą („Gratis",
+  „Promocja specjalna", „Towar nisko rotujący"). Nie mają własnej historii
+  sprzedaży i mogą mieć inne ceny, więc do analizy nie nadają się nigdy.
+
+  Odsiewane **dwoma niezależnymi sitami**: po sufiksie w SKU i po podpisie.
+  Kartoteka może mieć jedno bez drugiego, więc jedno sito nie wystarcza.
+  Wyszukanie `0000317` zwraca trzy wiersze, brany jest wyłącznie ten z SKU
+  dokładnie równym szukanemu. Gdy zostaną same kartoteki dodatkowe, pozycja
+  trafia do sprawdzenia ręcznego.
 - **Brak w katalogu** albo **puste pole**: pusta linia plus wpis na liście
   problemów pod wynikiem.
 - **Błąd odczytu**: nie przerywa listy. Po 400 udanych odczytach utrata całości
