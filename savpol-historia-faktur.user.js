@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.28.1
+// @version      2.28.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -488,8 +488,12 @@
   }
 
   // ---------- Krok 1: znajdź panel filtrów (odporne na duplikaty) ----------
-  function findFilterPanel() {
-    const panels = Array.from(document.querySelectorAll('.cs-layout-search-panel'))
+  // `scope` zawęża szukanie do panelu konkretnej zakładki. Przy wielokrotnym
+  // otwieraniu i zamykaniu historii (odczyt cen dla listy produktów) w DOM
+  // bywa więcej niż jeden panel filtrów, a bez zawężenia trafialiśmy w cudzy.
+  function findFilterPanel(scope) {
+    const root = scope || document;
+    const panels = Array.from(root.querySelectorAll('.cs-layout-search-panel'))
       .filter(el => el.offsetParent !== null);
     for (const panel of panels) {
       const dateInput = panel.querySelector('input[placeholder="Od"]');
@@ -502,9 +506,25 @@
     return null;
   }
 
-  async function setFilters() {
-    const found = await waitFor(findFilterPanel);
-    if (!found) throw new Error('Nie znaleziono panelu z filtrami daty i radio.');
+  // Czy filtry naprawdę się ustawiły. Do v2.28.1 skrypt zakładał, że skoro
+  // kliknął, to zadziałało — a gdy nie zadziałało, zbierał dane z domyślnego
+  // zakresu i nikt tego nie widział.
+  function filtersLookApplied(found) {
+    if (!found) return false;
+    const dateOk = /\d{4}-\d{2}-\d{2}/.test(found.dateInput.value || '');
+    const radio = found.allLabel.closest('.csDBRadioGroupItem') || found.allLabel.parentElement;
+    const input = radio ? radio.querySelector('input[type="radio"]') : null;
+    const radioOk = input ? input.checked : true;
+    return dateOk && radioOk;
+  }
+
+  async function setFilters(scope) {
+    const found = await waitFor(() => findFilterPanel(scope));
+    if (!found) {
+      diag('BLAD', 'Nie znaleziono panelu filtrów' + (scope ? ' w panelu historii.' : '.'));
+      describeDom('brak panelu filtrów');
+      throw new Error('Nie znaleziono panelu z filtrami daty i radio.');
+    }
 
     const { dateInput, allLabel } = found;
 
@@ -542,6 +562,13 @@
     }
 
     await sleep(500); // dodatkowy zapas na pełne wyrenderowanie
+
+    if (!filtersLookApplied(found)) {
+      diag('BLAD', 'Filtry nie przyjęły się: data="' + (found.dateInput.value || '') + '".');
+      throw new Error('Filtry nie przyjęły się (data „' +
+        (found.dateInput.value || 'puste') + '"). Dane z domyślnego zakresu ' +
+        'byłyby niepełne, więc przerywam odczyt tego produktu.');
+    }
   }
 
   // ---------- Krok 2: iteracja po fakturach FA ----------
@@ -2716,8 +2743,13 @@
       return { values: {}, notes: ['historia produktu nie otworzyła się'] };
     }
 
+    const historyPanelId = opened.getAttribute('aria-controls');
+    const historyPanel = historyPanelId ? document.getElementById(historyPanelId) : null;
+
     try {
-      await setFilters();
+      // ERP dorysowuje panel filtrów chwilę po siatce.
+      await sleep(400);
+      await setFilters(historyPanel);
       const salesRows = await collectSalesRows(sku, onProgress);
       const stats = computePriceStats(salesRows);
       if (!salesRows.length) {
@@ -2725,8 +2757,13 @@
       }
       return stats;
     } catch (err) {
-      console.warn('[Ceny] Błąd przy ' + sku + ':', err && err.message || err);
-      return { values: {}, notes: ['błąd odczytu historii'] };
+      // Komunikat MUSI dojść do arkusza. Poprzednia wersja zamieniała go na
+      // ogólne „błąd odczytu historii" i przy awarii filtrów nie było wiadomo,
+      // co się stało — trzeba było pytać użytkownika.
+      const msg = String(err && err.message || err);
+      console.warn('[Ceny] Błąd przy ' + sku + ':', msg);
+      diag('BLAD', 'Ceny ' + sku + ': ' + msg);
+      return { values: {}, notes: ['historia: ' + msg] };
     } finally {
       // Zamykamy DOKŁADNIE tę zakładkę, którą otworzyliśmy.
       const closeBtn = opened.querySelector('.csCloseButton_span');
