@@ -54,6 +54,31 @@ i wolisz jednolite zachowanie.
 traktują SKU jak liczbę i gubią wiodące zera, a katalog ERP wymaga pełnego kodu.
 W kolumnie wyniku widzisz kod po dopełnieniu, żeby było wiadomo, o co pytaliśmy.
 
+## Szukanie po EAN — kolumna w siatce to nie ten sam kod
+
+**Kolumna `EAN` w siatce katalogu nosi „NR EAN op. sprzedażowego"** — kod
+jednostki sprzedażowej, który nie musi być równy EAN-owi z kartoteki produktu.
+Realny przypadek: kartoteka `0024282` ma w karcie EAN `9005676401237`, a w siatce
+widnieje `40170404…`.
+
+Wyszukiwarka ERP dopasowuje po **kartotekowym** EAN-ie, więc produkt się
+znajduje — ale porównanie kolumna-do-kolumny go odrzucało i pozycja lądowała
+jako „nie znaleziono".
+
+Dlatego dopasowanie po EAN idzie dwustopniowo:
+
+1. Zgadza się kolumna `EAN` → status `ok`.
+2. Nie zgadza się, ale wyszukiwarka zwróciła wynik → **ufamy wyszukiwarce.**
+   To ona znalazła ten produkt po podanym kodzie i jest lepszym dowodem niż
+   kolumna przechowująca coś innego. Status mówi wtedy „dopasowane przez
+   wyszukiwarkę ERP (kolumna EAN w siatce pokazuje kod op. sprzedażowego)",
+   żeby nie było to ciche założenie.
+
+W obu przypadkach z wyniku brana jest **kartoteka podstawowa** — bez szarego
+podpisu „Promocja specjalna" czy „Towar nisko rotujący". Gdy w wyniku są dwie
+kartoteki podstawowe o **różnych SKU**, status wypisuje je obie i każe sprawdzić:
+jeden EAN wskazujący na dwa produkty to nie coś, co skrypt ma rozstrzygać.
+
 ## Skracanie zapytania — celowo restrykcyjne
 
 Gdy pełna nazwa nic nie zwraca (literówka, inny szyk, dopisek z arkusza),

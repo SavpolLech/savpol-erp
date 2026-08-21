@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.28.4
+// @version      2.29.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2505,17 +2505,40 @@
     return /^[0-9]{12,14}$/.test(String(value || '').trim());
   }
 
+  // Kolumna `EAN` w siatce katalogu to „NR EAN op. sprzedażowego" — kod
+  // jednostki sprzedażowej, KTÓRY NIE MUSI być równy EAN-owi z kartoteki
+  // produktu. Realny przypadek: kartoteka 0024282 ma w karcie EAN
+  // 9005676401237, a w siatce widnieje 40170404…
+  //
+  // Dlatego nie opieramy dopasowania wyłącznie na tej kolumnie. Gdy się zgadza
+  // — świetnie. Gdy nie, ufamy WYSZUKIWARCE: to ona właśnie znalazła ten
+  // produkt po podanym kodzie i jest lepszym dowodem niż kolumna, która
+  // przechowuje coś innego.
   function pickRowByEan(ean) {
-    const rows = catalogRows().filter(r => readField(r, 'EAN') === ean);
+    const rows = catalogRows();
     if (!rows.length) return { row: null, status: 'nie znaleziono EAN w katalogu' };
-    const plain = rows.filter(r => !hasCaption(r));
-    if (plain.length > 1) {
-      return { row: plain[0], status: 'kilka kartotek z tym EAN (' + plain.length + ') — sprawdź' };
-    }
-    if (!plain.length) {
-      return { row: rows[0], status: 'tylko kartoteki dodatkowe — sprawdź' };
-    }
-    return { row: plain[0], score: 1, status: 'ok' };
+
+    const pickBase = (candidates, status) => {
+      const plain = candidates.filter(r => !hasCaption(r));
+      if (plain.length === 1) return { row: plain[0], score: 1, status };
+      if (plain.length > 1) {
+        // Kilka kartotek podstawowych = kilka RÓŻNYCH produktów w wyniku.
+        const skus = Array.from(new Set(plain.map(r => readField(r, 'Item'))));
+        if (skus.length > 1) {
+          return { row: plain[0], status: 'kilka produktów pod tym EAN (' +
+            skus.join(', ') + ') — sprawdź' };
+        }
+        return { row: plain[0], score: 1, status };
+      }
+      // Same kartoteki dodatkowe („Promocja specjalna", „Towar nisko rotujący").
+      return { row: candidates[0], status: 'tylko kartoteki dodatkowe — sprawdź' };
+    };
+
+    const exact = rows.filter(r => readField(r, 'EAN') === ean);
+    if (exact.length) return pickBase(exact, 'ok');
+
+    return pickBase(rows, 'dopasowane przez wyszukiwarkę ERP ' +
+      '(kolumna EAN w siatce pokazuje kod op. sprzedażowego)');
   }
 
   // Główny tekst komórki, bez szarego podpisu („Gratis", „Towar nisko
