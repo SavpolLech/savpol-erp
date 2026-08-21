@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.34.0
+// @version      2.34.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -379,8 +379,8 @@
     // nie towary — np. "Dostawa - Kurier DPD" o SKU "KurierDPD". Wpadają na
     // faktury i przy niskim N potrafią wejść na pierwsze miejsce rankingu
     // (anchor 0023990, N=10: dostawa miała 40% udziału).
-    // Dopuszczone sufiksy kartotek pomocniczych (-M, -R, -P) — odsiewa je
-    // dopiero isAuxiliaryKartoteka() na etapie filtra dostępności.
+    // Sufiks kartoteki pomocniczej jest tu DOPUSZCZONY, bo taka pozycja to
+    // nadal towar, a nie usługa. Odsiewa ją osobna reguła (AUX_CARD_SUFFIX).
     skuPattern: /^[0-9]{6,8}(-[A-Z])?$/,
 
     // Zawsze wykluczaj te SKU (chłodnia/mrożonka/wycofane, czego nazwa nie zdradza).
@@ -1254,14 +1254,23 @@
     };
   }
 
-  // ---------- Krok 4b: filtr dostępności w katalogu (bez cache — stan zmienia się codziennie) ----------
+  // ---------- Kartoteki pomocnicze ----------
+  // SKU z dopiskiem po numerze to osobna kartoteka tego samego produktu,
+  // prowadzona pod inny kanał obrotu. Nie ma własnej historii sprzedaży i może
+  // mieć inne ceny, więc nie nadaje się ani do cross-sellingu, ani do analizy
+  // cenowej. Odrzucamy zawsze, niezależnie od stanu i podpisu.
+  //
+  // Format jest STAŁY: myślnik i jedna wielka litera. Znane w użyciu: -G, -M,
+  // -P, -R, -S — ale wzorzec obejmuje dowolną literę, więc nowe sufiksy nie
+  // wymagają zmiany kodu. To JEDYNA definicja tej reguły w skrypcie; wcześniej
+  // istniała w dwóch postaciach i groziło, że rozjadą się przy zmianie.
+  const AUX_CARD_SUFFIX = /-[A-Z]$/i;
 
-  // SKU z dopiskiem po numerze (np. "0022850-R", "0022850-M") to osobna kartoteka
-  // tego samego produktu, prowadzona pod inny kanał obrotu (nie online).
-  // Odrzucamy zawsze, niezależnie od stanu i podpisu — decyzja właściciela produktu.
   function isAuxiliaryKartoteka(sku) {
-    return /-[A-Za-z]/.test((sku || '').trim());
+    return AUX_CARD_SUFFIX.test((sku || '').trim());
   }
+
+  // ---------- Krok 4b: filtr dostępności w katalogu (bez cache — stan zmienia się codziennie) ----------
 
   // Wyszukiwarka MUSI być szukana wewnątrz panelu zakładki "Katalog", nie
   // "pierwsza widoczna w dokumencie" — widok historii produktu ma własne panele
@@ -2512,7 +2521,7 @@
 
   // Z arkusza SKU przychodzi często bez wiodących zer (Excel i Sheets traktują
   // je jak liczby), a katalog ERP wymaga pełnego, siedmioznakowego kodu.
-  // 35776 → 0035776. Sufiks kartoteki dodatkowej (-M, -R) zostaje nietknięty.
+  // 35776 → 0035776. Sufiks kartoteki pomocniczej zostaje nietknięty.
   const SKU_LENGTH = 7;
 
   function normalizeSku(value) {
@@ -3091,11 +3100,8 @@
     return !!readCaption(row.querySelector('td[data-datafield="ItemDesc"]'));
   }
 
-  // Kartoteki dodatkowe: ten sam produkt pod SKU z sufiksem litery
-  // (0000317-G, 0000317-M). Nie mają własnej historii sprzedaży i mogą mieć
-  // inne ceny, więc do analizy nie nadają się nigdy.
-  const AUX_CARD_SUFFIX = /-[A-Z]$/i;
-
+  // Czy `item` to kartoteka pomocnicza SZUKANEGO produktu (0000317-G dla
+  // 0000317), a nie inny produkt, którego SKU przypadkiem kończy się literą.
   function isAuxCardSku(item, wantedSku) {
     return item !== wantedSku && AUX_CARD_SUFFIX.test(item) &&
       item.replace(AUX_CARD_SUFFIX, '') === wantedSku;

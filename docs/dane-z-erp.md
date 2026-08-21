@@ -215,10 +215,15 @@ kolumn w wierszu.
 
 ## Co skrypt robi z niejednoznacznościami
 
-- **Kartoteki dodatkowe** — ten sam produkt pod SKU z sufiksem litery
-  (`0000317-G`, `0000317-M`) albo z szarym podpisem pod nazwą („Gratis",
-  „Promocja specjalna", „Towar nisko rotujący"). Nie mają własnej historii
-  sprzedaży i mogą mieć inne ceny, więc do analizy nie nadają się nigdy.
+- **Kartoteki pomocnicze** — ten sam produkt pod SKU z sufiksem albo z szarym
+  podpisem pod nazwą („Gratis", „Promocja specjalna", „Towar nisko rotujący").
+  Nie mają własnej historii sprzedaży i mogą mieć inne ceny, więc do analizy
+  nie nadają się nigdy.
+
+  Format sufiksu jest stały: **myślnik i jedna wielka litera**. W użyciu widziane
+  `-G`, `-M`, `-P`, `-R`, `-S`, ale wzorzec obejmuje **dowolną literę**, więc
+  nowe sufiksy nie wymagają zmiany kodu. Reguła ma jedną definicję w skrypcie
+  (`AUX_CARD_SUFFIX`) używaną i tu, i w filtrze dostępności cross-sellingu.
 
   Odsiewane **dwoma niezależnymi sitami**: po sufiksie w SKU i po podpisie.
   Kartoteka może mieć jedno bez drugiego, więc jedno sito nie wystarcza.
