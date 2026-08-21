@@ -116,6 +116,35 @@ wyszukiwania), zamiast założyć, że nastąpił.
 widoku po obecności pojedynczej kolumny jest za słabe w ERP, gdzie kilka widoków
 dzieli te same nazwy pól. Zawsze „ma X i **nie ma** Y".
 
+## Rozpoznawanie zakładki historii (v2.28.3-4)
+
+Objaw: „historia produktu nie otworzyła się" dla każdego produktu, brak
+ustawionych filtrów i mnożące się zakładki „Pozycje dokumentów".
+
+Wszystko z jednej przyczyny. Wykrywanie otwartej historii wymagało, żeby
+**aktywna** zakładka miała w panelu wiersz z numerem dokumentu. Przy domyślnym
+filtrze wierszy może nie być wcale, więc warunek nigdy się nie spełniał —
+a `return` przy tej porażce wypadał **przed** blokiem `finally`, czyli skrypt
+nie zamykał zakładki, którą sam otworzył. Filtry nie były więc nawet próbowane;
+obserwacja „nie ustawił filtrów" i komunikat „nie otworzyła się" opisywały ten
+sam błąd.
+
+Sondy w konsoli potwierdziły, że selektory filtrów są poprawne: panel filtrów
+jest wewnątrz panelu historii, widoczny, z polem `input[placeholder="Od"]`
+i radiami „Wszystkie" / „Działające na stany". Problem nigdy nie był w nich.
+
+Naprawa:
+
+- historia rozpoznawana po **ID nowej zakładki** (porównanie zbioru zakładek
+  przed i po kliknięciu) — bez zgadywania, która jest aktywna i co ma w panelu;
+- od momentu wykrycia zakładka jest zamykana w `finally` bez wyjątków;
+- zaległe zakładki historii są sprzątane przed każdym produktem i po nim;
+- zakładka historii rozpoznawana **dwojako**: po etykiecie („Pozycje
+  dokumentów: 0003593") albo po zawartości panelu. Sama zawartość nie
+  wystarcza, bo przy pustym wyniku panel nie ma numerów dokumentów — czyli
+  dokładnie te zakładki, które zostają po awarii, byłyby niewidzialne dla
+  sprzątacza.
+
 ## Do ustawienia przed pierwszym poważnym użyciem
 
 **`EXCLUDE_CUSTOMERS` jest puste**, więc statystyka obejmuje **także sprzedaż

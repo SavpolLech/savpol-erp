@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.28.3
+// @version      2.28.4
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1406,14 +1406,14 @@
       const known = candidates.find(t => t.li.getAttribute('aria-controls') === knownCatalogPanelId);
       // Weryfikujemy nawet zapamiętaną zakładkę: ERP potrafi przerysować panel
       // pod tym samym id, a wtedy pamięć wskazywałaby na coś innego.
-      if (known && !panelLooksLikeHistory(known.panel)) return known.li;
+      if (known && !isHistoryTab(known.li)) return known.li;
       if (known) knownCatalogPanelId = null;
     }
 
     // 1. Panel z pełną sygnaturą katalogu.
     const full = candidates.find(t => {
       const m = panelLooksLikeCatalog(t.panel);
-      return m.hasSearch && m.hasStockGrid && !m.isHistory;
+      return m.hasSearch && m.hasStockGrid && !isHistoryTab(t.li);
     });
     if (full) return rememberCatalogTab(full.li);
 
@@ -1424,7 +1424,7 @@
     const partial = candidates.find(t =>
       t.panel.querySelector('.csDBEditSearch input.Input') !== null
       && t.panel.querySelector('td[data-datafield="Item"]') !== null
-      && !panelLooksLikeHistory(t.panel));
+      && !isHistoryTab(t.li));
     if (partial) return rememberCatalogTab(partial.li);
 
     // 3. Ostatnia deska ratunku: etykieta. Zostawiona, bo gdy panel jest jeszcze
@@ -2731,6 +2731,20 @@
     return true;
   }
 
+  // Zakładka historii rozpoznawana DWOJAKO: po etykiecie („Pozycje dokumentów:
+  // 0003593") albo po zawartości panelu. Sama zawartość nie wystarcza, bo przy
+  // pustym wyniku w panelu nie ma numerów dokumentów — czyli dokładnie te
+  // zakładki, które zostają po awarii, byłyby niewidzialne dla sprzątacza.
+  const HISTORY_TAB_LABEL = /pozycje\s+dokument/i;
+
+  function isHistoryTab(li) {
+    const id = li.getAttribute('aria-controls');
+    if (!id) return false;
+    if (HISTORY_TAB_LABEL.test(tabLabel(li))) return true;
+    const panel = document.getElementById(id);
+    return !!panel && panelLooksLikeHistory(panel);
+  }
+
   // Sprzątanie po poprzednich produktach. Przy odczycie cen dla setek pozycji
   // każda nieodzyskana zakładka „Pozycje dokumentów" zostaje na ekranie —
   // i po kilkunastu ERP zaczyna gubić się w tym, co jest aktywne.
@@ -2739,8 +2753,7 @@
       .filter(li => {
         const id = li.getAttribute('aria-controls');
         if (!id || id === keepId || id === knownCatalogPanelId) return false;
-        const panel = document.getElementById(id);
-        return panel && panelLooksLikeHistory(panel);
+        return isHistoryTab(li);
       });
     if (!stray.length) return 0;
 
