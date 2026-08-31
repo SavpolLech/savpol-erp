@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.42.0
+// @version      2.43.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -251,10 +251,20 @@
     MIN_TRANSACTIONS: 5,
     // Percentyl traktowany jako PODŁOGA CENOWA (patrz docs/polityka-cenowa.md).
     FLOOR_PERCENTILE: 25,
-    // Kontrahenci pomijani w statystyce — np. konto własnego e-commerce, które
-    // zaniżałoby podłogę własnymi cenami. Dopasowanie: fragment nazwy, bez
-    // wielkości liter. Puste = nie pomijamy nikogo.
-    EXCLUDE_CUSTOMERS: [],
+    // Kontrahenci pomijani w statystyce. Podłoga cenowa opisuje relacje z
+    // partnerami B2B, a sprzedaż detaliczna idzie po cenie 100% — wciągnięta
+    // do próby ZAWYŻAŁABY podłogę i pozwoliła zejść niżej, niż wolno.
+    //
+    // „eSavpol.pl" to kontrahent własnego sklepu: faktura ma typ FA i magazyn
+    // GLS1, więc po tych kryteriach nie da się jej odróżnić od sprzedaży B2B.
+    // Dopasowanie: fragment nazwy, bez wielkości liter i polskich znaków.
+    EXCLUDE_CUSTOMERS: ['eSavpol'],
+
+    // Drugi, niezależny sygnał: typ powiązanego zamówienia. ZOID to zamówienie
+    // z e-commerce B2C. Działa tylko wtedy, gdy kolumna z numerami powiązanych
+    // dokumentów jest w widoku — dlatego nie zastępuje listy kontrahentów,
+    // tylko ją uzupełnia.
+    EXCLUDE_ORDER_TYPES: ['ZOID'],
     // Iloraz P90/P10, od którego mówimy o rozwarstwieniu cen: znak, że są dwie
     // grupy klientów i sama mediana nie opisuje rynku.
     SPREAD_ALERT: 1.15
@@ -2894,6 +2904,7 @@
       customer: readField(row, 'CustomerDesc'),
       date: readField(row, 'DocDate'),
       warehouse: readField(row, 'Warehouse'),
+      relatedDocs: readField(row, 'RelatedSalesNumbers'),
       sku: readField(row, 'Item')
     };
   }
@@ -2906,9 +2917,35 @@
     return fold(value || '').includes(want);
   }
 
+  // Dopasowanie do GRANICY SŁOWA, nie zwykły podciąg: „eSavpol" nie może
+  // trafiać w „Piekarnię eSavpolską". Kropka po nazwie („eSavpol.pl") jest
+  // granicą, więc realny kontrahent nadal wpada.
   function isExcludedCustomer(name) {
     const n = fold(name || '');
-    return PRICE_STATS.EXCLUDE_CUSTOMERS.some(x => x && n.includes(fold(x)));
+    return PRICE_STATS.EXCLUDE_CUSTOMERS.some(x => {
+      if (!x) return false;
+      const frag = escapeRegex(fold(x));
+      return new RegExp('(^|[^\\p{L}\\p{N}])' + frag + '([^\\p{L}\\p{N}]|$)', 'u').test(n);
+    });
+  }
+
+  // Numer powiązanego zamówienia niesie typ dokumentu: „2026/ZOID/GLS1/003863".
+  // Szukamy typu między ukośnikami, żeby „ZOID" w nazwie kontrahenta albo
+  // w innym miejscu ciągu nie dawało fałszywego trafienia.
+  function isExcludedOrderType(relatedDocs) {
+    const text = String(relatedDocs || '').toUpperCase();
+    if (!text) return false;
+    return PRICE_STATS.EXCLUDE_ORDER_TYPES.some(type => {
+      const t = String(type).toUpperCase();
+      return new RegExp('(^|[^A-Z0-9])' + t + '([^A-Z0-9]|$)').test(text);
+    });
+  }
+
+  // Sprzedaż detaliczna: po kontrahencie ALBO po typie powiązanego zamówienia.
+  // Dwa sygnały, bo żaden nie jest dostępny zawsze — kolumna z powiązaniami
+  // bywa poza widokiem, a nazwa kontrahenta może się kiedyś zmienić.
+  function isRetailSale(parsed) {
+    return isExcludedCustomer(parsed.customer) || isExcludedOrderType(parsed.relatedDocs);
   }
 
   function rangeByKey(key) {
@@ -2938,6 +2975,10 @@
     // sprzedaży" przy produkcie, który świetnie się sprzedaje w innym
     // magazynie, wyglądałby na awarię odczytu.
     rows.otherWarehouse = 0;
+    // Ile pozycji odpadło jako sprzedaż detaliczna. Liczymy osobno, bo „brak
+    // sprzedaży" przy produkcie schodzącym wyłącznie przez sklep to zupełnie
+    // inna informacja niż „produkt się nie sprzedaje".
+    rows.retail = 0;
     const seenDocs = new Set();
     let page = 1;
 
@@ -2964,7 +3005,7 @@
           rows.otherWarehouse++;
           continue;
         }
-        if (isExcludedCustomer(parsed.customer)) continue;
+        if (isRetailSale(parsed)) { rows.retail++; continue; }
         const d = parseErpDate(parsed.date);
         if (d && d < since) continue;                        // poza okresem
         if (parsed.qty <= 0) continue;                       // korekty i zwroty
@@ -3243,13 +3284,15 @@
     if (!clean.length) {
       // Rozróżniamy „nic się nie sprzedało" od „sprzedało się, ale gdzie indziej".
       const elsewhere = rows.otherWarehouse || 0;
-      return {
-        values: {},
-        notes: [elsewhere
+      const retail = rows.retail || 0;
+      const why = retail
+        ? 'brak sprzedaży B2B — wszystkie ' + retail + ' ' + plTransactions(retail) +
+          ' to sprzedaż detaliczna (eSavpol.pl / ZOID)'
+        : elsewhere
           ? 'brak sprzedaży z magazynu ' + PRICE_STATS.WAREHOUSE +
             ' (' + elsewhere + ' ' + plTransactions(elsewhere) + ' z innych magazynów)'
-          : 'brak transakcji w okresie']
-      };
+          : 'brak transakcji w okresie';
+      return { values: {}, notes: [why] };
     }
 
     // Faktyczny zakres dat użytej próby. Przy trafieniu w limit będzie krótszy
@@ -3285,6 +3328,10 @@
     values.period = period;
 
     const notes = [];
+    if (rows.retail) {
+      notes.push('pominięto ' + rows.retail + ' ' + plTransactions(rows.retail) +
+        ' sprzedaży detalicznej');
+    }
     if (rows.otherWarehouse) {
       notes.push('pominięto ' + rows.otherWarehouse + ' ' +
         plTransactions(rows.otherWarehouse) + ' z innych magazynów');

@@ -227,16 +227,34 @@ Naprawa:
   dokładnie te zakładki, które zostają po awarii, byłyby niewidzialne dla
   sprzątacza.
 
+## Sprzedaż detaliczna nie wchodzi do próby
+
+Zamówienie z e-commerce (typ **ZOID**) kończy się normalną fakturą **FA**
+z magazynu **GLS1** — po tych kryteriach nie da się jej odróżnić od sprzedaży
+B2B. A to sprzedaż po cenie 100%, więc wciągnięta do próby **zawyżałaby podłogę**
+i pozwoliła zejść niżej, niż wolno wobec partnerów.
+
+Odsiewamy ją **dwoma niezależnymi sygnałami**, bo żaden nie jest dostępny zawsze:
+
+1. **Kontrahent** — `EXCLUDE_CUSTOMERS: ['eSavpol']`. Dopasowanie do granicy
+   słowa, nie zwykły podciąg: „eSavpol" nie może trafiać w „Piekarnię
+   eSavpolską". Kropka w „eSavpol.pl" jest granicą, więc realny kontrahent
+   nadal wpada.
+2. **Typ powiązanego zamówienia** — `EXCLUDE_ORDER_TYPES: ['ZOID']`, szukany
+   między ukośnikami w numerze (`2026/ZOID/GLS1/003863`). Działa tylko wtedy,
+   gdy kolumna z powiązanymi dokumentami jest w widoku, dlatego **uzupełnia**
+   listę kontrahentów, a nie ją zastępuje.
+
+Odrzucone pozycje są liczone: status dopisuje „pominięto N transakcji sprzedaży
+detalicznej". Gdy zostanie zero, komunikat rozróżnia przypadki — „brak sprzedaży
+B2B — wszystkie N transakcji to sprzedaż detaliczna" to zupełnie inna informacja
+niż „produkt się nie sprzedaje", a bez tego rozróżnienia wyglądałyby tak samo.
+
 ## Do ustawienia przed pierwszym poważnym użyciem
 
-**`EXCLUDE_CUSTOMERS` jest puste**, więc statystyka obejmuje **także sprzedaż
-własnego e-commerce**, jeśli przechodzi ona przez ERP jako kontrahent. To
-zaniża podłogę: porównywalibyśmy się z własną ceną detaliczną zamiast z cenami
-partnerów B2B. Wpisz tam fragment nazwy tego kontrahenta (dopasowanie bez
-wielkości liter, bez polskich znaków).
-
-Nie wiem, jak ten kontrahent się nazywa w waszym ERP — dlatego lista jest pusta,
-a nie zgadnięta.
+`EXCLUDE_CUSTOMERS` jest już ustawione na `['eSavpol']` — patrz sekcja wyżej.
+Jeśli sprzedaż detaliczna idzie w waszym ERP także przez innego kontrahenta,
+dopisz jego nazwę do tej listy.
 
 ## Czego to nie robi
 
