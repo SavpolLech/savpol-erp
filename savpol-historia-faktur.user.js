@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.35.0
+// @version      2.36.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -216,6 +216,15 @@
     // Dwa miesiące: dość świeże, żeby opisywać dzisiejsze warunki, i dość
     // szerokie, żeby złapać klientów kupujących raz na kilka tygodni.
     DEFAULT_RANGE: '2m',
+
+    // Magazyn, z którego liczymy ceny. RÓŻNE MAGAZYNY MAJĄ RÓŻNE CENY, więc
+    // mieszanie ich dawałoby podłogę, która nie obowiązuje nigdzie.
+    // Pusty ciąg = bez filtra (wszystkie magazyny).
+    //
+    // Filtrujemy po stronie skryptu, bo widok historii nie ma wyboru magazynu
+    // w interfejsie — w przeciwieństwie do daty, której nie da się tu zawęzić
+    // u źródła.
+    WAREHOUSE: 'GLS1',
 
     // Górny limit pozycji na produkt. Bestsellery mają w roku setki transakcji
     // i przewijanie ich stron zajmowało większość czasu przebiegu, a percentyl
@@ -2714,8 +2723,17 @@
       qty: qty === null ? 0 : qty,
       customer: readField(row, 'CustomerDesc'),
       date: readField(row, 'DocDate'),
+      warehouse: readField(row, 'Warehouse'),
       sku: readField(row, 'Item')
     };
+  }
+
+  // Kod magazynu bywa wyświetlany samodzielnie („GLS1") albo z opisem
+  // („GLS1 - Gliwice"), więc szukamy wystąpienia kodu, nie równości.
+  function matchesWarehouse(value) {
+    const want = fold(PRICE_STATS.WAREHOUSE || '').trim();
+    if (!want) return true;
+    return fold(value || '').includes(want);
   }
 
   function isExcludedCustomer(name) {
@@ -2746,6 +2764,10 @@
   // ale bez najdroższego kroku, więc jeden produkt to sekundy, nie minuty.
   async function collectSalesRows(sku, since, onProgress) {
     const rows = [];
+    // Ile pozycji odpadło TYLKO z powodu magazynu. Bez tej liczby „brak
+    // sprzedaży" przy produkcie, który świetnie się sprzedaje w innym
+    // magazynie, wyglądałby na awarię odczytu.
+    rows.otherWarehouse = 0;
     const seenDocs = new Set();
     let page = 1;
 
@@ -2768,6 +2790,7 @@
         newOnPage++;
 
         if (parsed.sku && parsed.sku !== sku) continue;      // czyjaś pozycja
+        if (!matchesWarehouse(parsed.warehouse)) { rows.otherWarehouse++; continue; }
         if (isExcludedCustomer(parsed.customer)) continue;
         const d = parseErpDate(parsed.date);
         if (d && d < since) continue;                        // poza okresem
@@ -2995,6 +3018,14 @@
     return p.length % 2 ? p[mid] : (p[mid - 1] + p[mid]) / 2;
   }
 
+  // „1 transakcję", „3 transakcje", „5 transakcji" — komunikaty czyta człowiek.
+  function plTransactions(n) {
+    if (n === 1) return 'transakcję';
+    const last = n % 10, teen = n % 100;
+    return (last >= 2 && last <= 4 && !(teen >= 12 && teen <= 14))
+      ? 'transakcje' : 'transakcji';
+  }
+
   function round2(n) {
     return n === null || n === undefined ? null : Math.round(n * 100) / 100;
   }
@@ -3010,7 +3041,17 @@
   // ceny są rozwarstwione i jedna liczba nie opisuje rynku.
   function computePriceStats(rows) {
     const clean = rows.filter(r => r.price > 0 && r.qty > 0);
-    if (!clean.length) return { values: {}, notes: ['brak transakcji w okresie'] };
+    if (!clean.length) {
+      // Rozróżniamy „nic się nie sprzedało" od „sprzedało się, ale gdzie indziej".
+      const elsewhere = rows.otherWarehouse || 0;
+      return {
+        values: {},
+        notes: [elsewhere
+          ? 'brak sprzedaży z magazynu ' + PRICE_STATS.WAREHOUSE +
+            ' (' + elsewhere + ' ' + plTransactions(elsewhere) + ' z innych magazynów)'
+          : 'brak transakcji w okresie']
+      };
+    }
 
     // Faktyczny zakres dat użytej próby. Przy trafieniu w limit będzie krótszy
     // niż zamówiony — i właśnie dlatego jest pokazywany.
@@ -3045,15 +3086,21 @@
     values.period = period;
 
     const notes = [];
+    if (rows.otherWarehouse) {
+      notes.push('pominięto ' + rows.otherWarehouse + ' ' +
+        plTransactions(rows.otherWarehouse) + ' z innych magazynów');
+    }
     if (rows.capped) {
       notes.push('ograniczono do ' + PRICE_STATS.MAX_TRANSACTIONS +
         ' najnowszych transakcji (okres: ' + period + ')');
     }
     if (clean.length < PRICE_STATS.MIN_TRANSACTIONS) {
-      notes.push('tylko ' + clean.length + ' transakcji — percentyle niewiarygodne');
+      notes.push('tylko ' + clean.length + ' ' + plTransactions(clean.length) +
+        ' — percentyle niewiarygodne');
     }
     if (spread !== null && spread >= PRICE_STATS.SPREAD_ALERT) {
-      notes.push('ceny rozwarstwione (P90/P10 = ' + round2(spread) + ') — dwie grupy klientów');
+      notes.push('ceny rozwarstwione (P90/P10 = ' + plNum(round2(spread)) +
+        ') — dwie grupy klientów');
     }
     return { values, notes };
   }

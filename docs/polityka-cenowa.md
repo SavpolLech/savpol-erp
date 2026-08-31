@@ -119,6 +119,28 @@ odróżnić „cena stabilna od stycznia" od „cena z ostatnich dwóch tygodni"
 Jeśli przy jakimś produkcie okres wyjdzie podejrzanie krótki, podnieś limit
 dla tego przebiegu.
 
+## Tylko magazyn GLS1
+
+**Różne magazyny mają różne ceny**, więc mieszanie ich dawałoby podłogę, która
+nie obowiązuje nigdzie. Liczymy wyłącznie transakcje z magazynu wskazanego
+w `PRICE_STATS.WAREHOUSE` — domyślnie `GLS1` (Gliwice). Pusty ciąg wyłącza filtr.
+
+Kod magazynu bywa wyświetlany samodzielnie (`GLS1`) albo z opisem
+(`GLS1 - Gliwice`), więc szukamy wystąpienia kodu, nie równości.
+
+Filtrujemy **po stronie skryptu**, bo widok historii nie ma wyboru magazynu
+w interfejsie — w przeciwieństwie do daty, którą da się zawęzić u źródła.
+Oznacza to, że strony i tak są przewijane w całości; limit 100 transakcji liczy
+się **po** odsiewie, więc obejmuje 100 pozycji z GLS1, a nie 100 wszystkich.
+
+Odrzucone pozycje są **liczone i raportowane**:
+
+- gdy zostanie zero — status mówi „brak sprzedaży z magazynu GLS1 (7 transakcji
+  z innych magazynów)". Bez tego rozróżnienia produkt sprzedający się świetnie
+  w Warszawie wyglądałby na awarię odczytu;
+- gdy zostaną jakieś — status dopisuje „pominięto N transakcji z innych
+  magazynów", żeby było widać, na jakiej części sprzedaży liczona jest podłoga.
+
 Dalej odsiewane: ilości zerowe i ujemne (korekty, zwroty), ceny zerowe
 (gratisy), kontrahenci z listy `EXCLUDE_CUSTOMERS`.
 
