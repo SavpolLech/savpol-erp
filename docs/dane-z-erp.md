@@ -228,6 +228,16 @@ dziewięciu kopiowań robisz cztery.
 mnożenia — procent jako tekst byłby tam bezużyteczny. Wartości powyżej 1 są
 traktowane jako procent, poniżej jako gotowy ułamek.
 
+**VAT wymaga otwarcia karty produktu** (przycisk „Edycja"), bo nie ma go
+w siatce katalogu i nie da się tam dodać takiej kolumny. To kilka sekund na
+produkt — tyle samo co statystyki cenowe — więc pole jest wydzielone i domyślnie
+odznaczone. Przy 500 pozycjach licz się z dodatkowym kwadransem, a z włączonymi
+też statystykami cen — z sumą obu.
+
+Stawka jest wybierana **po etykiecie kontrolki**, nie po kolejności pól na
+karcie. Kolejność jest krucha, a etykieta stała. `VAT zakupu` jest odrzucany
+jawnie — to inna stawka.
+
 **Panel pokazuje z historii sprzedaży tylko medianę i P90 po transakcjach.**
 Reszta statystyk jest nadal liczona, ale nie zajmuje miejsca w interfejsie —
 definicje leżą w `SALES_FIELDS_EXTRA` i przywraca się je przeniesieniem wpisu

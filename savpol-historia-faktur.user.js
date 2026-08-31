@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.38.0
+// @version      2.39.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -263,14 +263,13 @@
       transform: v => lastGroupSegments(v, 2) },
     { key: 'stock', label: 'Stan (DYS.)',     field: 'QStockAv',         numeric: true },
 
-    // Stawka VAT jako UŁAMEK (5% → 0,05), bo w arkuszu wchodzi do mnożenia.
-    // Kolumny VAT NIE MA w domyślnym układzie siatki katalogu — pole zadziała
-    // dopiero, gdy zostanie dodana w konfiguracji widoku (przycisk dodawania
-    // kolumny w nagłówku siatki). Sprawdzamy kilka możliwych nazw pola, bo
-    // zależą od układu; gdy żadnej nie ma, kolumna zostaje pusta.
-    { key: 'vat',   label: 'VAT',             field: 'VATRate',
-      altFields: ['VAT', 'VATRateValue', 'TaxRate'],
-      numeric: true, transform: v => vatToFraction(v) }
+  ];
+
+  // VAT nie jest kolumną siatki i nie da się jej tam dodać — trzeba otworzyć
+  // kartę produktu przyciskiem „Edycja". To kosztuje kilka sekund na produkt,
+  // dlatego pole jest wydzielone i domyślnie odznaczone, jak statystyki cen.
+  const CARD_FIELDS = [
+    { key: 'vat', label: 'VAT (z karty — wolne)', numeric: true }
   ];
 
   // Bloki wyjściowe: pola sąsiadujące w arkuszu wychodzą jako JEDNA wklejka
@@ -2764,6 +2763,90 @@
     return score;
   }
 
+  // ---------- VAT z karty produktu ----------
+
+  // Przycisk „Edycja" w pasku katalogu. Szukamy po tytule, a gdy go nie ma —
+  // po napisie, bo w tym ERP jedno i drugie bywa nośnikiem etykiety.
+  function openEditCard() {
+    const byTitle = document.querySelector('[title="Edycja"]');
+    if (byTitle && byTitle.offsetParent !== null) { byTitle.click(); return true; }
+
+    const toolbar = getVisibleToolbar();
+    const btn = toolbar && Array.from(toolbar.querySelectorAll('.csButton, .csButtonAction'))
+      .find(b => /^edycja$/i.test((b.textContent || '').trim()));
+    if (btn) { btn.click(); return true; }
+    return false;
+  }
+
+  // Stawka VAT SPRZEDAŻY z otwartej karty.
+  //
+  // Kontrolka ma budowę: div.csDBEditEx (zawiera etykietę „VAT") → a.InputContainer
+  // → span.csDBComboBoxLookup → input z wartością „8%". Selektujemy po ETYKIECIE
+  // kontenera, nie po kolejności pól — kolejność jest krucha, a etykieta stała.
+  //
+  // „VAT zakupu" odrzucamy jawnie: to inna stawka i nie o nią chodzi.
+  function readVatFromCard(panel) {
+    const scope = panel || document;
+    const controls = Array.from(scope.querySelectorAll('.csDBEditEx'));
+
+    for (const ctrl of controls) {
+      const input = ctrl.querySelector('input.csDBComboBoxLookup');
+      if (!input || !input.value) continue;
+
+      // Etykieta kontrolki bez wartości pola: bierzemy tekst kontenera
+      // i odcinamy to, co wpisane w input.
+      const label = fold((ctrl.textContent || '').replace(input.value, ''))
+        .replace(/[*\s]+/g, ' ')
+        .trim();
+
+      if (label === 'vat') return input.value;
+    }
+    return '';
+  }
+
+  async function fetchVatFromCard(row, sku) {
+    await closeStrayHistoryTabs(null);
+    await clearCatalogSelection();
+
+    const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
+    if (descCell) descCell.click();
+    await sleep(200);
+
+    const before = tabIdSet();
+    if (!openEditCard()) {
+      diag('BLAD', 'Nie znalazłem przycisku „Edycja" w pasku katalogu.');
+      describeDom('brak przycisku Edycja');
+      return { value: '', note: 'brak przycisku „Edycja"' };
+    }
+
+    const newId = await waitFor(() => {
+      const now = Array.from(tabIdSet()).find(id => !before.has(id));
+      return now || null;
+    }, 40, 200);
+
+    if (!newId) {
+      diag('BLAD', 'Karta produktu ' + sku + ' nie otworzyła się.');
+      return { value: '', note: 'karta produktu nie otworzyła się' };
+    }
+
+    try {
+      const panel = document.getElementById(newId);
+      // Czekamy na wypełnioną kontrolkę VAT — karta renderuje się etapami,
+      // a pusty odczyt wyglądałby jak produkt bez stawki.
+      const vat = await waitFor(() => readVatFromCard(panel) || null, 40, 250);
+      if (!vat) {
+        diag('BLAD', 'Nie odczytałem VAT z karty ' + sku + '.');
+        return { value: '', note: 'nie odczytano VAT z karty' };
+      }
+      return { value: vat, note: '' };
+    } finally {
+      closeTabById(newId);
+      await sleep(400);
+      if (!isCatalogTabActive()) await switchToCatalogTab();
+      await waitFor(() => findVisibleCatalogSearchInput() !== null, 20, 200);
+    }
+  }
+
   // ---------- Statystyki cen: odczyt z historii produktu ----------
 
   // Jedna pozycja faktury z siatki historii. Wszystko z listy — bez wchodzenia
@@ -3403,6 +3486,11 @@
         .includes(f.key) ? ' checked' : '') + '> ' + f.label + '</label>'
     ).join('');
 
+    const cardChecks = CARD_FIELDS.map(f =>
+      '<label style="cursor:pointer;white-space:nowrap">' +
+      '<input data-field="' + f.key + '" type="checkbox"> ' + f.label + '</label>'
+    ).join('');
+
     const salesChecks = SALES_FIELDS.map(f =>
       '<label style="cursor:pointer;white-space:nowrap">' +
       '<input data-field="' + f.key + '" type="checkbox"> ' + f.label + '</label>'
@@ -3440,6 +3528,9 @@
       '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:12px">',
       salesChecks,
       '</div>',
+      '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:6px;font-size:12px">',
+      cardChecks,
+      '</div>',
       '<div style="display:flex;gap:6px;margin-top:10px">',
       '  <button data-role="start" type="button" style="' + btn + ';flex:1;background:#4c9aff;color:#04142e">Pobierz dane</button>',
       '  <button data-role="stop" type="button" style="' + btn + ';display:none;background:#5a3a3a;color:#ffd9d4">Przerwij</button>',
@@ -3468,7 +3559,7 @@
   // (te same pięć pól przy każdym przebiegu) odklikiwanie ich od nowa to
   // zbędna robota, a pomyłka w zaznaczeniu kosztuje cały przebieg.
   function savePrefs(panel) {
-    const fields = DATA_FIELDS.concat(SALES_FIELDS)
+    const fields = DATA_FIELDS.concat(SALES_FIELDS, CARD_FIELDS)
       .filter(f => {
         const cb = panel.querySelector('[data-field="' + f.key + '"]');
         return cb && cb.checked;
@@ -3496,7 +3587,7 @@
   function applyPrefs(panel) {
     const prefs = loadPrefs();
     if (!prefs) return;
-    DATA_FIELDS.concat(SALES_FIELDS).forEach(f => {
+    DATA_FIELDS.concat(SALES_FIELDS, CARD_FIELDS).forEach(f => {
       const cb = panel.querySelector('[data-field="' + f.key + '"]');
       if (cb) cb.checked = prefs.fields.includes(f.key);
     });
@@ -3521,6 +3612,10 @@
 
   function selectedSalesFields(panel) {
     return PRICE_STATS.ENABLE ? selectedFrom(SALES_FIELDS, panel) : [];
+  }
+
+  function selectedCardFields(panel) {
+    return selectedFrom(CARD_FIELDS, panel);
   }
 
   // Każda kolumna w osobnym polu — tak się wkleja do arkusza, kolumna po
@@ -3597,7 +3692,8 @@
     const entries = parseInputList(el('input').value);
     const catalogFields = selectedFields(panel);
     const salesFields = selectedSalesFields(panel);
-    const fields = catalogFields.concat(salesFields);
+    const cardFields = selectedCardFields(panel);
+    const fields = catalogFields.concat(salesFields, cardFields);
 
     if (!entries.length) { el('progress').textContent = 'Wklej najpierw listę.'; return; }
     if (!fields.length) { el('progress').textContent = 'Zaznacz, jakie dane mam pobrać.'; return; }
@@ -3652,6 +3748,17 @@
               }
               values[f.key] = f.transform ? f.transform(raw) : raw;
             });
+
+            if (cardFields.length) {
+              const sku = readField(hit.row, 'Item');
+              el('progress').textContent = 'Karta produktu ' + (i + 1) + ' z ' +
+                entries.length + ': ' + sku;
+              const card = await fetchVatFromCard(hit.row, sku);
+              values.vat = vatToFraction(card.value);
+              if (card.note) {
+                status = status === 'ok' ? card.note : status + '; ' + card.note;
+              }
+            }
 
             if (salesFields.length) {
               const sku = readField(hit.row, 'Item');
