@@ -234,7 +234,8 @@ z magazynu **GLS1** — po tych kryteriach nie da się jej odróżnić od sprzed
 B2B. A to sprzedaż po cenie 100%, więc wciągnięta do próby **zawyżałaby podłogę**
 i pozwoliła zejść niżej, niż wolno wobec partnerów.
 
-Odsiewamy ją **dwoma niezależnymi sygnałami**, bo żaden nie jest dostępny zawsze:
+Odsiewamy ją **kilkoma niezależnymi sygnałami**, bo żaden nie jest dostępny
+zawsze ani nie łapie wszystkich przypadków:
 
 1. **Kontrahent** — `EXCLUDE_CUSTOMERS: ['eSavpol']`. Dopasowanie do granicy
    słowa, nie zwykły podciąg: „eSavpol" nie może trafiać w „Piekarnię
@@ -244,6 +245,18 @@ Odsiewamy ją **dwoma niezależnymi sygnałami**, bo żaden nie jest dostępny z
    między ukośnikami w numerze (`2026/ZOID/GLS1/003863`). Działa tylko wtedy,
    gdy kolumna z powiązanymi dokumentami jest w widoku, dlatego **uzupełnia**
    listę kontrahentów, a nie ją zastępuje.
+
+3. **Brak NIP-u kontrahenta** — `EXCLUDE_WITHOUT_VAT_CODE`, **domyślnie
+   wyłączone**. Firma ma NIP, konsument nie, więc faktura bez NIP-u to niemal
+   na pewno detal. To jedyny sygnał, który łapie klientów detalicznych
+   **zarejestrowanych** w sklepie: kupują pod własnym nazwiskiem, więc filtr
+   po nazwie „eSavpol.pl" (obejmujący tylko zakupy bez rejestracji) ich mija.
+
+   Wyłączone, bo nie wiem, czy w waszych danych każdy partner B2B ma wypełniony
+   NIP — a wycięcie prawdziwych partnerów byłoby gorsze od zostawienia kilku
+   detalicznych. **Skrypt liczy takie pozycje niezależnie od flagi** i pokazuje
+   w statusie („N transakcji bez NIP kontrahenta"), więc najpierw zobacz skalę
+   na kilkunastu produktach, potem zdecyduj.
 
 Odrzucone pozycje są liczone: status dopisuje „pominięto N transakcji sprzedaży
 detalicznej". Gdy zostanie zero, komunikat rozróżnia przypadki — „brak sprzedaży

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.43.0
+// @version      2.44.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -265,6 +265,18 @@
     // dokumentów jest w widoku — dlatego nie zastępuje listy kontrahentów,
     // tylko ją uzupełnia.
     EXCLUDE_ORDER_TYPES: ['ZOID'],
+
+    // Trzeci sygnał: BRAK NIP-u kontrahenta. Firma go ma, konsument nie — więc
+    // faktura bez NIP-u to niemal na pewno sprzedaż detaliczna. Łapie też
+    // klientów detalicznych ZAREJESTROWANYCH w sklepie, którzy kupują pod
+    // własnym nazwiskiem i przez to wymykają się filtrowi po nazwie
+    // („eSavpol.pl" obejmuje tylko zakupy bez rejestracji).
+    //
+    // DOMYŚLNIE WYŁĄCZONE, bo nie wiem, czy w waszych danych każdy kontrahent
+    // B2B ma wypełniony NIP — a wycięcie prawdziwych partnerów byłoby gorsze
+    // od zostawienia kilku detalicznych. Skrypt liczy takie pozycje i pokazuje
+    // w statusie, więc najpierw zobacz skalę, potem zdecyduj.
+    EXCLUDE_WITHOUT_VAT_CODE: false,
     // Iloraz P90/P10, od którego mówimy o rozwarstwieniu cen: znak, że są dwie
     // grupy klientów i sama mediana nie opisuje rynku.
     SPREAD_ALERT: 1.15
@@ -2905,6 +2917,7 @@
       date: readField(row, 'DocDate'),
       warehouse: readField(row, 'Warehouse'),
       relatedDocs: readField(row, 'RelatedSalesNumbers'),
+      customerVat: readField(row, 'CustomerVATCode'),
       sku: readField(row, 'Item')
     };
   }
@@ -2944,8 +2957,14 @@
   // Sprzedaż detaliczna: po kontrahencie ALBO po typie powiązanego zamówienia.
   // Dwa sygnały, bo żaden nie jest dostępny zawsze — kolumna z powiązaniami
   // bywa poza widokiem, a nazwa kontrahenta może się kiedyś zmienić.
+  function hasNoVatCode(parsed) {
+    return !String(parsed.customerVat || '').replace(/[\s -]/g, '');
+  }
+
   function isRetailSale(parsed) {
-    return isExcludedCustomer(parsed.customer) || isExcludedOrderType(parsed.relatedDocs);
+    if (isExcludedCustomer(parsed.customer)) return true;
+    if (isExcludedOrderType(parsed.relatedDocs)) return true;
+    return PRICE_STATS.EXCLUDE_WITHOUT_VAT_CODE && hasNoVatCode(parsed);
   }
 
   function rangeByKey(key) {
@@ -2979,6 +2998,9 @@
     // sprzedaży" przy produkcie schodzącym wyłącznie przez sklep to zupełnie
     // inna informacja niż „produkt się nie sprzedaje".
     rows.retail = 0;
+    // Liczone ZAWSZE, także gdy nie odsiewamy po NIP-ie — żeby dało się ocenić
+    // skalę zjawiska przed włączeniem tej reguły.
+    rows.noVatCode = 0;
     const seenDocs = new Set();
     let page = 1;
 
@@ -3005,6 +3027,7 @@
           rows.otherWarehouse++;
           continue;
         }
+        if (hasNoVatCode(parsed)) rows.noVatCode++;
         if (isRetailSale(parsed)) { rows.retail++; continue; }
         const d = parseErpDate(parsed.date);
         if (d && d < since) continue;                        // poza okresem
@@ -3331,6 +3354,10 @@
     if (rows.retail) {
       notes.push('pominięto ' + rows.retail + ' ' + plTransactions(rows.retail) +
         ' sprzedaży detalicznej');
+    }
+    if (!PRICE_STATS.EXCLUDE_WITHOUT_VAT_CODE && rows.noVatCode) {
+      notes.push(rows.noVatCode + ' ' + plTransactions(rows.noVatCode) +
+        ' bez NIP kontrahenta (możliwa sprzedaż detaliczna)');
     }
     if (rows.otherWarehouse) {
       notes.push('pominięto ' + rows.otherWarehouse + ' ' +
