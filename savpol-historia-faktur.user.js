@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.37.0
+// @version      2.38.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -254,13 +254,23 @@
   const DATA_FIELDS = [
     { key: 'sku',   label: 'SKU',             field: 'Item' },
     { key: 'name',  label: 'Nazwa z ERP',     field: 'ItemDesc' },
+    { key: 'brand', label: 'Marka',           field: 'BrandDesc' },
     { key: 'ean',   label: 'EAN',             field: 'EAN' },
     { key: 'price', label: 'Cena',            field: 'CSalesPrice',      numeric: true },
     { key: 'min',   label: 'Cena minimalna',  field: 'CSalesMinPrice',   numeric: true },
     { key: 'limit', label: 'Cena graniczna',  field: 'CSalesLimitPrice', numeric: true },
     { key: 'group', label: 'Grupa produktu',  field: 'ItemsGroupTranslatedDesc',
       transform: v => lastGroupSegments(v, 2) },
-    { key: 'stock', label: 'Stan (DYS.)',     field: 'QStockAv',         numeric: true }
+    { key: 'stock', label: 'Stan (DYS.)',     field: 'QStockAv',         numeric: true },
+
+    // Stawka VAT jako UŁAMEK (5% → 0,05), bo w arkuszu wchodzi do mnożenia.
+    // Kolumny VAT NIE MA w domyślnym układzie siatki katalogu — pole zadziała
+    // dopiero, gdy zostanie dodana w konfiguracji widoku (przycisk dodawania
+    // kolumny w nagłówku siatki). Sprawdzamy kilka możliwych nazw pola, bo
+    // zależą od układu; gdy żadnej nie ma, kolumna zostaje pusta.
+    { key: 'vat',   label: 'VAT',             field: 'VATRate',
+      altFields: ['VAT', 'VATRateValue', 'TaxRate'],
+      numeric: true, transform: v => vatToFraction(v) }
   ];
 
   // Bloki wyjściowe: pola sąsiadujące w arkuszu wychodzą jako JEDNA wklejka
@@ -270,13 +280,27 @@
   // „cena, graniczna, minimalna" tak, jak leżą w docelowym pliku.
   // Pole zaznaczone, a nieujęte w żadnym bloku, dostaje własne okno.
   const OUTPUT_BLOCKS = [
-    { label: 'Ceny z kartoteki', fields: ['price', 'limit', 'min'] },
-    { label: 'Z historii sprzedaży', fields: ['medianTx', 'p90Tx'] }
+    { label: 'Identyfikacja',        fields: ['sku', 'name', 'brand', 'group'] },
+    { label: 'Ceny z kartoteki',     fields: ['price', 'limit', 'min'] },
+    { label: 'Z historii sprzedaży', fields: ['medianTx', 'p90Tx'] },
+    { label: 'Stan, EAN, VAT',       fields: ['stock', 'ean', 'vat'] }
   ];
 
   // Dane liczone z historii sprzedaży. Osobna lista, bo ich pobranie wymaga
   // otwarcia historii produktu — jest DUŻO wolniejsze niż odczyt katalogu.
   const SALES_FIELDS = [
+    { key: 'medianTx', label: 'Mediana (transakcje)', numeric: true },
+    { key: 'p90Tx',    label: 'P90 (transakcje)',     numeric: true }
+  ];
+
+  // Reszta statystyk jest NADAL LICZONA, tylko nie zajmuje miejsca w panelu —
+  // w praktyce używane są dwie powyższe. Żeby którąś przywrócić, przenieś jej
+  // wpis do SALES_FIELDS.
+  //
+  // Ostrzeżenia o wiarygodności próby nie znikają razem z kolumnami: liczba
+  // transakcji poniżej progu, limit 100 pozycji i pominięte magazyny nadal
+  // trafiają do kolumny statusu.
+  const SALES_FIELDS_EXTRA = [
     { key: 'txn',      label: 'Transakcji' },
     { key: 'volume',   label: 'Wolumen',            numeric: true },
     { key: 'floor',    label: 'PODŁOGA (P25 wol.)', numeric: true },
@@ -285,9 +309,7 @@
     { key: 'p90',      label: 'P90 (wol.)',         numeric: true },
     { key: 'minPrice', label: 'Cena min. w historii', numeric: true },
     { key: 'maxPrice', label: 'Cena maks. w historii', numeric: true },
-    { key: 'medianTx', label: 'Mediana (transakcje)', numeric: true },
     { key: 'floorTx',  label: 'PODŁOGA (P25 transakcje)', numeric: true },
-    { key: 'p90Tx',    label: 'P90 (transakcje)',   numeric: true },
     { key: 'spread',   label: 'Rozwarstwienie',     numeric: true },
     { key: 'period',   label: 'Okres (od–do)' }
   ];
@@ -2614,6 +2636,18 @@
     return readMainCellText(row.querySelector('td[data-datafield="' + field + '"]'));
   }
 
+  // „5%", „5", „0,05" → „0,05". Arkusz mnoży przez tę wartość, więc procent
+  // jako tekst byłby tam bezużyteczny. Wartości powyżej 1 traktujemy jako
+  // procent, nie jako ułamek — nikt nie ma VAT-u 500%.
+  function vatToFraction(text) {
+    const raw = String(text || '').replace(/[\s\u00a0%]/g, '').replace(',', '.');
+    if (!raw || !/^\d+(\.\d+)?$/.test(raw)) return '';
+    const n = parseFloat(raw);
+    if (isNaN(n)) return '';
+    const fraction = n > 1 ? n / 100 : n;
+    return String(Math.round(fraction * 10000) / 10000).replace('.', ',');
+  }
+
   // Dwa ostatnie człony ścieżki grupy: „B2B\Kategorie\Polewy, syropy,
   // napoje\Soki" → „Polewy, syropy, napoje\Soki".
   //
@@ -3365,7 +3399,8 @@
     const checks = DATA_FIELDS.map(f =>
       '<label style="cursor:pointer;white-space:nowrap">' +
       '<input data-field="' + f.key + '" type="checkbox"' +
-      (['sku', 'name', 'ean'].includes(f.key) ? ' checked' : '') + '> ' + f.label + '</label>'
+      (['sku', 'name', 'brand', 'group', 'price', 'limit', 'min', 'stock', 'ean', 'vat']
+        .includes(f.key) ? ' checked' : '') + '> ' + f.label + '</label>'
     ).join('');
 
     const salesChecks = SALES_FIELDS.map(f =>
@@ -3607,7 +3642,14 @@
           status = hit.status;
           if (hit.row) {
             catalogFields.forEach(f => {
-              const raw = readField(hit.row, f.field);
+              let raw = readField(hit.row, f.field);
+              // Nazwa kolumny bywa inna zależnie od układu widoku.
+              if (!raw && f.altFields) {
+                for (const alt of f.altFields) {
+                  raw = readField(hit.row, alt);
+                  if (raw) break;
+                }
+              }
               values[f.key] = f.transform ? f.transform(raw) : raw;
             });
 

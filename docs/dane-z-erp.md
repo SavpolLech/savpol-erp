@@ -215,12 +215,25 @@ wszystko" kliknięty przez pomyłkę zaznaczyłby całą stronę.
 
 Pola, które w arkuszu leżą obok siebie, wychodzą jako **jedna wklejka
 rozdzielona tabulatorami** — Sheets rozkłada ją na osobne komórki. Zamiast
-pięciu kopiowań robisz dwa.
+dziewięciu kopiowań robisz cztery.
 
 | Blok | Kolejność kolumn |
 |---|---|
+| Identyfikacja | SKU → Nazwa z ERP → Marka → Grupa produktu |
 | Ceny z kartoteki | Cena → Cena graniczna → Cena minimalna |
 | Z historii sprzedaży | Mediana (transakcje) → P90 (transakcje) |
+| Stan, EAN, VAT | Stan (DYS.) → EAN → VAT |
+
+**VAT zwracany jest jako ułamek** (`5%` → `0,05`), bo w arkuszu wchodzi do
+mnożenia — procent jako tekst byłby tam bezużyteczny. Wartości powyżej 1 są
+traktowane jako procent, poniżej jako gotowy ułamek.
+
+**Panel pokazuje z historii sprzedaży tylko medianę i P90 po transakcjach.**
+Reszta statystyk jest nadal liczona, ale nie zajmuje miejsca w interfejsie —
+definicje leżą w `SALES_FIELDS_EXTRA` i przywraca się je przeniesieniem wpisu
+do `SALES_FIELDS`. Ostrzeżenia o wiarygodności próby **nie znikają razem
+z kolumnami**: zbyt mała liczba transakcji, limit 100 pozycji i pominięte
+magazyny nadal trafiają do kolumny statusu.
 
 Kolejność w bloku to kolejność kolumn w arkuszu i jest celowa — odpowiada
 układowi w docelowym pliku, nie kolejności na liście pól. Definicja siedzi
