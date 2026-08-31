@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.39.0
+// @version      2.40.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -262,6 +262,14 @@
     { key: 'group', label: 'Grupa produktu',  field: 'ItemsGroupTranslatedDesc',
       transform: v => lastGroupSegments(v, 2) },
     { key: 'stock', label: 'Stan (DYS.)',     field: 'QStockAv',         numeric: true },
+
+    // Wewnętrzne ID kartoteki = ID produktu w e-commerce (to samo, które trafia
+    // do Google Merchant Center). W siatce pojawia się dopiero po włączeniu
+    // ukrytej kolumny „Identyfikator wew.". Nazwa pola bywa różna zależnie od
+    // układu, więc sprawdzamy kilka; gdy kolumny nie ma, ID bierzemy z karty
+    // produktu — o ile i tak jest otwierana po VAT.
+    { key: 'itemId', label: 'ID wewnętrzne (e-commerce)', field: 'Id',
+      altFields: ['ItemId', 'InternalId', 'IdentInternal', 'RecordId', 'ItemID'] },
 
   ];
 
@@ -2804,6 +2812,16 @@
     return '';
   }
 
+  // Zakładka karty niesie ID kartoteki w swoim identyfikatorze:
+  // „_213217693_csItemsOneBro_218526476". To ten sam numer, który e-commerce
+  // ma w adresie produktu, więc gdy karta i tak jest otwarta, bierzemy go za
+  // darmo — bez dokładania kolumny do widoku.
+  function itemIdFromTab(tabLi) {
+    const id = tabLi ? (tabLi.id || '') : '';
+    const m = id.match(/csItemsOneBro_(\d+)/i);
+    return m ? m[1] : '';
+  }
+
   async function fetchVatFromCard(row, sku) {
     await closeStrayHistoryTabs(null);
     await clearCatalogSelection();
@@ -2831,14 +2849,15 @@
 
     try {
       const panel = document.getElementById(newId);
+      const itemId = itemIdFromTab(tabLiById(newId));
       // Czekamy na wypełnioną kontrolkę VAT — karta renderuje się etapami,
       // a pusty odczyt wyglądałby jak produkt bez stawki.
       const vat = await waitFor(() => readVatFromCard(panel) || null, 40, 250);
       if (!vat) {
         diag('BLAD', 'Nie odczytałem VAT z karty ' + sku + '.');
-        return { value: '', note: 'nie odczytano VAT z karty' };
+        return { value: '', itemId, note: 'nie odczytano VAT z karty' };
       }
-      return { value: vat, note: '' };
+      return { value: vat, itemId, note: '' };
     } finally {
       closeTabById(newId);
       await sleep(400);
@@ -3755,6 +3774,9 @@
                 entries.length + ': ' + sku;
               const card = await fetchVatFromCard(hit.row, sku);
               values.vat = vatToFraction(card.value);
+              // Zapas, gdy kolumna „Identyfikator wew." nie jest włączona
+              // w widoku katalogu — karta i tak była otwarta.
+              if (!values.itemId && card.itemId) values.itemId = card.itemId;
               if (card.note) {
                 status = status === 'ok' ? card.note : status + '; ' + card.note;
               }
