@@ -222,11 +222,17 @@ dziewięciu kopiowań robisz cztery.
 | Identyfikacja | SKU → Nazwa z ERP → Marka → Grupa produktu |
 | Ceny z kartoteki | Cena → Cena graniczna → Cena minimalna |
 | Z historii sprzedaży | Mediana (transakcje) → P90 (transakcje) |
-| Stan, EAN, VAT | Stan (DYS.) → EAN → VAT |
+| ID, stan, EAN, VAT | ID wewnętrzne → Stan (DYS.) → EAN → VAT |
 
 **VAT zwracany jest jako ułamek** (`5%` → `0,05`), bo w arkuszu wchodzi do
 mnożenia — procent jako tekst byłby tam bezużyteczny. Wartości powyżej 1 są
 traktowane jako procent, poniżej jako gotowy ułamek.
+
+**ID wewnętrzne to identyfikator kartoteki w ERP** — ten sam numer, który
+e-commerce ma w adresie produktu (`…-218526476`) i przekazuje do Google Merchant
+Center. W siatce pojawia się po włączeniu ukrytej kolumny „Identyfikator wew.".
+Gdy jej nie ma, a karta produktu i tak jest otwierana po VAT, numer jest brany
+z identyfikatora zakładki karty — bez dodatkowego kosztu.
 
 **VAT wymaga otwarcia karty produktu** (przycisk „Edycja"), bo nie ma go
 w siatce katalogu i nie da się tam dodać takiej kolumny. To kilka sekund na
