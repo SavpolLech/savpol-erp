@@ -133,6 +133,31 @@ w interfejsie — w przeciwieństwie do daty, którą da się zawęzić u źród
 Oznacza to, że strony i tak są przewijane w całości; limit 100 transakcji liczy
 się **po** odsiewie, więc obejmuje 100 pozycji z GLS1, a nie 100 wszystkich.
 
+### Gdy z GLS1 nie ma sprzedaży — drabinka awaryjna
+
+Zdarza się, że w wybranym zakresie produkt nie sprzedał się z Gliwic ani razu.
+Zamiast zwracać pustkę, skrypt schodzi po trzech stopniach:
+
+| Stopień | Zakres | Magazyn | Status |
+|---|---|---|---|
+| 1 | wybrany | tylko GLS1 | normalny |
+| 2 | wybrany + 2 mies. | tylko GLS1 | „poszerzono do N mies." |
+| 3 | wybrany + 2 mies. | **wszystkie** | „BRAK sprzedaży z GLS1 — cena oszacowana z innych magazynów" |
+
+**Każdy stopień poniżej pierwszego jest zgłaszany w statusie.** Cena z innego
+magazynu nie może wyglądać jak cena z GLS1 — to inna półka cenowa, a decyzja
+podjęta na niej byłaby decyzją na cudzych danych. Stopień 3 to **oszacowanie,
+nie pomiar**, i tak jest opisany.
+
+Kolumna „Okres (od–do)" pokazuje przy tym faktyczny zakres, więc poszerzenie
+widać także w danych, nie tylko w statusie.
+
+Na wszystkich stopniach liczą się **wyłącznie dokumenty typu FA** — korekty
+i inne typy nie wchodzą do próby na żadnym etapie.
+
+Progi sterujące: `FALLBACK_EXTRA_MONTHS` (2) i `FALLBACK_OTHER_WAREHOUSES`
+(`false` wyłącza trzeci stopień, jeśli wolisz pustkę od oszacowania).
+
 Odrzucone pozycje są **liczone i raportowane**:
 
 - gdy zostanie zero — status mówi „brak sprzedaży z magazynu GLS1 (7 transakcji

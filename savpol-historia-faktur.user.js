@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.41.0
+// @version      2.42.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -225,6 +225,17 @@
     // w interfejsie — w przeciwieństwie do daty, której nie da się tu zawęzić
     // u źródła.
     WAREHOUSE: 'GLS1',
+
+    // Gdy w wybranym zakresie nie ma sprzedaży z GLS1, schodzimy po drabince:
+    //   1. wybrany zakres, tylko GLS1
+    //   2. zakres + FALLBACK_EXTRA_MONTHS, tylko GLS1
+    //   3. ten sam poszerzony zakres, WSZYSTKIE magazyny
+    //
+    // Każdy stopień poniżej pierwszego jest zgłaszany w statusie. Cena z innego
+    // magazynu nie może wyglądać jak cena z GLS1 — to inna półka cenowa i decyzja
+    // podjęta na niej byłaby podjęta na cudzych danych.
+    FALLBACK_EXTRA_MONTHS: 2,
+    FALLBACK_OTHER_WAREHOUSES: true,
 
     // Górny limit pozycji na produkt. Bestsellery mają w roku setki transakcji
     // i przewijanie ich stron zajmowało większość czasu przebiegu, a percentyl
@@ -2921,7 +2932,7 @@
   // Przechodzi po WSZYSTKICH stronach listy historii i zbiera pozycje.
   // Świadomie nie otwieramy dokumentów: to ta sama pętla co w cross-sellu,
   // ale bez najdroższego kroku, więc jeden produkt to sekundy, nie minuty.
-  async function collectSalesRows(sku, since, onProgress) {
+  async function collectSalesRows(sku, since, warehouseOnly, onProgress) {
     const rows = [];
     // Ile pozycji odpadło TYLKO z powodu magazynu. Bez tej liczby „brak
     // sprzedaży" przy produkcie, który świetnie się sprzedaje w innym
@@ -2949,7 +2960,10 @@
         newOnPage++;
 
         if (parsed.sku && parsed.sku !== sku) continue;      // czyjaś pozycja
-        if (!matchesWarehouse(parsed.warehouse)) { rows.otherWarehouse++; continue; }
+        if (warehouseOnly && !matchesWarehouse(parsed.warehouse)) {
+          rows.otherWarehouse++;
+          continue;
+        }
         if (isExcludedCustomer(parsed.customer)) continue;
         const d = parseErpDate(parsed.date);
         if (d && d < since) continue;                        // poza okresem
@@ -3094,12 +3108,38 @@
       await waitFor(() => findFilterPanel(historyPanel) !== null, 40, 250);
       // Datę filtra ustawiamy na początek okna, żeby ERP zwrócił mniej stron.
       // Odsiew w JS zostaje jako druga linia obrony, gdy filtr nie zadziała.
+      // Stopień 1: wybrany zakres, tylko magazyn docelowy.
       const since = priceWindowStart(months);
       await setFilters(historyPanel, since);
-      const salesRows = await collectSalesRows(sku, since, onProgress);
-      const stats = computePriceStats(salesRows);
+      let salesRows = await collectSalesRows(sku, since, true, onProgress);
+      const extraNotes = [];
+
       if (!salesRows.length) {
-        stats.notes = stats.notes.length ? stats.notes : ['brak sprzedaży w okresie'];
+        // Stopień 2: zakres poszerzony, wciąż tylko magazyn docelowy.
+        const wider = months + PRICE_STATS.FALLBACK_EXTRA_MONTHS;
+        const since2 = priceWindowStart(wider);
+        await setFilters(historyPanel, since2);
+        salesRows = await collectSalesRows(sku, since2, true, onProgress);
+
+        if (salesRows.length) {
+          extraNotes.push('brak sprzedaży w wybranym zakresie — poszerzono do ' +
+            wider + ' mies.');
+        } else if (PRICE_STATS.FALLBACK_OTHER_WAREHOUSES) {
+          // Stopień 3: ten sam poszerzony zakres, wszystkie magazyny.
+          // Ceny z innych magazynów bywają inne, więc to oszacowanie, nie pomiar.
+          await setFilters(historyPanel, since2);
+          salesRows = await collectSalesRows(sku, since2, false, onProgress);
+          if (salesRows.length) {
+            extraNotes.push('BRAK sprzedaży z ' + PRICE_STATS.WAREHOUSE +
+              ' — cena oszacowana z innych magazynów (zakres ' + wider + ' mies.)');
+          }
+        }
+      }
+
+      const stats = computePriceStats(salesRows);
+      stats.notes = extraNotes.concat(stats.notes);
+      if (!salesRows.length && !stats.notes.length) {
+        stats.notes = ['brak sprzedaży w okresie'];
       }
       return stats;
     } catch (err) {
