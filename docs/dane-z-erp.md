@@ -168,6 +168,26 @@ znaleziono", to znaczy, że ta droga nie działa i trzeba szukać innej.
 Zapytanie po rdzeniach liczy się jako skrócone, więc obowiązuje je ostrzejszy
 próg 0,8.
 
+## Grupa produktu — dwa ostatnie człony
+
+Kolumna „Grupa produktu" zwraca **dwa ostatnie człony ścieżki**:
+
+```
+B2B\Kategorie\Polewy, syropy, napoje\Soki
+→ Polewy, syropy, napoje\Soki
+```
+
+Wspólny przedrostek (`B2B\Kategorie`) jest ten sam dla wszystkich pozycji, więc
+w arkuszu tylko zabierał szerokość kolumny. Sam człon liścia bywa za ogólny
+(„Soki", „Posypki"), stąd dwa, a nie jeden.
+
+Komórka w siatce bywa zawijana na kilka linii, więc białe znaki są sklejane
+przed podziałem — inaczej „Dekoracje cukrowe" rozpadłoby się na dwa człony.
+
+**Parametr `group` przekazywany do generatora opisów zostaje pełną ścieżką.**
+Tam służy do dopasowania kategorii w `cross-sell-map.md` i pełny kontekst jest
+przydatny; skrócenie dotyczy wyłącznie kolumny wyjściowej do arkusza.
+
 ## Formaty pod Google Sheets
 
 **Apostrof (domyślnie włączony) tylko dla SKU i EAN.** Bez niego Sheets zje
