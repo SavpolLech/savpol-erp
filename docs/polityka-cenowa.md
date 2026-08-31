@@ -83,17 +83,28 @@ Siatka **historii produktu**, kolumny `FNetPriceADis` (cena netto po rabacie),
 otwieramy dokumentów** — jeden produkt to sekundy, nie minuty jak w pipelinie
 cross-sellingu.
 
-**Okres: od 1 stycznia bieżącego roku** (`FROM_YEAR_START`). Przez dwa lata
-wstecz cena zmieniała się tak czy inaczej, więc starsze transakcje nie opisują
-dzisiejszych warunków — a im dłuższy okres, tym więcej stron do przewinięcia.
-Data trafia do **filtra w ERP**, nie tylko do odsiewu w skrypcie, więc lista
-jest krótsza u źródła i przebieg jest szybszy. Odsiew po stronie skryptu
-zostaje jako druga linia obrony, gdyby filtr nie zadziałał.
+**Zakres wybierasz w panelu**, przy sekcji „Z historii sprzedaży":
 
-**Uwaga na styczeń i luty:** okno kurczy się wtedy do kilku tygodni i próba
-bywa za mała. Nie wydłużamy go po cichu — status powie „tylko N transakcji",
-a `FROM_YEAR_START: false` przywraca okno kroczące `MONTHS_BACK` (12 miesięcy),
-gdy świadomie chcesz szerszej próby.
+| Wybór | Okno | Do czego |
+|---|---|---|
+| 1 miesiąc | 1 miesiąc wstecz | bieżąca cena, gdy produkt rotuje szybko |
+| **2 miesiące** (domyślnie) | 2 miesiące wstecz | dość świeże, żeby opisywać dziś, i dość szerokie, żeby złapać klientów kupujących raz na kilka tygodni |
+| 1 rok | 12 miesięcy wstecz | produkty wolnorotujące i sezonowe |
+
+To **okno kroczące**, liczone od dziś — nie „od początku roku", jak w pierwszej
+wersji. Tamto miało wadę, która ujawniała się dopiero z czasem: w styczniu
+kurczyło się do kilku tygodni, więc to samo ustawienie dawało w różnych
+miesiącach różnie liczną próbę.
+
+Wybór steruje **filtrem daty w ERP**, nie tylko odsiewem w skrypcie — krótszy
+zakres to mniej stron do przewinięcia, czyli szybszy przebieg. Odsiew po stronie
+skryptu zostaje jako druga linia obrony, gdyby filtr nie zadziałał.
+
+**Krótszy zakres to mniejsza próba.** Przy „1 miesiąc" część produktów wejdzie
+poniżej `MIN_TRANSACTIONS` i dostanie status „percentyle niewiarygodne" —
+to nie usterka, tylko uczciwa informacja, że z pięciu transakcji nie da się
+policzyć podłogi. Kolumna „Okres (od–do)" pokazuje, co faktycznie weszło
+do próby.
 
 **Limit 100 najnowszych transakcji** (`MAX_TRANSACTIONS`). Bestsellery mają
 w roku setki pozycji i przewijanie ich stron zajmowało większość czasu

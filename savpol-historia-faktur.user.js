@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.34.1
+// @version      2.35.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -202,15 +202,20 @@
   // otwierać dokumentów — wszystko jest na liście.
   const PRICE_STATS = {
     ENABLE: true,
-    // Zakres: od 1 STYCZNIA BIEŻĄCEGO ROKU. Polityka cenowa ma się opierać na
-    // cenach aktualnych — przez dwa lata wstecz cena zmieniała się tak czy
-    // inaczej, a im dłuższy okres, tym więcej stron do przewinięcia.
+    // Zakres wybierany w panelu. Okno kroczące (N miesięcy wstecz od dziś),
+    // a nie „od początku roku" — tamto kurczyło się do kilku tygodni w styczniu
+    // i to samo ustawienie dawało w różnych miesiącach różnie liczną próbę.
     //
-    // Uwaga na styczeń i luty: to okno kurczy się do kilku tygodni, więc próba
-    // bywa za mała. Nie wydłużamy go po cichu — status i tak powie „tylko N
-    // transakcji", a przełącznik niżej pozwala wrócić do okna kroczącego.
-    FROM_YEAR_START: true,
-    MONTHS_BACK: 12,          // używane tylko przy FROM_YEAR_START = false
+    // Wybór steruje FILTREM DATY W ERP, nie tylko odsiewem po stronie skryptu:
+    // krótszy zakres to mniej stron do przewinięcia, czyli szybszy przebieg.
+    RANGES: [
+      { key: '1m', label: '1 miesiąc',  months: 1 },
+      { key: '2m', label: '2 miesiące', months: 2 },
+      { key: '1y', label: '1 rok',      months: 12 }
+    ],
+    // Dwa miesiące: dość świeże, żeby opisywać dzisiejsze warunki, i dość
+    // szerokie, żeby złapać klientów kupujących raz na kilka tygodni.
+    DEFAULT_RANGE: '2m',
 
     // Górny limit pozycji na produkt. Bestsellery mają w roku setki transakcji
     // i przewijanie ich stron zajmowało większość czasu przebiegu, a percentyl
@@ -2718,11 +2723,15 @@
     return PRICE_STATS.EXCLUDE_CUSTOMERS.some(x => x && n.includes(fold(x)));
   }
 
-  function priceWindowStart(now) {
-    const base = now ? new Date(now) : new Date();
-    if (PRICE_STATS.FROM_YEAR_START) return new Date(base.getFullYear(), 0, 1);
-    const d = new Date(base);
-    d.setMonth(d.getMonth() - PRICE_STATS.MONTHS_BACK);
+  function rangeByKey(key) {
+    return PRICE_STATS.RANGES.find(r => r.key === key) ||
+      PRICE_STATS.RANGES.find(r => r.key === PRICE_STATS.DEFAULT_RANGE) ||
+      PRICE_STATS.RANGES[0];
+  }
+
+  function priceWindowStart(months, now) {
+    const d = now ? new Date(now) : new Date();
+    d.setMonth(d.getMonth() - (months || rangeByKey(PRICE_STATS.DEFAULT_RANGE).months));
     return d;
   }
 
@@ -2735,9 +2744,8 @@
   // Przechodzi po WSZYSTKICH stronach listy historii i zbiera pozycje.
   // Świadomie nie otwieramy dokumentów: to ta sama pętla co w cross-sellu,
   // ale bez najdroższego kroku, więc jeden produkt to sekundy, nie minuty.
-  async function collectSalesRows(sku, onProgress) {
+  async function collectSalesRows(sku, since, onProgress) {
     const rows = [];
-    const since = priceWindowStart();
     const seenDocs = new Set();
     let page = 1;
 
@@ -2872,7 +2880,7 @@
   // spełniał: skrypt raportował „historia nie otworzyła się" i wychodził
   // PRZED blokiem finally, czyli nie zamykał tego, co właśnie otworzył.
   // Stąd mnożące się zakładki „Pozycje dokumentów".
-  async function fetchPriceStats(row, sku, onProgress) {
+  async function fetchPriceStats(row, sku, months, onProgress) {
     await closeStrayHistoryTabs(null);
     await clearCatalogSelection();
 
@@ -2904,8 +2912,9 @@
       await waitFor(() => findFilterPanel(historyPanel) !== null, 40, 250);
       // Datę filtra ustawiamy na początek okna, żeby ERP zwrócił mniej stron.
       // Odsiew w JS zostaje jako druga linia obrony, gdy filtr nie zadziała.
-      await setFilters(historyPanel, priceWindowStart());
-      const salesRows = await collectSalesRows(sku, onProgress);
+      const since = priceWindowStart(months);
+      await setFilters(historyPanel, since);
+      const salesRows = await collectSalesRows(sku, since, onProgress);
       const stats = computePriceStats(salesRows);
       if (!salesRows.length) {
         stats.notes = stats.notes.length ? stats.notes : ['brak sprzedaży w okresie'];
@@ -3319,6 +3328,14 @@
       '</div>',
       '<div style="margin-top:10px;font-size:12px;opacity:.75">',
       '  Z historii sprzedaży (wolne — kilka sekund na produkt):</div>',
+      '<div style="display:flex;gap:12px;margin-top:4px;font-size:12px;opacity:.85">',
+      '  <span style="opacity:.75">Zakres:</span>',
+      PRICE_STATS.RANGES.map(r =>
+        '<label style="cursor:pointer;white-space:nowrap"><input data-range="' + r.key +
+        '" type="radio" name="savpol-price-range"' +
+        (r.key === PRICE_STATS.DEFAULT_RANGE ? ' checked' : '') + '> ' + r.label + '</label>'
+      ).join(''),
+      '</div>',
       '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:4px;font-size:12px">',
       salesChecks,
       '</div>',
@@ -3359,7 +3376,11 @@
     const mode = panel.querySelector('[data-role="mode-sku"]').checked ? 'sku'
       : panel.querySelector('[data-role="mode-ean"]').checked ? 'ean'
       : panel.querySelector('[data-role="mode-name"]').checked ? 'name' : 'auto';
-    gmSet(EAN_TOOL.PREFS_KEY, JSON.stringify({ fields, mode }));
+    const range = (PRICE_STATS.RANGES.find(r => {
+      const rb = panel.querySelector('[data-range="' + r.key + '"]');
+      return rb && rb.checked;
+    }) || {}).key || PRICE_STATS.DEFAULT_RANGE;
+    gmSet(EAN_TOOL.PREFS_KEY, JSON.stringify({ fields, mode, range }));
   }
 
   function loadPrefs() {
@@ -3380,6 +3401,10 @@
     });
     const radio = panel.querySelector('[data-role="mode-' + prefs.mode + '"]');
     if (radio) radio.checked = true;
+    if (prefs.range) {
+      const rb = panel.querySelector('[data-range="' + prefs.range + '"]');
+      if (rb) rb.checked = true;
+    }
   }
 
   function selectedFrom(list, panel) {
@@ -3480,6 +3505,12 @@
       : el('mode-ean').checked ? 'ean'
       : el('mode-name').checked ? 'name' : 'auto';
 
+    const rangeKey = (PRICE_STATS.RANGES.find(r => {
+      const rb = panel.querySelector('[data-range="' + r.key + '"]');
+      return rb && rb.checked;
+    }) || rangeByKey(PRICE_STATS.DEFAULT_RANGE)).key;
+    const range = rangeByKey(rangeKey);
+
     savePrefs(panel);
     eanRun.running = true;
     eanRun.stop = false;
@@ -3513,9 +3544,9 @@
 
             if (salesFields.length) {
               const sku = readField(hit.row, 'Item');
-              el('progress').textContent = 'Historia sprzedaży ' + (i + 1) + ' z ' +
-                entries.length + ': ' + sku;
-              const stats = await fetchPriceStats(hit.row, sku, (n, page) => {
+              el('progress').textContent = 'Historia sprzedaży (' + range.label + ') ' +
+                (i + 1) + ' z ' + entries.length + ': ' + sku;
+              const stats = await fetchPriceStats(hit.row, sku, range.months, (n, page) => {
                 el('progress').textContent = 'Historia sprzedaży ' + sku +
                   ': ' + n + ' pozycji, strona ' + page;
               });
