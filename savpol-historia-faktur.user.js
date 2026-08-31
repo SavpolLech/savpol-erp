@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.40.1
+// @version      2.41.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -265,11 +265,15 @@
 
     // Wewnętrzne ID kartoteki = ID produktu w e-commerce (to samo, które trafia
     // do Google Merchant Center). W siatce pojawia się dopiero po włączeniu
-    // ukrytej kolumny „Identyfikator wew.". Nazwa pola bywa różna zależnie od
-    // układu, więc sprawdzamy kilka; gdy kolumny nie ma, ID bierzemy z karty
+    // ukrytej kolumny „Identyfikator wew."; gdy jej nie ma, ID bierzemy z karty
     // produktu — o ile i tak jest otwierana po VAT.
-    { key: 'itemId', label: 'ID wewnętrzne (e-commerce)', field: 'Id',
-      altFields: ['ItemId', 'InternalId', 'IdentInternal', 'RecordId', 'ItemID'] },
+    //
+    // ERP wyświetla ten numer ze SPACJAMI jako separatorem tysięcy
+    // („218 526 474"), więc je usuwamy — inaczej w arkuszu wylądowałby tekst,
+    // którego nie da się porównać z identyfikatorem ze sklepu.
+    { key: 'itemId', label: 'ID wewnętrzne (e-commerce)', field: 'csItemsId',
+      altFields: ['Id', 'ItemId', 'InternalId', 'IdentInternal'],
+      transform: v => String(v || '').replace(/[\s ]/g, '') },
 
   ];
 

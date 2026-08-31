@@ -230,9 +230,13 @@ traktowane jako procent, poniżej jako gotowy ułamek.
 
 **ID wewnętrzne to identyfikator kartoteki w ERP** — ten sam numer, który
 e-commerce ma w adresie produktu (`…-218526476`) i przekazuje do Google Merchant
-Center. W siatce pojawia się po włączeniu ukrytej kolumny „Identyfikator wew.".
-Gdy jej nie ma, a karta produktu i tak jest otwierana po VAT, numer jest brany
-z identyfikatora zakładki karty — bez dodatkowego kosztu.
+Center. W siatce pojawia się po włączeniu ukrytej kolumny „Identyfikator wew."
+(pole `csItemsId`). Gdy jej nie ma, a karta produktu i tak jest otwierana po
+VAT, numer jest brany z identyfikatora zakładki karty — bez dodatkowego kosztu.
+
+ERP wyświetla go **ze spacjami jako separatorem tysięcy** (`218 526 474`), więc
+są usuwane. Inaczej w arkuszu wylądowałby tekst, którego nie da się porównać
+z identyfikatorem ze sklepu ani użyć w `VLOOKUP`.
 
 **VAT wymaga otwarcia karty produktu** (przycisk „Edycja"), bo nie ma go
 w siatce katalogu i nie da się tam dodać takiej kolumny. To kilka sekund na
