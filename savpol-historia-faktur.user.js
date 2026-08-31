@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.36.0
+// @version      2.37.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -258,7 +258,8 @@
     { key: 'price', label: 'Cena',            field: 'CSalesPrice',      numeric: true },
     { key: 'min',   label: 'Cena minimalna',  field: 'CSalesMinPrice',   numeric: true },
     { key: 'limit', label: 'Cena graniczna',  field: 'CSalesLimitPrice', numeric: true },
-    { key: 'group', label: 'Grupa produktu',  field: 'ItemsGroupTranslatedDesc' },
+    { key: 'group', label: 'Grupa produktu',  field: 'ItemsGroupTranslatedDesc',
+      transform: v => lastGroupSegments(v, 2) },
     { key: 'stock', label: 'Stan (DYS.)',     field: 'QStockAv',         numeric: true }
   ];
 
@@ -2613,6 +2614,24 @@
     return readMainCellText(row.querySelector('td[data-datafield="' + field + '"]'));
   }
 
+  // Dwa ostatnie człony ścieżki grupy: „B2B\Kategorie\Polewy, syropy,
+  // napoje\Soki" → „Polewy, syropy, napoje\Soki".
+  //
+  // Wspólny przedrostek („B2B\Kategorie") jest ten sam dla wszystkich pozycji,
+  // więc w arkuszu tylko zabiera szerokość kolumny. Człon liścia sam bywa za
+  // ogólny („Soki"), stąd dwa, a nie jeden.
+  //
+  // Komórka bywa zawijana na kilka linii, więc najpierw sklejamy białe znaki.
+  function lastGroupSegments(text, count) {
+    const parts = String(text || '')
+      .replace(/\s+/g, ' ')
+      .split('\\')
+      .map(x => x.trim())
+      .filter(Boolean);
+    if (!parts.length) return '';
+    return parts.slice(-(count || 2)).join('\\');
+  }
+
   // Gramatura, pojemność, liczba sztuk, wymiary. To NAJWAŻNIEJSZA część nazwy
   // przy odróżnianiu kartotek: „Krem pistacjowy" istnieje w trzech opakowaniach
   // i tylko ta liczba mówi, o które chodzi.
@@ -3587,7 +3606,10 @@
           const hit = await fetchRowForEntry(entry, entryMode);
           status = hit.status;
           if (hit.row) {
-            catalogFields.forEach(f => { values[f.key] = readField(hit.row, f.field); });
+            catalogFields.forEach(f => {
+              const raw = readField(hit.row, f.field);
+              values[f.key] = f.transform ? f.transform(raw) : raw;
+            });
 
             if (salesFields.length) {
               const sku = readField(hit.row, 'Item');
