@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.44.0
+// @version      2.45.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3672,7 +3672,17 @@
       '  <button data-role="start" type="button" style="' + btn + ';flex:1;background:#4c9aff;color:#04142e">Pobierz dane</button>',
       '  <button data-role="stop" type="button" style="' + btn + ';display:none;background:#5a3a3a;color:#ffd9d4">Przerwij</button>',
       '</div>',
-      '<div data-role="progress" style="margin-top:8px;font-size:12px;opacity:.8"></div>',
+      '<div data-role="progressbar" style="display:none;margin-top:10px">',
+      '  <div style="height:8px;background:rgba(255,255,255,.15);border-radius:4px;overflow:hidden">',
+      '    <div data-role="bar" style="height:100%;width:0%;background:#4c9aff;',
+      '        transition:width .25s"></div>',
+      '  </div>',
+      '  <div style="display:flex;margin-top:4px;font-size:12px">',
+      '    <span data-role="count" style="flex:1;font-weight:600"></span>',
+      '    <span data-role="eta" style="opacity:.7"></span>',
+      '  </div>',
+      '</div>',
+      '<div data-role="progress" style="margin-top:6px;font-size:12px;opacity:.8"></div>',
       '<div data-role="outbox" style="display:none;margin-top:10px;padding-top:10px;',
       '    border-top:1px solid rgba(255,255,255,.15)">',
       '  <div style="display:flex;gap:12px;font-size:12px;margin-bottom:8px;opacity:.8">',
@@ -3734,6 +3744,19 @@
       const rb = panel.querySelector('[data-range="' + prefs.range + '"]');
       if (rb) rb.checked = true;
     }
+  }
+
+  // Szacowany czas do końca. Liczony ze ŚREDNIEJ z dotychczasowych pozycji,
+  // więc przy pierwszych kilku bywa mylący — dlatego pokazujemy go dopiero
+  // po trzeciej. Produkty różnią się czasem (historia sprzedaży, karta VAT),
+  // ale przy kilkuset pozycjach średnia szybko się stabilizuje.
+  function formatEta(msLeft) {
+    const sec = Math.round(msLeft / 1000);
+    if (sec < 60) return '~' + sec + ' s';
+    const min = Math.round(sec / 60);
+    if (min < 60) return '~' + min + ' min';
+    const h = Math.floor(min / 60);
+    return '~' + h + ' godz. ' + (min % 60) + ' min';
   }
 
   function selectedFrom(list, panel) {
@@ -3846,6 +3869,28 @@
     const range = rangeByKey(rangeKey);
 
     savePrefs(panel);
+
+    // Pasek postępu: „11/50" plus szacowany czas do końca. Przebiegi z historią
+    // sprzedaży albo VAT-em trwają dziesiątki minut, a sam tekst „Sprawdzam
+    // 11 z 50" nie pokazuje, ile jeszcze zostało.
+    const bar = el('bar'), count = el('count'), eta = el('eta');
+    el('progressbar').style.display = 'block';
+    const startedAt = Date.now();
+
+    const showProgress = (done, total) => {
+      const pct = total ? Math.round((done / total) * 100) : 0;
+      bar.style.width = pct + '%';
+      count.textContent = done + '/' + total;
+      if (done >= 3 && done < total) {
+        const perItem = (Date.now() - startedAt) / done;
+        eta.textContent = formatEta(perItem * (total - done)) + ' do końca';
+      } else if (done >= total) {
+        eta.textContent = '';
+      }
+    };
+
+    showProgress(0, entries.length);
+
     eanRun.running = true;
     eanRun.stop = false;
     el('start').style.display = 'none';
@@ -3862,6 +3907,7 @@
           : looksLikeEan(entry) ? 'ean'
           : looksLikeSku(entry) ? 'sku' : 'name';
 
+        showProgress(i, entries.length);
         el('progress').textContent = 'Sprawdzam ' + (i + 1) + ' z ' + entries.length +
           ': ' + entry.slice(0, 40);
 
@@ -3923,6 +3969,7 @@
         }
 
         results.push({ entry: shown, values, status });
+        showProgress(i + 1, entries.length);
         await sleep(EAN_TOOL.DELAY_MS);
       }
     } finally {
@@ -3935,6 +3982,8 @@
     const problems = results.filter(r => r.status !== 'ok');
     const secs = Math.round((Date.now() - started) / 1000);
 
+    showProgress(results.length, entries.length);
+    bar.style.background = eanRun.stop ? '#ffab00' : '#36b37e';
     el('progress').textContent = 'Gotowe: ' + ok + ' z ' + entries.length +
       ' bez zastrzeżeń' + (eanRun.stop ? ' (przerwane)' : '') + ', ' + secs + ' s.';
     el('outbox').style.display = 'block';

@@ -14,6 +14,13 @@ cross-sellingu. Przycisk **🏷️ Dane z ERP** w pasku katalogu.
 **Zaznaczenia i tryb są zapamiętywane** między otwarciami panelu, więc przy
 powtarzalnej pracy nie odklikujesz ich za każdym razem.
 
+**Pasek postępu** pokazuje `11/50` i szacowany czas do końca. Szacunek liczy się
+ze średniej z dotychczasowych pozycji, więc pojawia się dopiero po trzeciej —
+wcześniej byłby mylący. Produkty różnią się czasem (historia sprzedaży, karta
+z VAT-em), ale przy kilkuset pozycjach średnia szybko się stabilizuje.
+Pasek zmienia kolor na zielony po zakończeniu i na pomarańczowy, gdy przebieg
+został przerwany.
+
 Dostępne dane z siatki katalogu: SKU, nazwa z ERP, EAN, cena, cena minimalna,
 cena graniczna, grupa produktu, stan DYS.
 
