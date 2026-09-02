@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.45.0
+// @version      2.46.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -744,7 +744,8 @@
         ' aktywna=' + li.classList.contains('k-state-active') +
         ' etykieta="' + tabLabel(li).slice(0, 60) + '"' +
         ' panel=' + (panel ? 'jest' : 'BRAK') +
-        (sig ? ' szukajka=' + sig.hasSearch + ' siatkaZeStanem=' + sig.hasStockGrid : ''));
+        (sig ? ' szukajka=' + sig.hasSearch + ' siatkaZeStanem=' + sig.hasStockGrid
+             + ' historia=' + sig.isHistory : ''));
     });
 
     const grids = Array.from(document.querySelectorAll('.cs-grid-data-table'));
@@ -1484,13 +1485,49 @@
   //
   // Bez tego rozróżnienia, gdy zakładka katalogu została zamknięta, skrypt
   // uznawał historię za katalog i wpisywał w jej wyszukiwarkę kolejne produkty.
+  // Zbiór id wszystkich paneli zakładek. Panele bywają ZAGNIEŻDŻONE: karta
+  // produktu i „Pozycje dokumentów" otwierają się WEWNĄTRZ panelu katalogu,
+  // więc `panel.querySelector(...)` widzi także cudze siatki.
+  function tabPanelIds() {
+    const ids = new Set();
+    document.querySelectorAll('li.k-item[aria-controls]').forEach(li => {
+      const id = li.getAttribute('aria-controls');
+      if (id) ids.add(id);
+    });
+    return ids;
+  }
+
+  // Panel, do którego NAPRAWDĘ należy element: pierwszy przodek będący panelem
+  // zakładki. Bez tego siatka faktury liczy się jako zawartość katalogu.
+  function owningPanel(el, ids) {
+    for (let n = el.parentElement; n; n = n.parentElement) {
+      if (n.id && ids.has(n.id)) return n;
+    }
+    return null;
+  }
+
+  // Elementy własne panelu — z pominięciem tych, które należą do paneli
+  // zagnieżdżonych w nim.
+  function ownElements(panel, selector) {
+    const ids = tabPanelIds();
+    return Array.from(panel.querySelectorAll(selector))
+      .filter(el => owningPanel(el, ids) === panel);
+  }
+
+  // Historia to panel, którego WŁASNA siatka ma numery dokumentów.
+  //
+  // Objaw sprzed poprawki (log 0010133, wersja 2.45.0): po otwarciu pierwszej
+  // faktury zakładka „Pozycje dokumentów" wylądowała w środku panelu katalogu,
+  // jej kolumna DocNumber trafiła w to zapytanie i katalog został uznany za
+  // historię. Sygnatura katalogu była poprawna do końca przebiegu, a mimo to
+  // findCatalogTabLi() zwracało null i przebieg kończył się BEZ weryfikacji.
   function panelLooksLikeHistory(panel) {
-    return panel.querySelector('td[data-datafield="DocNumber"]') !== null;
+    return ownElements(panel, 'td[data-datafield="DocNumber"]').length > 0;
   }
 
   function panelLooksLikeCatalog(panel) {
-    const hasSearch = panel.querySelector('.csDBEditSearch input.Input') !== null;
-    const hasStockGrid = Array.from(panel.querySelectorAll('.cs-grid-data-table'))
+    const hasSearch = ownElements(panel, '.csDBEditSearch input.Input').length > 0;
+    const hasStockGrid = ownElements(panel, '.cs-grid-data-table')
       .some(t => t.querySelector('td[data-datafield="QStockAv"]'));
     const isHistory = panelLooksLikeHistory(panel);
     return {
@@ -1542,8 +1579,8 @@
     //    sprzedażowymi i przy pustym wyniku wygrywał, bo jest pierwszy.
     //    Historię odrzucamy jawnie: też ma `Item`.
     const partial = candidates.find(t =>
-      t.panel.querySelector('.csDBEditSearch input.Input') !== null
-      && t.panel.querySelector('td[data-datafield="Item"]') !== null
+      ownElements(t.panel, '.csDBEditSearch input.Input').length > 0
+      && ownElements(t.panel, 'td[data-datafield="Item"]').length > 0
       && !isHistoryTab(t.li));
     if (partial) return rememberCatalogTab(partial.li);
 
