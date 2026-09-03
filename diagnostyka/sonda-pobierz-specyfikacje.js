@@ -122,6 +122,33 @@
     return null;
   }
 
+  // Zestawy „master data" (język i podobne) muszą jechać z KAŻDYM odczytem.
+  // Bez nich serwer odpowiada „Błąd w metodzie: PrepareDirect / Brakujący:
+  // cssuplangmasterdata (IsMasterData: True)". Pierwsza wersja sondy wycinała
+  // je jako zbędny balast — nie są balastem.
+  //
+  // Zbieramy je z żywych żądań zamiast wpisywać na sztywno: ParentUniqName
+  // zmienia się między sesjami, więc twarde wartości i tak by nie przetrwały.
+  const masterData = {};
+
+  function zbierzMasterData(koperta) {
+    const lista = koperta && koperta.OperationInvokeInput
+      && koperta.OperationInvokeInput.RefreshInputObject
+      && koperta.OperationInvokeInput.RefreshInputObject.DataTableInitList;
+    if (!lista) return 0;
+    let n = 0;
+    Object.keys(lista).forEach(k => {
+      const w = lista[k];
+      if (!w || typeof w !== 'object') return;
+      const id = String(w.DataSetSQLIdent || '');
+      if (/MasterData$/i.test(id) && w.DataTableInit) {
+        if (!masterData[id]) n++;
+        masterData[id] = w;
+      }
+    });
+    return n;
+  }
+
   async function przebieg(koperta) {
     const wej = koperta.OperationInvokeInput || {};
     const rodzic = (wej.RefreshInputObject && wej.RefreshInputObject.ParentUniqName) || null;
@@ -132,28 +159,44 @@
     log('CompaniesId: ' + (wej.CompaniesId || '(brak)'));
     log('CPG: ' + ((koperta.LoginInfo && koperta.LoginInfo.CPG) || '(brak)'));
     log('ParentUniqName (widok): ' + (rodzic || '(brak — spróbuję bez niego)'));
+    const nazwyMD = Object.keys(masterData);
+    log('zebrane zestawy master data: ' + (nazwyMD.length ? nazwyMD.join(', ') : '(ŻADNEGO)'));
 
     naglowek('2. Odczyt listy załączników');
+    // Master data najpierw, potem właściwa siatka — tak układa je sam ERP.
+    const tablice = {};
+    let i = 0;
+    nazwyMD.forEach(id => { tablice[String(i++)] = masterData[id]; });
+    tablice[String(i++)] = {
+      DataSetSQLIdent: 'csAttachments', SortList: [], DataTableInit: null,
+      Refresh: true, PageSizeFromClient: 100, PageActual: 0,
+      SelectStmType: 2, QueryUID: guid(), KeepPage: false
+    };
+    tablice.length = i;
+
     const lista = await wywolaj(koperta, {
       OperationName: 'RefreshDataSetSQL_Synchronous',
       Params: { DictIdent: 'csItemsOneBro', LoginProviderObject: null },
       DelegateIdent: guid(),
       RefreshInputObject: {
         ParentUniqName: rodzic, ParentIdent: 'csItemsOneBro',
-        DataTableInitList: {
-          '0': {
-            DataSetSQLIdent: 'csAttachments', SortList: [], DataTableInit: null,
-            Refresh: true, PageSizeFromClient: 100, PageActual: 0,
-            SelectStmType: 2, QueryUID: guid(), KeepPage: false
-          },
-          length: 1
-        }
+        DataTableInitList: tablice
       }
     });
     if (!lista.ok) {
       log('NIE UDAŁO SIĘ: ' + lista.blad);
       log(lista.surowa || '');
-      log('→ replay koperty nie działa; trzeba innego sposobu na SID/SessionId.');
+      // Serwer sam nazywa brakujący element — wyłuskujemy to zamiast kazać
+      // człowiekowi czytać zlepiony komunikat z \r\n w środku.
+      const brak = /Brakuj\S*:\s*([a-z0-9_]+)/i.exec(String(lista.blad || ''));
+      if (brak) {
+        log('→ serwer mówi, czego brakuje: ' + brak[1]);
+        log('→ to nie jest problem z SID/SessionId — koperta przeszła.');
+        log('→ dołóż ten zestaw do master data (kliknij zakładkę, która go używa,');
+        log('   sonda zbierze go z żywego żądania) i powtórz.');
+      } else {
+        log('→ komunikat bez nazwy brakującego zestawu; patrz surowa odpowiedź.');
+      }
       return koniec();
     }
     let dane;
@@ -270,37 +313,64 @@
   window.savpolSondaSpec = function () {
     const origSend = XMLHttpRequest.prototype.send;
     const origOpen = XMLHttpRequest.prototype.open;
-    let zrobione = false;
-    XMLHttpRequest.prototype.open = function (m, u) { this.__url = u; return origOpen.apply(this, arguments); };
-    XMLHttpRequest.prototype.send = function (body) {
-      if (!zrobione && typeof body === 'string'
-          && String(this.__url || '').indexOf(ENDPOINT) >= 0) {
-        zrobione = true;
-        XMLHttpRequest.prototype.send = origSend;
-        XMLHttpRequest.prototype.open = origOpen;
-        let paczka = null, srodek = null;
-        try { paczka = JSON.parse(body); } catch (e) { /* niżej */ }
-        if (paczka && paczka.Input) srodek = rozpakujB64(paczka.Input);
-        if (!srodek) { console.error('[sonda] nie rozpakowałem koperty'); return origSend.apply(this, arguments); }
-        let koperta = null;
-        try { koperta = JSON.parse(srodek); } catch (e) { /* niżej */ }
-        if (!koperta) { console.error('[sonda] koperta nie jest JSON-em'); return origSend.apply(this, arguments); }
-        console.log('[sonda] mam kopertę, ruszam…');
-        setTimeout(() => przebieg(koperta).catch(e => {
+    let ruszone = false;
+    let kopertaZRodzicem = null;
+
+    function odepnij() {
+      XMLHttpRequest.prototype.send = origSend;
+      XMLHttpRequest.prototype.open = origOpen;
+    }
+
+    // Nie startujemy z pierwszego lepszego żądania. Potrzebujemy koperty,
+    // która MA ParentUniqName (czyli pochodzi z odczytu, nie z akcji), oraz
+    // przynajmniej jednego zestawu master data. Jedno żądanie rzadko ma oba,
+    // więc słuchamy dalej, aż komplet się uzbiera.
+    function rozwaz(koperta) {
+      zbierzMasterData(koperta);
+      const rodzic = koperta.OperationInvokeInput
+        && koperta.OperationInvokeInput.RefreshInputObject
+        && koperta.OperationInvokeInput.RefreshInputObject.ParentUniqName;
+      if (rodzic && !kopertaZRodzicem) kopertaZRodzicem = koperta;
+
+      const ile = Object.keys(masterData).length;
+      console.log('[sonda] zebrane: koperta=' + (kopertaZRodzicem ? 'tak' : 'nie')
+        + ', master data=' + ile);
+
+      if (!ruszone && kopertaZRodzicem && ile > 0) {
+        ruszone = true;
+        odepnij();
+        console.log('[sonda] mam komplet, ruszam…');
+        setTimeout(() => przebieg(kopertaZRodzicem).catch(e => {
           linie.push('Sonda przerwana błędem: ' + (e && e.stack || e));
           koniec();
         }), 0);
       }
+    }
+
+    XMLHttpRequest.prototype.open = function (m, u) { this.__url = u; return origOpen.apply(this, arguments); };
+    XMLHttpRequest.prototype.send = function (body) {
+      try {
+        if (!ruszone && typeof body === 'string'
+            && String(this.__url || '').indexOf(ENDPOINT) >= 0) {
+          const paczka = JSON.parse(body);
+          const srodek = paczka && paczka.Input ? rozpakujB64(paczka.Input) : null;
+          if (srodek) rozwaz(JSON.parse(srodek));
+        }
+      } catch (e) { /* jedno nieczytelne żądanie nie psuje nasłuchu */ }
       return origSend.apply(this, arguments);
     };
+
     setTimeout(() => {
-      if (!zrobione) {
-        XMLHttpRequest.prototype.send = origSend;
-        XMLHttpRequest.prototype.open = origOpen;
-        console.warn('[sonda] przez 30 s nie poszło żadne żądanie — odpal jeszcze raz i kliknij zakładkę');
+      if (!ruszone) {
+        odepnij();
+        console.warn('[sonda] po 30 s nadal brak kompletu (koperta='
+          + (kopertaZRodzicem ? 'jest' : 'brak') + ', master data='
+          + Object.keys(masterData).length + '). Odpal ponownie i poklikaj po '
+          + 'kilku zakładkach karty — chodzi o to, żeby poszedł ODCZYT siatki.');
       }
     }, 30000);
-    console.log('[sonda] czekam na żądanie ERP — kliknij dowolną zakładkę karty produktu');
+
+    console.log('[sonda] słucham — poklikaj po zakładkach karty produktu');
   };
 
   console.log('[sonda] gotowe. Uruchom: savpolSondaSpec()');
