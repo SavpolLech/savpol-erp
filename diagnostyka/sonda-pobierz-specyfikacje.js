@@ -16,8 +16,8 @@
 // Jak używać:
 //   1. Otwórz kartę produktu w ERP (dowolną zakładkę) i wklej ten plik.
 //   2. savpolSondaSpec()
-//   3. Poklikaj po zakładkach, żeby poszło jakieś żądanie — sonda przechwyci
-//      z niego kopertę i ruszy sama.
+//   3. Poklikaj po zakładkach karty, aż sonda zbierze komplet (widać w konsoli):
+//      kopertę widoku ORAZ wiersz produktu csItems. Wtedy rusza sama.
 //   4. savpolSondaKopiuj()  → wynik do schowka.
 //
 // Wynik ma wycięte hasło, ale ZOSTAWIA SID (bez niego nie widać, czy adres
@@ -122,16 +122,24 @@
     return null;
   }
 
-  // Zestawy „master data" (język i podobne) muszą jechać z KAŻDYM odczytem.
-  // Bez nich serwer odpowiada „Błąd w metodzie: PrepareDirect / Brakujący:
-  // cssuplangmasterdata (IsMasterData: True)". Pierwsza wersja sondy wycinała
-  // je jako zbędny balast — nie są balastem.
+  // ERP nie czyta siatki „w próżni" — żądanie musi nieść ze sobą STAN zestawów
+  // powiązanych. Odkrywaliśmy to warstwami, bo serwer wypuszcza po jednym
+  // brakującym naraz:
   //
-  // Zbieramy je z żywych żądań zamiast wpisywać na sztywno: ParentUniqName
-  // zmienia się między sesjami, więc twarde wartości i tak by nie przetrwały.
-  const masterData = {};
+  //   1. „Brakujący: cssuplangmasterdata (IsMasterData: True)"  — słownik języka
+  //   2. „Brakujący: csitems (IsMasterData: False)"             — sam produkt
+  //
+  // Drugi przypadek jest logiczny: załączniki są dzieckiem produktu, więc bez
+  // wiersza rodzica serwer nie wie, czyje załączniki czytać. Zamiast dokładać
+  // je po jednym, zbieramy WSZYSTKIE zestawy, których stan strona przekazuje,
+  // i odsyłamy komplet.
+  //
+  // Zbieramy z żywych żądań zamiast wpisywać na sztywno: ParentUniqName zmienia
+  // się między sesjami, a wiersz csItems dotyczy akurat otwartego produktu —
+  // twarde wartości byłyby złe i przestarzałe.
+  const kontekst = {};
 
-  function zbierzMasterData(koperta) {
+  function zbierzKontekst(koperta) {
     const lista = koperta && koperta.OperationInvokeInput
       && koperta.OperationInvokeInput.RefreshInputObject
       && koperta.OperationInvokeInput.RefreshInputObject.DataTableInitList;
@@ -139,12 +147,11 @@
     let n = 0;
     Object.keys(lista).forEach(k => {
       const w = lista[k];
-      if (!w || typeof w !== 'object') return;
+      if (!w || typeof w !== 'object' || !w.DataTableInit) return;
       const id = String(w.DataSetSQLIdent || '');
-      if (/MasterData$/i.test(id) && w.DataTableInit) {
-        if (!masterData[id]) n++;
-        masterData[id] = w;
-      }
+      if (!id) return;
+      if (!kontekst[id]) n++;
+      kontekst[id] = w;   // nowszy stan wypiera starszy
     });
     return n;
   }
@@ -159,14 +166,20 @@
     log('CompaniesId: ' + (wej.CompaniesId || '(brak)'));
     log('CPG: ' + ((koperta.LoginInfo && koperta.LoginInfo.CPG) || '(brak)'));
     log('ParentUniqName (widok): ' + (rodzic || '(brak — spróbuję bez niego)'));
-    const nazwyMD = Object.keys(masterData);
-    log('zebrane zestawy master data: ' + (nazwyMD.length ? nazwyMD.join(', ') : '(ŻADNEGO)'));
+    const nazwyKtx = Object.keys(kontekst);
+    log('zebrany kontekst: ' + (nazwyKtx.length ? nazwyKtx.join(', ') : '(NIC)'));
+    const produkt = kontekst.csItems && naObiekty(kontekst.csItems.DataTableInit.DataTable)[0];
+    if (produkt) log('produkt w kontekście: ' + produkt.Item + ' (csItemsId=' + produkt.csItemsId + ')');
 
     naglowek('2. Odczyt listy załączników');
-    // Master data najpierw, potem właściwa siatka — tak układa je sam ERP.
+    // Cały zebrany kontekst plus nasze żądanie o załączniki. Własny wpis
+    // csAttachments pomijamy — zastępujemy go świeżym odczytem.
     const tablice = {};
     let i = 0;
-    nazwyMD.forEach(id => { tablice[String(i++)] = masterData[id]; });
+    nazwyKtx.forEach(id => {
+      if (id === 'csAttachments') return;
+      tablice[String(i++)] = kontekst[id];
+    });
     tablice[String(i++)] = {
       DataSetSQLIdent: 'csAttachments', SortList: [], DataTableInit: null,
       Refresh: true, PageSizeFromClient: 100, PageActual: 0,
@@ -326,17 +339,19 @@
     // przynajmniej jednego zestawu master data. Jedno żądanie rzadko ma oba,
     // więc słuchamy dalej, aż komplet się uzbiera.
     function rozwaz(koperta) {
-      zbierzMasterData(koperta);
+      zbierzKontekst(koperta);
       const rodzic = koperta.OperationInvokeInput
         && koperta.OperationInvokeInput.RefreshInputObject
         && koperta.OperationInvokeInput.RefreshInputObject.ParentUniqName;
       if (rodzic && !kopertaZRodzicem) kopertaZRodzicem = koperta;
 
-      const ile = Object.keys(masterData).length;
+      const ile = Object.keys(kontekst).length;
       console.log('[sonda] zebrane: koperta=' + (kopertaZRodzicem ? 'tak' : 'nie')
-        + ', master data=' + ile);
+        + ', kontekst=' + ile);
 
-      if (!ruszone && kopertaZRodzicem && ile > 0) {
+      // Bez csItems serwer nie wie, czyich zalacznikow szukamy, wiec to
+      // on jest warunkiem startu, nie sama liczba zebranych zestawow.
+      if (!ruszone && kopertaZRodzicem && kontekst.csItems) {
         ruszone = true;
         odepnij();
         console.log('[sonda] mam komplet, ruszam…');
@@ -364,8 +379,8 @@
       if (!ruszone) {
         odepnij();
         console.warn('[sonda] po 30 s nadal brak kompletu (koperta='
-          + (kopertaZRodzicem ? 'jest' : 'brak') + ', master data='
-          + Object.keys(masterData).length + '). Odpal ponownie i poklikaj po '
+          + (kopertaZRodzicem ? 'jest' : 'brak') + ', csItems='
+          + (kontekst.csItems ? 'jest' : 'BRAK') + '). Odpal ponownie i poklikaj po '
           + 'kilku zakładkach karty — chodzi o to, żeby poszedł ODCZYT siatki.');
       }
     }, 30000);
