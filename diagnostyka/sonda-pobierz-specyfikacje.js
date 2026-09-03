@@ -16,8 +16,9 @@
 // Jak używać:
 //   1. Otwórz kartę produktu w ERP (dowolną zakładkę) i wklej ten plik.
 //   2. savpolSondaSpec()
-//   3. Poklikaj po zakładkach karty, aż sonda zbierze komplet (widać w konsoli):
-//      kopertę widoku ORAZ wiersz produktu csItems. Wtedy rusza sama.
+//   3. Wejdź na karcie produktu w zakładkę ZAŁĄCZNIKI. Sonda potrzebuje
+//      kliknięcia, po którym ERP naprawdę czyta dane, a nie tylko przerysowuje
+//      ekran — ta zakładka zawsze idzie po dane. Potem rusza sama.
 //   4. savpolSondaKopiuj()  → wynik do schowka.
 //
 // Wynik ma wycięte hasło, ale ZOSTAWIA SID (bez niego nie widać, czy adres
@@ -34,6 +35,18 @@
   let linie = [];
   const log = (t) => { linie.push(t); console.log('[sonda] ' + t); };
   const naglowek = (t) => { linie.push(''); linie.push('=== ' + t + ' ==='); };
+
+  // Funkcja kopiująca istnieje OD RAZU, nie dopiero po udanym przebiegu.
+  // Wcześniej powstawała na końcu, więc gdy sonda nie ruszyła, użytkownik
+  // dostawał „savpolSondaKopiuj is not defined" i nie miał czego przysłać —
+  // czyli akurat w sytuacji, w której wynik jest najbardziej potrzebny.
+  window.savpolSondaWynik = '(sonda jeszcze nie ruszyła)';
+  window.savpolSondaKopiuj = function () {
+    const s = window.savpolSondaWynik;
+    try { if (typeof copy === 'function') { copy(s); return '(skopiowano ' + s.length + ' znaków)'; } } catch (e) { /* niżej */ }
+    if (navigator.clipboard) navigator.clipboard.writeText(s).catch(() => {});
+    return '(skopiowano ' + s.length + ' znaków)';
+  };
 
   function guid() {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -314,12 +327,6 @@
       linie.push('Łańcuch przerwany, patrz wyżej. Wynik jest w savpolSondaWynik.');
     }
     window.savpolSondaWynik = odchudz(linie.join('\n'));
-    window.savpolSondaKopiuj = function () {
-      const s = window.savpolSondaWynik;
-      try { if (typeof copy === 'function') { copy(s); return '(skopiowano ' + s.length + ' znaków)'; } } catch (e) {}
-      if (navigator.clipboard) navigator.clipboard.writeText(s).catch(() => {});
-      return '(skopiowano ' + s.length + ' znaków)';
-    };
     console.log('%c[sonda] GOTOWE — po wynik: savpolSondaKopiuj()', 'font-weight:bold');
   }
 
@@ -345,9 +352,11 @@
         && koperta.OperationInvokeInput.RefreshInputObject.ParentUniqName;
       if (rodzic && !kopertaZRodzicem) kopertaZRodzicem = koperta;
 
-      const ile = Object.keys(kontekst).length;
-      console.log('[sonda] zebrane: koperta=' + (kopertaZRodzicem ? 'tak' : 'nie')
-        + ', kontekst=' + ile);
+      // Komunikat po ludzku, nie nazwami pól z ERP. „Koperta" i „csItems" nic
+      // nie mówią osobie, która ma tylko kliknąć w zakładkę.
+      console.log('[sonda] mam: dane sesji=' + (kopertaZRodzicem ? 'TAK' : 'nie')
+        + ', dane produktu=' + (kontekst.csItems ? 'TAK' : 'nie')
+        + '  (zebranych zestawów: ' + Object.keys(kontekst).length + ')');
 
       // Bez csItems serwer nie wie, czyich zalacznikow szukamy, wiec to
       // on jest warunkiem startu, nie sama liczba zebranych zestawow.
@@ -375,17 +384,28 @@
       return origSend.apply(this, arguments);
     };
 
+    // Poczekalnia jest dłuższa (90 s), bo trzeba trafić w konkretne kliknięcie,
+    // a nie w jakiekolwiek. Po czasie sonda NIE MILCZY: składa wynik tak samo
+    // jak przy udanym przebiegu, żeby zawsze było co przysłać.
     setTimeout(() => {
       if (!ruszone) {
         odepnij();
-        console.warn('[sonda] po 30 s nadal brak kompletu (koperta='
-          + (kopertaZRodzicem ? 'jest' : 'brak') + ', csItems='
-          + (kontekst.csItems ? 'jest' : 'BRAK') + '). Odpal ponownie i poklikaj po '
-          + 'kilku zakładkach karty — chodzi o to, żeby poszedł ODCZYT siatki.');
+        naglowek('NIE UDAŁO SIĘ ZEBRAĆ DANYCH STARTOWYCH');
+        log('dane sesji (z żądania ERP): ' + (kopertaZRodzicem ? 'mam' : 'BRAK'));
+        log('dane produktu: ' + (kontekst.csItems ? 'mam' : 'BRAK'));
+        log('zebrane zestawy: ' + (Object.keys(kontekst).join(', ') || '(żadnego)'));
+        log('');
+        log('Sonda podsłuchuje ruch, który generuje sama strona — sama nie umie');
+        log('się zalogować. Potrzebuje przy tym kliknięcia, po którym ERP CZYTA');
+        log('dane produktu, a nie tylko przerysowuje ekran.');
+        log('');
+        log('Najpewniej zadziała: wejdź na karcie produktu w zakładkę ZAŁĄCZNIKI.');
+        log('Ona zawsze idzie po dane i niesie komplet, którego brakuje.');
+        koniec();
       }
-    }, 30000);
+    }, 90000);
 
-    console.log('[sonda] słucham — poklikaj po zakładkach karty produktu');
+    console.log('[sonda] słucham. Wejdź na karcie produktu w zakładkę ZAŁĄCZNIKI — to kliknięcie niesie komplet danych, których potrzebuję.');
   };
 
   console.log('[sonda] gotowe. Uruchom: savpolSondaSpec()');
