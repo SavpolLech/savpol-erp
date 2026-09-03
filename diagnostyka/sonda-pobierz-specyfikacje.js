@@ -371,11 +371,19 @@
       }
     }
 
+    // Liczymy WSZYSTKIE żądania, nie tylko pasujące. Bez tego „nic nie
+    // przechwyciłem" ma dwa zupełnie różne znaczenia: albo klikasz w miejsca,
+    // które nie idą po dane, albo konsola jest podpięta do innej ramki niż ta,
+    // w której ERP pracuje (aplikacja ma w sobie iframe). Licznik je rozdziela.
+    let wszystkich = 0, pasujacych = 0;
+
     XMLHttpRequest.prototype.open = function (m, u) { this.__url = u; return origOpen.apply(this, arguments); };
     XMLHttpRequest.prototype.send = function (body) {
       try {
+        wszystkich++;
         if (!ruszone && typeof body === 'string'
             && String(this.__url || '').indexOf(ENDPOINT) >= 0) {
+          pasujacych++;
           const paczka = JSON.parse(body);
           const srodek = paczka && paczka.Input ? rozpakujB64(paczka.Input) : null;
           if (srodek) rozwaz(JSON.parse(srodek));
@@ -384,6 +392,22 @@
       return origSend.apply(this, arguments);
     };
 
+    // Sygnał życia po 12 s — żeby nie czekać półtorej minuty na wiadomość,
+    // że nasłuch w ogóle nie ma czego słuchać.
+    setTimeout(() => {
+      if (ruszone) return;
+      if (wszystkich === 0) {
+        console.warn('%c[sonda] NIE WIDZĘ ŻADNYCH ŻĄDAŃ. To najpewniej nie wina '
+          + 'klikania: konsola jest podpięta do innej ramki niż ERP. Nad konsolą '
+          + 'jest lista wyboru ramki (domyślnie „top") — przełącz ją na ramkę '
+          + 'aplikacji, wklej plik ponownie i uruchom savpolSondaSpec().',
+          'font-weight:bold');
+      } else {
+        console.log('[sonda] żądań widzianych: ' + wszystkich + ', w tym do API ERP: '
+          + pasujacych + '. Jeśli drugie jest zerem, kliknij zakładkę ZAŁĄCZNIKI.');
+      }
+    }, 12000);
+
     // Poczekalnia jest dłuższa (90 s), bo trzeba trafić w konkretne kliknięcie,
     // a nie w jakiekolwiek. Po czasie sonda NIE MILCZY: składa wynik tak samo
     // jak przy udanym przebiegu, żeby zawsze było co przysłać.
@@ -391,6 +415,11 @@
       if (!ruszone) {
         odepnij();
         naglowek('NIE UDAŁO SIĘ ZEBRAĆ DANYCH STARTOWYCH');
+        log('żądań widzianych w ogóle: ' + wszystkich + ', w tym do API ERP: ' + pasujacych);
+        if (wszystkich === 0) {
+          log('→ ZERO żądań. Konsola jest podpięta do innej ramki niż ERP.');
+          log('  Przełącz wybór ramki nad konsolą i uruchom sondę ponownie.');
+        }
         log('dane sesji (z żądania ERP): ' + (kopertaZRodzicem ? 'mam' : 'BRAK'));
         log('dane produktu: ' + (kontekst.csItems ? 'mam' : 'BRAK'));
         log('zebrane zestawy: ' + (Object.keys(kontekst).join(', ') || '(żadnego)'));
