@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Mapa produktów (waga per grupa klientów)
 // @namespace    savpol-erp-tools
-// @version      1.2.0
+// @version      1.3.0
 // @description  Przechodzi przefiltrowaną listę dokumentów sprzedaży, otwiera każdą fakturę, zbiera SKU/ilości/netto i buduje listę produktów posortowaną po wadze (częstotliwość x obrót), z medianą i P90 sprzedaży. Wynik do schowka jednym klikiem.
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-mapa-produktow.user.js
@@ -60,10 +60,19 @@
   // zerowe, więc obie kolumny dawały to samo.
   const PRICE_FIELD = 'CUnitPrice';
 
-  // Próg wagi dla schowka. Panel pokazuje WSZYSTKO (żeby było widać, co
-  // wypadło i jak blisko progu), ale do arkusza idzie tylko to, co przekroczyło
-  // próg — arkusz ma być listą zakupową grupy, nie pełnym spisem magazynu.
+  // Próg wagi dla schowka — wartość STARTOWA. Panel pokazuje WSZYSTKO (żeby
+  // było widać, co wypadło i jak blisko progu), ale do arkusza idzie tylko to,
+  // co przekroczyło próg — arkusz ma być listą zakupową grupy, nie pełnym
+  // spisem magazynu. Po zakończeniu przebiegu próg reguluje się w panelu,
+  // bo dopiero na gotowej liście widać, gdzie naprawdę wypada granica.
   const COPY_MIN_WEIGHT = 15;
+  const COPY_WEIGHT_STEP = 1;
+  const COPY_WEIGHT_MAX = 100;
+
+  // Bieżący próg. Trzymany osobno od stałej, bo zmienia go użytkownik w panelu,
+  // a filtry (copyItems) są wołane z kilku miejsc — przekazywanie progu przez
+  // wszystkie te wywołania zaśmiecałoby je bez potrzeby.
+  let copyThreshold = COPY_MIN_WEIGHT;
 
   // ---------- Warunki przewozu (esavpol.pl) ----------
   // ERP nie trzyma informacji o tym, czy towar jedzie w chłodni — to wie sklep.
@@ -670,7 +679,11 @@
   // różnica jest między minutą a kwadransem.
   async function annotateTransport(items, ui) {
     const cache = loadColdCache();
-    const todo = copyItems(items);
+    // Tylko produkty bez ustalonych warunków. Po obniżeniu progu w panelu
+    // dociągane są WYŁĄCZNIE te, które właśnie weszły — reszta ma już flagę
+    // i sklep nie jest pytany o nią po raz drugi.
+    const todo = copyItems(items).filter(i => !i.transport);
+    if (!todo.length) return { checked: 0, failed: 0 };
     const started = Date.now();
     let done = 0;
 
@@ -731,10 +744,10 @@
   // tę samą wartość, więc wklej zostaje czterokolumnowy.
   const TRANSPORT_COLUMN = ['Przewóz', i => i.transport || ''];
 
-  // Kandydaci do arkusza: sam próg wagi. Ten sam zestaw idzie do sprawdzania
-  // w sklepie, więc chłodnia nie jest tu jeszcze brana pod uwagę.
+  // Kandydaci do arkusza: sam bieżący próg wagi. Ten sam zestaw idzie do
+  // sprawdzania w sklepie, więc chłodnia nie jest tu jeszcze brana pod uwagę.
   function copyItems(items) {
-    return items.filter(i => i.weight > COPY_MIN_WEIGHT);
+    return items.filter(i => i.weight > copyThreshold);
   }
 
   function clipboardRows(items, onlyNonCold) {
@@ -888,6 +901,14 @@
     return '<span style="opacity:.55">' + i.transport + '</span>';
   }
 
+  // Stan przełącznika chłodni przeżywa przerysowanie panelu (a to następuje po
+  // każdej zmianie progu), więc trzyma się poza funkcją rysującą.
+  let onlyNonColdState = COLD_CHAIN.ONLY_NON_COLD_DEFAULT;
+
+  // Blokada na czas dociągania danych ze sklepu. Bez niej szybkie klikanie
+  // w „−/+" odpalałoby kilka nakładających się przebiegów po tych samych SKU.
+  let thresholdBusy = false;
+
   function showResults(ui, items, meta) {
     const totalNet = items.reduce((s, i) => s + i.net, 0);
     const hasTransport = items.some(i => i.transport);
@@ -902,16 +923,16 @@
 
     ui.el('detail').textContent = items.length + ' produktów z ' + meta.invoices +
       ' faktur, obrót netto ' + formatPl(totalNet, 2) + ' PLN. ' +
-      'Nad progiem wagi ' + COPY_MIN_WEIGHT + ': ' + candidates.length + '.' +
+      'Nad progiem wagi ' + copyThreshold + ': ' + candidates.length + '.' +
       (hasTransport ? ' W chłodni/mroźni: ' + coldCount +
         (unknownCount ? ', nierozpoznanych: ' + unknownCount : '') + '.' : '') +
       (meta.partial ? ' Przebieg nie objął całej listy — potraktuj to jako próbkę.' : '');
 
     // Wiersze pod progiem są wyszarzone, a nie ukryte: widać wtedy, co siedzi
-    // tuż pod granicą, i można świadomie ruszyć COPY_MIN_WEIGHT zamiast się
-    // domyślać, czy próg nie odciął czegoś ważnego.
+    // tuż pod granicą, i można świadomie ruszyć próg zamiast się domyślać,
+    // czy nie odciął czegoś ważnego.
     const rows = items.slice(0, 40).map(i =>
-      '<tr style="' + (i.weight > COPY_MIN_WEIGHT ? '' : 'opacity:.4') + '">' +
+      '<tr style="' + (i.weight > copyThreshold ? '' : 'opacity:.4') + '">' +
       '<td style="padding:2px 4px;opacity:.5">' + i.rank + '</td>' +
       '<td style="padding:2px 4px;font-weight:600;white-space:nowrap">' + i.sku + '</td>' +
       '<td style="padding:2px 4px">' + i.name + '</td>' +
@@ -925,9 +946,22 @@
     const rb = ui.el('resultbox');
     rb.style.display = 'flex';
     rb.innerHTML = [
+      '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;font-size:12px">',
+      '  <span>Próg wagi</span>',
+      '  <button data-role="wdown" type="button" title="Obniż próg" style="cursor:pointer;font:inherit;',
+      '      width:26px;padding:2px 0;border:1px solid rgba(255,255,255,.25);border-radius:4px;',
+      '      background:transparent;color:#f5f7fa">&minus;</button>',
+      '  <input data-role="wval" type="number" step="', COPY_WEIGHT_STEP, '" min="0" max="', COPY_WEIGHT_MAX, '"',
+      '      value="', copyThreshold, '" style="width:58px;font:inherit;padding:2px 4px;text-align:center;',
+      '      border:1px solid rgba(255,255,255,.25);border-radius:4px;background:#111a22;color:#f5f7fa">',
+      '  <button data-role="wup" type="button" title="Podnieś próg" style="cursor:pointer;font:inherit;',
+      '      width:26px;padding:2px 0;border:1px solid rgba(255,255,255,.25);border-radius:4px;',
+      '      background:transparent;color:#f5f7fa">+</button>',
+      '  <span data-role="wnote" style="opacity:.55;margin-left:4px"></span>',
+      '</div>',
       hasTransport ? '<label style="display:flex;gap:6px;align-items:center;margin-bottom:8px;' +
         'font-size:12px;cursor:pointer"><input data-role="onlynoncold" type="checkbox"' +
-        (COLD_CHAIN.ONLY_NON_COLD_DEFAULT ? ' checked' : '') + '>' +
+        (onlyNonColdState ? ' checked' : '') + '>' +
         '<span>tylko bez chłodni i mroźni</span></label>' : '',
       '<button data-role="copy" type="button" style="width:100%;cursor:pointer;font:inherit;',
       '    font-size:12px;padding:7px 10px;border:0;border-radius:4px;background:#36b37e;',
@@ -959,12 +993,65 @@
         clipboardRows(items, onlyNonCold()).length + ' wierszy)';
     }
     refreshCopyLabel();
-    if (toggle) toggle.addEventListener('change', refreshCopyLabel);
+    if (toggle) toggle.addEventListener('change', () => {
+      onlyNonColdState = toggle.checked;
+      refreshCopyLabel();
+    });
 
     copyBtn.addEventListener('click', async () => {
       const ok = await copyToClipboard(buildTsv(items, onlyNonCold()));
       copyBtn.textContent = ok ? '✔ Skopiowane — wklej do arkusza' : '✘ Nie udało się skopiować';
       setTimeout(refreshCopyLabel, 2500);
+    });
+
+    // ---------- Regulacja progu ----------
+
+    const wval = rb.querySelector('[data-role="wval"]');
+    const wnote = rb.querySelector('[data-role="wnote"]');
+    const wdown = rb.querySelector('[data-role="wdown"]');
+    const wup = rb.querySelector('[data-role="wup"]');
+
+    // Ile produktów wejdzie po obniżeniu progu, a nie ma jeszcze warunków
+    // przewozu — to one wymagają odpytania sklepu.
+    const missingCount = copyItems(items).filter(i => !i.transport).length;
+    wnote.textContent = missingCount
+      ? missingCount + ' bez danych o przewozie'
+      : (hasTransport ? 'warunki przewozu kompletne' : '');
+
+    async function applyThreshold(next) {
+      if (thresholdBusy) return;
+      const clamped = Math.max(0, Math.min(COPY_WEIGHT_MAX, Math.round(next)));
+      if (clamped === copyThreshold) { wval.value = copyThreshold; return; }
+      copyThreshold = clamped;
+
+      // Obniżenie progu wpuszcza produkty, których jeszcze nie sprawdzaliśmy
+      // w sklepie. Podniesienie progu nigdy nic nie dociąga — tylko zawęża
+      // to, co już jest.
+      const pending = COLD_CHAIN.ENABLE && copyItems(items).filter(i => !i.transport).length;
+      if (!pending) { showResults(ui, items, meta); return; }
+
+      thresholdBusy = true;
+      [wval, wdown, wup].forEach(e => { e.disabled = true; });
+      try {
+        await annotateTransport(items, ui);
+      } catch (err) {
+        if (err && err.aborted) console.warn(LOG, 'Dociąganie warunków przewozu przerwane.');
+        else console.error(LOG, 'Dociąganie warunków przewozu nie udało się:', err);
+      } finally {
+        thresholdBusy = false;
+        // Przerysowanie odtwarza panel z nowym progiem i świeżymi flagami;
+        // stan przełącznika chłodni siedzi poza tą funkcją, więc nie przepada.
+        showResults(ui, items, meta);
+      }
+    }
+
+    wdown.addEventListener('click', () => applyThreshold(copyThreshold - COPY_WEIGHT_STEP));
+    wup.addEventListener('click', () => applyThreshold(copyThreshold + COPY_WEIGHT_STEP));
+    // Reagujemy na „change", nie na „input" — inaczej wpisanie „25" ręcznie
+    // odpalałoby przebieg najpierw dla progu 2.
+    wval.addEventListener('change', () => applyThreshold(parseFloat(wval.value)));
+    wval.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); applyThreshold(parseFloat(wval.value)); }
     });
 
     console.log(LOG, 'Wynik:', items);
