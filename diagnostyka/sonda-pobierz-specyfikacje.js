@@ -1,5 +1,5 @@
 // Sonda: czy skrypt pobierze specyfikację PDF sam, przez API? — wklej w konsolę.
-// WERSJA: 2026-09-03.10
+// WERSJA: 2026-09-03.11
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -35,7 +35,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-03.10';
+  const WERSJA = '2026-09-03.11';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const TYP_SPECYFIKACJI = '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0';
@@ -172,6 +172,28 @@
   // o niewłaściwą kartotekę i wracało puste.
   const produkty = {};
 
+  // Oryginalne żądanie strony o załączniki, złapane w locie.
+  //
+  // Skladanie go samodzielnie dawalo zero wierszy: bez bledu, ale i bez danych.
+  // Roznica wobec zadania strony musi siedziec w szczegole, ktorego nie widac
+  // w nagraniu — a skoro strona ma dzialajacy wzorzec, taniej jest go powtorzyc
+  // niz odgadnac. Podmieniamy tylko identyfikatory zapytania, bo te sa
+  // jednorazowe.
+  let wzorzecZalacznikow = null;
+
+  function zapamietajWzorzec(koperta) {
+    const ri = koperta && koperta.OperationInvokeInput
+      && koperta.OperationInvokeInput.RefreshInputObject;
+    const lista = ri && ri.DataTableInitList;
+    if (!lista) return;
+    const maOdczytZalacznikow = Object.keys(lista).some(k => {
+      const w = lista[k];
+      return w && typeof w === 'object'
+        && String(w.DataSetSQLIdent || '') === 'csAttachments' && w.Refresh === true;
+    });
+    if (maOdczytZalacznikow) wzorzecZalacznikow = koperta;
+  }
+
   function zbierzKontekst(koperta) {
     const lista = koperta && koperta.OperationInvokeInput
       && koperta.OperationInvokeInput.RefreshInputObject
@@ -239,6 +261,12 @@
     }
 
     naglowek('2. Odczyt listy załączników');
+    if (wzorzecZalacznikow) {
+      log('mam oryginalne żądanie strony — powtarzam je dosłownie');
+    } else {
+      log('BRAK oryginalnego żądania — składam własne (to dawało zero wierszy).');
+      log('Żeby je złapać, wejdź w zakładkę ZAŁĄCZNIKI PO uruchomieniu sondy.');
+    }
     // NIE WYSYŁAMY CAŁEGO ZEBRANEGO KONTEKSTU. Próba „damy serwerowi wszystko,
     // to na pewno nie zabraknie" skończyła się po jego stronie wyjątkiem
     // (Odwołanie do obiektu nie zostało ustawione…) — 32 zestawy, w tym masa
@@ -275,15 +303,29 @@
     tablice.length = i;
     log('wysyłam zestawy: csAttachments, csAttachmentsVersions, ' + POTRZEBNE.join(', '));
 
-    const lista = await wywolaj(koperta, {
-      OperationName: 'RefreshDataSetSQL_Synchronous',
-      Params: { DictIdent: 'csItemsOneBro', LoginProviderObject: null },
-      DelegateIdent: guid(),
-      RefreshInputObject: {
-        ParentUniqName: rodzic, ParentIdent: 'csItemsOneBro',
-        DataTableInitList: tablice
-      }
-    });
+    let operacja;
+    if (wzorzecZalacznikow) {
+      // Kopia oryginalu ze swiezymi identyfikatorami: te sa jednorazowe,
+      // a reszta zostaje nietknieta — o to wlasnie chodzi.
+      const w = JSON.parse(JSON.stringify(wzorzecZalacznikow.OperationInvokeInput));
+      w.DelegateIdent = guid();
+      const l = w.RefreshInputObject && w.RefreshInputObject.DataTableInitList;
+      if (l) Object.keys(l).forEach(k => {
+        if (l[k] && typeof l[k] === 'object' && l[k].QueryUID) l[k].QueryUID = guid();
+      });
+      operacja = w;
+    } else {
+      operacja = {
+        OperationName: 'RefreshDataSetSQL_Synchronous',
+        Params: { DictIdent: 'csItemsOneBro', LoginProviderObject: null },
+        DelegateIdent: guid(),
+        RefreshInputObject: {
+          ParentUniqName: rodzic, ParentIdent: 'csItemsOneBro',
+          DataTableInitList: tablice
+        }
+      };
+    }
+    const lista = await wywolaj(koperta, operacja);
     if (!lista.ok) {
       log('NIE UDAŁO SIĘ: ' + lista.blad);
       log(lista.surowa || '');
@@ -478,6 +520,7 @@
     // więc słuchamy dalej, aż komplet się uzbiera.
     function rozwaz(koperta) {
       zbierzKontekst(koperta);
+      zapamietajWzorzec(koperta);
       const rodzic = koperta.OperationInvokeInput
         && koperta.OperationInvokeInput.RefreshInputObject
         && koperta.OperationInvokeInput.RefreshInputObject.ParentUniqName;
