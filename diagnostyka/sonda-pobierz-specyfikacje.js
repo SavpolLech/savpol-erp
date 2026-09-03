@@ -1,5 +1,5 @@
 // Sonda: czy skrypt pobierze specyfikację PDF sam, przez API? — wklej w konsolę.
-// WERSJA: 2026-09-03.11
+// WERSJA: 2026-09-03.12
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -35,7 +35,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-03.11';
+  const WERSJA = '2026-09-03.12';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const TYP_SPECYFIKACJI = '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0';
@@ -135,14 +135,35 @@
     });
   }
 
-  function znajdzSiatke(obj, ident, glebokosc) {
-    if (!obj || typeof obj !== 'object' || (glebokosc || 0) > 12) return null;
-    if (obj.DataSetSQLIdent === ident && obj.DataTable) return obj.DataTable;
-    for (const k of Object.keys(obj)) {
-      const w = znajdzSiatke(obj[k], ident, (glebokosc || 0) + 1);
-      if (w) return w;
+  // W ODPOWIEDZI SIATKI ROZPOZNAJEMY PO KOLUMNACH, NIE PO NAZWIE.
+  //
+  // Zadanie i odpowiedz maja rozny ksztalt: w odpowiedzi DataSetSQLIdent bywa
+  // null, wiec szukanie „obiektu o DataSetSQLIdent === csAttachments" nie
+  // znajdowalo nic, a zapas („pierwsza siatka bez nazwy") trafial w cokolwiek.
+  // Stad zero wierszy przy poprawnym zapytaniu — bland byl po stronie czytania,
+  // nie pytania.
+  function zbierzSiatki(obj, wynik, glebokosc, sciezka) {
+    wynik = wynik || [];
+    if (!obj || typeof obj !== 'object' || (glebokosc || 0) > 14) return wynik;
+    if (Array.isArray(obj.FieldDefs) && Array.isArray(obj.Rows)) {
+      wynik.push({
+        sciezka: sciezka || '(korzeń)',
+        kolumny: obj.FieldDefs.map(f => f.FieldName),
+        wierszy: obj.Rows.length,
+        tabela: obj
+      });
     }
-    return null;
+    Object.keys(obj).forEach(k => {
+      zbierzSiatki(obj[k], wynik, (glebokosc || 0) + 1, (sciezka ? sciezka + '.' : '') + k);
+    });
+    return wynik;
+  }
+
+  // Siatka „ta wlasciwa" to ta, ktora ma kolumne charakterystyczna dla zestawu.
+  function siatkaPoKolumnie(dane, kolumna) {
+    const wszystkie = zbierzSiatki(dane);
+    const pasujace = wszystkie.filter(s => s.kolumny.indexOf(kolumna) >= 0);
+    return { wszystkie, wybrana: pasujace.length ? pasujace[0] : null };
   }
 
   // ERP nie czyta siatki „w próżni" — żądanie musi nieść ze sobą STAN zestawów
@@ -344,8 +365,16 @@
     }
     let dane;
     try { dane = JSON.parse(lista.tresc); } catch (e) { dane = null; }
-    const siatka = znajdzSiatke(dane, 'csAttachments') || znajdzSiatke(dane, null);
-    const wiersze = naObiekty(siatka);
+    const znal = siatkaPoKolumnie(dane, 'csAttachmentsId');
+    log('siatek w odpowiedzi: ' + znal.wszystkie.length);
+    znal.wszystkie.forEach(sk => log('  ' + sk.sciezka + ' — wierszy ' + sk.wierszy
+      + ', kolumny: ' + sk.kolumny.slice(0, 6).join(', ') + (sk.kolumny.length > 6 ? '…' : '')));
+    if (!znal.wybrana) {
+      log('NIE ZNALAZŁEM siatki z kolumną csAttachmentsId — patrz lista wyżej.');
+      return koniec();
+    }
+    log('biorę siatkę: ' + znal.wybrana.sciezka);
+    const wiersze = naObiekty(znal.wybrana.tabela);
     log('wierszy załączników: ' + wiersze.length);
     if (!wiersze.length) {
       log('');
