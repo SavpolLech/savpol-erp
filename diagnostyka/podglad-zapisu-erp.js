@@ -14,8 +14,14 @@
 //      rekordu od przypadkowej liczby, która akurat była stała.
 //   6. savpolSniffCopy()  → komplet ląduje w schowku, wklej do rozmowy.
 //
-// UWAGA: zrzut zawiera treść żądań, czyli dane handlowe. Repo savpol-erp jest
-// PUBLICZNE — nie commituj tu wyniku, wklej go do rozmowy albo trzymaj lokalnie.
+// UWAGA — TEN ERP WYSYŁA HASŁO PRZY KAŻDYM ŻĄDANIU. W polu `Input` (base64
+// z nieskompresowanego ZIP-a) siedzi `LoginInfo` z `UserName` i `Password`
+// otwartym tekstem. Dlatego snippet ROZPAKOWUJE payload i USUWA z niego dane
+// logowania, zanim cokolwiek trafi do schowka. Przy okazji zrzut staje się
+// czytelny — bez tego jest to ściana base64.
+//
+// Mimo to: zrzut nadal zawiera treść dokumentów i identyfikatory sesji.
+// Repo savpol-erp jest PUBLICZNE — nie commituj tu wyniku.
 
 (function () {
   'use strict';
@@ -25,9 +31,34 @@
   const zapisy = [];
   let start = null;
 
+  // Wycina dane logowania. Wzorzec jest celowo szeroki (Password, Pwd, Haslo,
+  // token, SID) i działa na tekście, a nie na sparsowanym JSON-ie — payload
+  // bywa uszkodzony albo ucięty, a wtedy JSON.parse pada i hasło by przeszło.
+  const WRAZLIWE = /("(?:Password|Pwd|Haslo|Hasło|Token|AccessToken|ApiKey)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
+
+  function odchudz(s) {
+    return String(s).replace(WRAZLIWE, '$1"[USUNIĘTE]"');
+  }
+
+  // Payload ERP to base64 ZIP-a zapisanego BEZ KOMPRESJI (metoda „stored"),
+  // więc JSON leży w środku otwartym tekstem — wystarczy odciąć nagłówki ZIP-a.
+  // Rozpakowujemy do PODGLĄDU, nie do wysyłki, więc nie musimy dbać o CRC.
+  function rozpakuj(txt) {
+    const m = /"Input"\s*:\s*"([A-Za-z0-9+/=]{200,})"/.exec(txt);
+    if (!m) return null;
+    let surowy;
+    try { surowy = atob(m[1]); } catch (e) { return null; }
+    const od = surowy.indexOf('{');
+    const doo = surowy.lastIndexOf('}');
+    if (od < 0 || doo <= od) return null;
+    return surowy.slice(od, doo + 1);
+  }
+
   function skroc(txt) {
     if (txt == null) return '';
-    const s = typeof txt === 'string' ? txt : String(txt);
+    let s = odchudz(txt);
+    const rozp = rozpakuj(s);
+    if (rozp) s = '[payload rozpakowany z base64/ZIP]\n' + odchudz(rozp);
     return s.length > LIMIT_TRESCI
       ? s.slice(0, LIMIT_TRESCI) + '\n…[ucięte, całość ' + s.length + ' znaków]'
       : s;
