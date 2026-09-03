@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.46.0
+// @version      2.47.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1521,8 +1521,27 @@
   // jej kolumna DocNumber trafiła w to zapytanie i katalog został uznany za
   // historię. Sygnatura katalogu była poprawna do końca przebiegu, a mimo to
   // findCatalogTabLi() zwracało null i przebieg kończył się BEZ weryfikacji.
+  // SIATKA ZE STANEM ROZSTRZYGA NA KORZYŚĆ KATALOGU.
+  //
+  // Objaw (log 0024711, wersja 2.46.0): panel katalogu miał `historia=true`
+  // już w PIERWSZYM zrzucie, zanim otwarto jakąkolwiek fakturę. Przez to
+  // isHistoryTab() odrzucało go we wszystkich trzech regułach, etykieta
+  // „xxKatalog" nie łapała się na regułę zapasową /^katalog$/i i cały przebieg
+  // kończył się BEZ weryfikacji dostępności.
+  //
+  // Przyczyna: karta produktu ma własną sekcję z dokumentami (kolumny
+  // DocNumber, DocDate, QStock4Bill) i otwiera się WEWNĄTRZ panelu katalogu.
+  // Poprawka z 2.45.0 wycinała panele zagnieżdżone przez ownElements(), ale te
+  // sekcje NIE są zakładkami Kendo — nie mają li.k-item[aria-controls], więc
+  // tabPanelIds() ich nie zna i ich komórki liczą się jako własne katalogu.
+  //
+  // Dlatego DocNumber nie może sam przesądzać. Siatka z kolumną stanu (QStockAv)
+  // to lista kartotek, czyli katalog — historia dokumentów ma tylko QStock.
   function panelLooksLikeHistory(panel) {
-    return ownElements(panel, 'td[data-datafield="DocNumber"]').length > 0;
+    if (ownElements(panel, 'td[data-datafield="DocNumber"]').length === 0) return false;
+    const hasCatalogGrid = ownElements(panel, '.cs-grid-data-table')
+      .some(t => t.querySelector('td[data-datafield="QStockAv"]'));
+    return !hasCatalogGrid;
   }
 
   function panelLooksLikeCatalog(panel) {
@@ -1587,7 +1606,9 @@
     // 3. Ostatnia deska ratunku: etykieta. Zostawiona, bo gdy panel jest jeszcze
     //    niezaładowany, nazwa to jedyna wskazówka. Karty produktu ("Katalog: X")
     //    odrzucamy jawnie.
-    const byLabel = candidates.find(t => /^katalog$/i.test(tabLabel(t.li)));
+    //    Prefiks „xx" ERP dokleja do każdej etykiety zakładki („xxKatalog",
+    //    „xxPozycje dokumentów") — bez niego ta reguła nigdy nie zadziałała.
+    const byLabel = candidates.find(t => /^(xx)?katalog$/i.test(tabLabel(t.li)));
     return byLabel ? rememberCatalogTab(byLabel.li) : null;
   }
 
