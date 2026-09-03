@@ -30,16 +30,26 @@ Gdzie:
 | `FileName` | `LocalFileName` z tego samego wiersza | patrz niżej |
 | `SID` | `SID` z payloadu | identyfikator sesji |
 
-## Jedno żądanie wystarczy
+## Po `FileIdent` idziemy akcją, nie skrótem
 
-Kliknięcie w PDF wywołuje w ERP akcję
-`csAttachmentsSaveToFileLastVersion` (`ActionExecute`, `DataSetTypeIdent:
-"csAttachments"`), która oddaje `RemoteFileInfoList` z `FileIdent` i `FileName`.
-**Ta akcja jest jednak zbędna**: `FileIdent` to dokładnie `RemoteIdent`
-z siatki `csAttachments` zapisany wielkimi literami — sprawdzone znak w znak.
+Kliknięcie w PDF wywołuje w ERP akcję `csAttachmentsSaveToFileLastVersion`
+(`ActionExecute`, `DataSetTypeIdent: "csAttachments"`), która oddaje
+`RemoteFileInfoList` z `FileIdent` i `FileName`. `DownloadUrl` jest przy tym
+zawsze `null`, nie ma co na nie liczyć.
 
-Wystarczy więc odczytać listę załączników produktu i złożyć URL samemu.
-`DownloadUrl` w odpowiedzi jest zawsze `null`, nie ma co na nie liczyć.
+W jedynej nagranej próbce `FileIdent` okazał się równy `RemoteIdent` z siatki
+zapisanemu wielkimi literami, więc kusiło, żeby akcję pominąć i składać URL
+prosto z listy załączników. **Nie robimy tego.**
+
+Powód: **załącznik ma wiele wersji** (w ERP widać kolumnę „WERSJA", wartości
+rzędu 9 czy 24), a akcja nazywa się `…LastVersion` — czyli jej zadaniem jest
+wskazać wersję NAJNOWSZĄ. Nie wiemy, czy `RemoteIdent` w wierszu siatki zawsze
+pokazuje właśnie ją. Jedna zgodna próbka tego nie dowodzi, a cena pomyłki jest
+wysoka i cicha: skrypt pobrałby starą specyfikację i nikt by się nie zorientował,
+bo plik by się otworzył normalnie.
+
+Jedno dodatkowe żądanie jest tańsze niż opis produktu zbudowany ze
+nieaktualnych danych.
 
 ## Który załącznik to specyfikacja
 
@@ -52,6 +62,20 @@ csAttachmentsTypesG = 1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0
 ```
 
 Wiersz łączy się z produktem przez `SourceId` = `csItemsId`.
+
+**Typ nie zawsze wystarcza.** Zdarza się kilka wierszy tego samego typu
+„Specyfikacja" — człowiek wybiera wtedy ten o najnowszej dacie dodania.
+Odwzorowanie: po odfiltrowaniu po typie bierzemy wiersz o największym
+`AddDate`, a dopiero z niego akcję „ostatnia wersja".
+
+Czyli pełna reguła wyboru, w dwóch krokach:
+
+1. **który załącznik** — typ = specyfikacja, a przy remisie najnowszy `AddDate`;
+2. **która wersja** — zawsze najnowsza, czym zajmuje się akcja.
+
+Gdy po filtrze nie ma ani jednego wiersza, przerywamy i mówimy o tym wprost.
+Produkt bez specyfikacji to normalna sytuacja, nie błąd — ale opis budowany
+bez niej byłby gorszy, a milczenie by to ukryło.
 
 Przydatne pola wiersza `csAttachments`:
 
