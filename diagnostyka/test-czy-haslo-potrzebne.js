@@ -20,7 +20,11 @@
 //   1. Otwórz kartę produktu w ERP i wklej ten plik w konsolę.
 //   2. savpolTestHasla()
 //   3. Poklikaj po zakładkach karty, żeby ERP wysłał jakiekolwiek żądanie.
-//   4. Wynik sam wyląduje w schowku — wklej do rozmowy.
+//   4. savpolTestKopiuj()  → wynik do schowka, wklej do rozmowy.
+//
+// Wynik NIE trafia do schowka sam z siebie. Test chodzi w tle, kiedy pracujesz
+// w ERP i sam używasz schowka — samoczynne kopiowanie zniszczyłoby to, co masz
+// przygotowane do wklejenia (albo zostałoby przez to nadpisane).
 
 (function () {
   'use strict';
@@ -132,7 +136,7 @@
       // konsola milczała, schowek zostawał pusty i nie było wiadomo dlaczego.
       const opis = 'Test przerwany błędem: ' + (e && e.stack || e);
       console.error('[test] ' + opis);
-      doSchowka(opis);
+      odloz(opis);
     }
   }
 
@@ -151,7 +155,7 @@
     if (!jsonSrodka) {
       linie.push('');
       linie.push('NIE UDAŁO SIĘ rozpakować payloadu — reszta testu bez sensu.');
-      doSchowka(linie.join('\n'));
+      odloz(linie.join('\n'));
       return;
     }
 
@@ -164,7 +168,7 @@
     if (!b64Pelny || !b64BezHasla) {
       linie.push('');
       linie.push('NIE UDAŁO SIĘ zakodować payloadu do base64 — reszta bez sensu.');
-      doSchowka(linie.join('\n'));
+      odloz(linie.join('\n'));
       return;
     }
 
@@ -231,19 +235,26 @@
       linie.push('Test nierozstrzygający.');
     }
 
-    doSchowka(linie.join('\n'));
+    odloz(linie.join('\n'));
+  }
+
+  // NIE KOPIUJEMY SAMI. Ten test trwa w tle, kiedy użytkownik pracuje w ERP
+  // i sam używa schowka do przeklejania opisów — wynik wskoczyłby mu pod ręce
+  // i zaraz zostałby nadpisany, albo odwrotnie: zniszczyłby to, co miał
+  // przygotowane. Zdarzyło się dokładnie to. Zrzut na koniec pracy może
+  // kopiować od razu (podglad-zapisu-erp.js), test w tle - nie.
+  function odloz(txt) {
+    window.savpolTestWynik = txt;
+    window.savpolTestKopiuj = function () { doSchowka(txt); return '(' + txt.length + ' znaków)'; };
+    console.log('%c[test] WYNIK GOTOWY (' + txt.length + ' znaków) — po niego: savpolTestKopiuj()',
+      'font-weight:bold');
   }
 
   function doSchowka(txt) {
-    // WYNIK ZAWSZE LĄDUJE W ZMIENNEJ, zanim spróbujemy schowka. Kopiowanie
-    // z callbacku bywa zablokowane (copy() z DevTools jest widoczne tylko
-    // przy wywołaniu prosto z konsoli, a clipboard API wymaga focusu na
-    // stronie — jeśli kursor jest w DevTools, odmawia). Wtedy zostaje
-    // savpolTestKopiuj() wpisane ręcznie i wynik nie przepada.
+    // Wynik i tak najpierw ląduje w zmiennej: copy() z DevTools jest widoczne
+    // tylko przy wywołaniu prosto z konsoli, a clipboard API odmawia, gdy
+    // focus siedzi w DevTools. Bez tego wynik potrafił przepaść bez śladu.
     window.savpolTestWynik = txt;
-    window.savpolTestKopiuj = function () { doSchowka(txt); return '(' + txt.length + ' znaków)'; };
-    console.log('[test] wynik gotowy (' + txt.length + ' znaków). Gdyby schowek '
-      + 'zawiódł: copy(savpolTestWynik)');
 
     try {
       if (typeof copy === 'function') { copy(txt); console.log('[test] skopiowano, ' + txt.length + ' znaków'); return; }
@@ -271,5 +282,5 @@
                    : '[test] NIE UDAŁO SIĘ skopiować — użyj: copy(savpolTestWynik)');
   }
 
-  console.log('[test] gotowe. Uruchom: savpolTestHasla()');
+  console.log('[test] gotowe. Uruchom: savpolTestHasla(). Wynik NIE trafi sam do schowka — po niego savpolTestKopiuj()');
 })();
