@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Mapa produktów (waga per grupa klientów)
 // @namespace    savpol-erp-tools
-// @version      1.5.0
+// @version      1.6.0
 // @description  Przechodzi przefiltrowaną listę dokumentów sprzedaży, otwiera każdą fakturę, zbiera SKU/ilości/netto i buduje listę produktów posortowaną po wadze (częstotliwość x obrót), z medianą i P90 sprzedaży. Wynik do schowka jednym klikiem.
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-mapa-produktow.user.js
@@ -18,6 +18,7 @@
   'use strict';
 
   const LOG = '[Savpol Mapa Produktów]';
+  const SCRIPT_VERSION = '1.6.0';
   console.log(LOG, 'Skrypt załadowany. URL:', location.href);
 
   // ---------- Konfiguracja ----------
@@ -154,13 +155,44 @@
   const DELAY_AFTER_CLOSE = 300;
   const DELAY_AFTER_PAGE = 400;
 
+  // ---------- Dziennik przebiegu ----------
+  // Przebieg trwa minuty i kończy się czasem wynikiem częściowym, a przyczyna
+  // („paginacja stanęła" kontra „trzy nieudane otwarcia faktur z rzędu") jest
+  // z panelu nie do odróżnienia. Konsola to pokazuje, ale trzeba ją mieć
+  // otwartą ZANIM przebieg wystartuje. Dlatego log zbiera się też tutaj i idzie
+  // do schowka jednym przyciskiem.
+  const DIAG = { lines: [], started: 0 };
+
+  function diagReset() {
+    DIAG.lines = [];
+    DIAG.started = Date.now();
+    diag('START', 'Mapa produktów, wersja skryptu ' + SCRIPT_VERSION);
+    diag('START', 'URL: ' + location.href);
+    diag('START', 'Przeglądarka: ' + navigator.userAgent);
+    diag('START', 'GM_xmlhttpRequest: ' + (typeof GM_xmlhttpRequest === 'function') +
+      ', chłodnia włączona: ' + COLD_CHAIN.ENABLE);
+  }
+
+  function diag(tag, message) {
+    const t = DIAG.started ? ((Date.now() - DIAG.started) / 1000).toFixed(1) : '0.0';
+    DIAG.lines.push('[' + t + 's] ' + tag + ': ' + message);
+    // Do konsoli też, bo gdy jest otwarta, wygodniej czytać na bieżąco.
+    if (tag === 'BŁĄD') console.error(LOG, message);
+    else if (tag === 'UWAGA') console.warn(LOG, message);
+    else console.log(LOG, message);
+  }
+
+  function diagReport() {
+    return DIAG.lines.join('\n');
+  }
+
   // ---------- Przerwanie ----------
 
   const ABORT = { requested: false };
 
   function requestAbort() {
     ABORT.requested = true;
-    console.warn(LOG, 'Zażądano przerwania — kończę po bieżącej fakturze.');
+    diag('UWAGA', 'Zażądano przerwania — kończę po bieżącej fakturze.');
   }
 
   function throwIfAborted() {
@@ -381,10 +413,10 @@
         await sleep(DELAY_AFTER_PAGE);
         return true;
       }
-      console.warn(LOG, 'Klik w „następną stronę" nie zmienił numeru strony. Przed:',
-        beforeVal, '| po:', describePager(getVisiblePager()));
+      diag('UWAGA', 'Klik w „następną stronę" nie zmienił numeru strony. Przed: ' +
+        beforeVal + ' | po: ' + describePager(getVisiblePager()));
     } else {
-      console.warn(LOG, 'Brak przycisku „następna strona" w widocznym pagerze.');
+      diag('UWAGA', 'Brak przycisku „następna strona" w widocznym pagerze.');
     }
 
     // Podejście drugie: wpisanie numeru strony. Pole reaguje na change i Enter,
@@ -393,7 +425,7 @@
       const p = getVisiblePager();
       const inp = p && p.querySelector('.ActivePageNoInput');
       if (inp) {
-        console.warn(LOG, 'Próbuję wpisać numer strony ' + (beforeNum + 1) + ' wprost w pole.');
+        diag('UWAGA', 'Próbuję wpisać numer strony ' + (beforeNum + 1) + ' wprost w pole.');
         inp.focus();
         inp.value = String(beforeNum + 1);
         inp.dispatchEvent(new Event('input', { bubbles: true }));
@@ -410,23 +442,25 @@
         }, 40, 250);
         await sleep(DELAY_AFTER_PAGE);
         if (moved) {
-          console.log(LOG, 'Wpisanie numeru strony zadziałało.');
+          diag('INFO', 'Wpisanie numeru strony zadziałało.');
           return true;
         }
-        console.error(LOG, 'Wpisanie numeru strony też nie ruszyło siatki.');
+        diag('BŁĄD', 'Wpisanie numeru strony też nie ruszyło siatki.');
       }
     }
 
     // Pełny zrzut pagera do diagnozy — bez niego zostaje samo „stanęło".
     const pagerNow = getVisiblePager();
-    console.error(LOG, 'Paginacja stanęła. Stan pagera: ' + describePager(pagerNow));
-    console.error(LOG, 'HTML pagera:', pagerNow ? pagerNow.outerHTML : '(brak pagera)');
-    console.error(LOG, 'Widocznych pagerów na stronie: ' +
+    diag('BŁĄD', 'Paginacja stanęła. Stan pagera: ' + describePager(pagerNow));
+    diag('BŁĄD', 'Widocznych pagerów: ' +
       Array.from(document.querySelectorAll('.csDataPager')).filter(e => e.offsetParent !== null).length +
       ', wszystkich: ' + document.querySelectorAll('.csDataPager').length +
-      ', widoczna siatka listy: ' + !!getVisibleListGrid() +
-      ', widoczna siatka pozycji: ' + !!getVisiblePositionsGrid() +
-      ', aktywna zakładka: ' + (document.querySelector('li.k-state-active .k-link[title]') || {}).title);
+      ', siatka listy widoczna: ' + !!getVisibleListGrid() +
+      ', siatka pozycji widoczna: ' + !!getVisiblePositionsGrid() +
+      ', wierszy FA w siatce: ' + targetRows().length +
+      ', aktywna zakładka: ' + ((document.querySelector('li.k-state-active .k-link[title]') || {}).title || '-'));
+    diag('BŁĄD', 'HTML pagera: ' +
+      (pagerNow ? pagerNow.outerHTML.replace(/\s+/g, ' ') : '(brak pagera)'));
     return false;
   }
 
@@ -497,6 +531,9 @@
         .filter(doc => doc && !processedDocs.has(doc));
 
       ui.phase('Strona ' + pageNum + ': ' + docsOnPage.length + ' nowych faktur');
+      diag('STRONA', 'Strona ' + pageNum + ': wierszy FA ' + targetRows().length +
+        ', nowych ' + docsOnPage.length + ', przetworzonych łącznie ' + processed +
+        ', suma wg pagera ' + (knownTotal || '?') + ' | ' + describePager(getVisiblePager()));
 
       for (const targetDoc of docsOnPage) {
         throwIfAborted();
@@ -507,7 +544,8 @@
         // wskazywałaby wtedy na element wyrzucony z DOM.
         const row = targetRows().find(r => rowDocNumber(r) === targetDoc);
         if (!row) {
-          console.warn(LOG, 'Nie znaleziono wiersza dla', targetDoc);
+          diag('UWAGA', 'Nie znaleziono wiersza dla ' + targetDoc +
+            ' (wierszy FA w widocznej siatce: ' + targetRows().length + ')');
           continue;
         }
 
@@ -517,7 +555,7 @@
         if (!btn) {
           // Brak przycisku akcji to zwykle kwestia uprawnień: dokument widać,
           // ale nie wolno go otworzyć.
-          console.warn(LOG, 'Brak przycisku akcji dla', targetDoc);
+          diag('UWAGA', 'Brak przycisku akcji dla ' + targetDoc + ' (uprawnienia?)');
           continue;
         }
 
@@ -526,8 +564,11 @@
         const grid = await waitFor(() => getVisiblePositionsGrid());
         if (!grid) {
           consecutiveFailures++;
-          console.error(LOG, 'Nie udało się otworzyć faktury', targetDoc,
-            '(porażka ' + consecutiveFailures + ')');
+          diag('BŁĄD', 'Nie udało się otworzyć faktury ' + targetDoc +
+            ' (porażka ' + consecutiveFailures + ' z ' + MAX_CONSECUTIVE_FAILURES +
+            '). Siatka listy widoczna: ' + !!getVisibleListGrid() +
+            ', aktywna zakładka: ' +
+            ((document.querySelector('li.k-state-active .k-link[title]') || {}).title || '-'));
 
           // ODZYSKIWANIE. Bez tego jedna nieudana faktura kładła cały przebieg:
           // otwarta zakładka przykrywała listę, więc każdy kolejny dokument
@@ -538,7 +579,8 @@
           await sleep(DELAY_AFTER_CLOSE);
 
           if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-            console.error(LOG, consecutiveFailures, 'nieudanych otwarć z rzędu — przerywam.');
+            diag('BŁĄD', consecutiveFailures + ' nieudanych otwarć faktur z rzędu — ' +
+              'przerywam na ' + processed + ' fakturach. To NIE jest problem z paginacją.');
             return { positions, invoices: processed, partial: true };
           }
           continue;
@@ -567,7 +609,7 @@
       if (!getVisibleListGrid() || getVisiblePositionsGrid()) {
         const stray = document.querySelector('li.k-state-active .csCloseButton_span');
         if (stray) {
-          console.warn(LOG, 'Przed zmianą strony domykam zakładkę, która przykryła listę.');
+          diag('UWAGA', 'Przed zmianą strony domykam zakładkę, która przykryła listę.');
           stray.click();
           await waitFor(() => getVisibleListGrid());
           await sleep(DELAY_AFTER_CLOSE);
@@ -576,14 +618,19 @@
 
       const pager = getVisiblePager();
       if (!pagerHasNextPage(pager)) {
+        // Koniec listy wg pagera. Jeśli przetworzonych jest wyraźnie mniej niż
+        // suma rekordów, to pager skłamał — i to jest ślad, którego szukamy.
+        diag('INFO', 'Pager mówi, że nie ma kolejnych stron, po ' + processed +
+          ' fakturach (suma wg pagera: ' + (knownTotal || '?') + '). ' +
+          describePager(pager));
         ui.phase('Brak kolejnych stron.');
         break;
       }
 
       ui.phase('Przechodzę do strony ' + (pageNum + 1) + '...');
       if (!await goToNextPage(pager)) {
-        console.error(LOG, 'Kończę na ' + processed + ' fakturach z ' +
-          (knownTotal || '?') + ' — nie udało się przejść na stronę ' + (pageNum + 1) + '.');
+        diag('BŁĄD', 'Kończę na ' + processed + ' fakturach z ' + (knownTotal || '?') +
+          ' — nie udało się przejść na stronę ' + (pageNum + 1) + '. Przyczyna: PAGINACJA.');
         return { positions, invoices: processed, partial: true };
       }
       pageNum++;
@@ -838,13 +885,13 @@
 
     const failed = todo.filter(i => !i.transportKnown);
     if (failed.length === todo.length && todo.length > 0) {
-      console.error(LOG, 'Nie udało się ustalić warunków przewozu dla ŻADNEGO produktu. ' +
+      diag('BŁĄD', 'Nie udało się ustalić warunków przewozu dla ŻADNEGO produktu. ' +
         'Najczęstsze przyczyny: brak zgody @connect esavpol.pl w Tampermonkey, ' +
         'wylogowanie ze sklepu albo wyniki wyszukiwania renderowane JavaScriptem ' +
         '(wtedy w surowym HTML nie ma linków i trzeba to robić inaczej).');
     }
     if (failed.length) {
-      console.warn(LOG, 'Bez rozpoznanych warunków przewozu: ' +
+      diag('UWAGA', 'Bez rozpoznanych warunków przewozu: ' +
         failed.map(i => i.sku + ' (' + i.transport + ')').join(', '));
     }
     return { checked: todo.length, failed: failed.length };
@@ -1106,6 +1153,15 @@
       '<button data-role="copy" type="button" style="flex:0 0 auto;width:100%;cursor:pointer;',
       '    font:inherit;font-size:12px;padding:7px 10px;border:0;border-radius:4px;',
       '    background:#36b37e;color:#04231a;font-weight:600"></button>',
+      // Dziennik jest dostępny zawsze, ale przy wyniku częściowym jest
+      // podświetlony — wtedy jest jedyną rzeczą, która mówi, co przerwało
+      // przebieg. Bez tego trzeba było mieć otwartą konsolę PRZED startem.
+      '<button data-role="diag" type="button" style="flex:0 0 auto;width:100%;cursor:pointer;',
+      '    font:inherit;font-size:11px;padding:5px 10px;border-radius:4px;',
+      meta.partial
+        ? 'border:0;background:#5a3a3a;color:#ffd9d4;font-weight:600">📄 Kopiuj dziennik przebiegu (dlaczego się urwało)'
+        : 'border:1px solid rgba(255,255,255,.2);background:transparent;color:#f5f7fa;opacity:.65">📄 Kopiuj dziennik przebiegu',
+      '</button>',
       // Tabela jest JEDYNYM elementem, który wolno skracać i przewijać.
       '<div style="flex:1 1 auto;overflow:auto;min-height:0">',
       '  <table style="border-collapse:collapse;font-size:11px;width:100%">',
@@ -1121,6 +1177,17 @@
       '    </tr></thead><tbody>', rows, '</tbody></table>',
       '</div>'
     ].join('');
+
+    const diagBtn = rb.querySelector('[data-role="diag"]');
+    diagBtn.addEventListener('click', async () => {
+      const label = diagBtn.textContent;
+      const ok = await copyToClipboard(diagReport());
+      diagBtn.textContent = ok
+        ? '✔ Dziennik w schowku (' + DIAG.lines.length + ' linii)'
+        : '✘ Nie udało się skopiować — dziennik jest w konsoli';
+      if (!ok) console.log(diagReport());
+      setTimeout(() => { diagBtn.textContent = label; }, 2500);
+    });
 
     const copyBtn = rb.querySelector('[data-role="copy"]');
     const toggle = rb.querySelector('[data-role="onlynoncold"]');
@@ -1163,8 +1230,9 @@
       try {
         await annotateTransport(items, ui);
       } catch (err) {
-        if (err && err.aborted) console.warn(LOG, 'Dociąganie warunków przewozu przerwane.');
-        else console.error(LOG, 'Dociąganie warunków przewozu nie udało się:', err);
+        if (err && err.aborted) diag('UWAGA', 'Dociąganie warunków przewozu przerwane.');
+        else diag('BŁĄD', 'Dociąganie warunków przewozu nie udało się: ' +
+          (err && err.message ? err.message : String(err)));
       } finally {
         selectionBusy = false;
         // Przerysowanie odtwarza panel z nowym zaznaczeniem i świeżymi flagami;
@@ -1196,10 +1264,14 @@
 
   async function run() {
     ABORT.requested = false;
+    diagReset();
     const ui = createPanel();
 
     try {
       const res = await collectAll(ui);
+      diag(res.partial ? 'UWAGA' : 'INFO', 'Zbieranie zakończone: ' + res.invoices +
+        ' faktur, ' + res.positions.length + ' pozycji, wynik ' +
+        (res.partial ? 'CZĘŚCIOWY' : 'pełny'));
       const items = aggregate(res.positions, res.invoices);
 
       // Warunki przewozu dopiero TERAZ, gdy znane są wagi: sprawdzamy wyłącznie
@@ -1211,10 +1283,11 @@
           await annotateTransport(items, ui);
         } catch (err) {
           if (err && err.aborted) {
-            console.warn(LOG, 'Sprawdzanie warunków przewozu przerwane — ' +
+            diag('UWAGA', 'Sprawdzanie warunków przewozu przerwane — ' +
               'pokazuję wynik bez pełnych flag chłodni.');
           } else {
-            console.error(LOG, 'Sprawdzanie warunków przewozu nie udało się:', err);
+            diag('BŁĄD', 'Sprawdzanie warunków przewozu nie udało się: ' +
+              (err && err.message ? err.message : String(err)));
           }
         }
       }
@@ -1228,7 +1301,7 @@
       showResults(ui, items, res);
     } catch (err) {
       if (err && err.aborted) {
-        console.warn(LOG, 'Przebieg przerwany przez użytkownika.');
+        diag('UWAGA', 'Przebieg przerwany przez użytkownika.');
         if (panel) {
           ui.finish('Przerwane', false);
           ui.el('detail').textContent = 'Nic nie policzyłem — uruchom ponownie, ' +
@@ -1236,13 +1309,31 @@
         }
         return;
       }
-      console.error(LOG, err);
+      diag('BŁĄD', 'Przebieg wywalił się: ' + (err && err.stack ? err.stack : String(err)));
       if (panel) {
         ui.finish('Błąd', false);
         ui.el('detail').textContent = (err && err.message ? err.message : String(err)) +
-          ' — szczegóły w konsoli.';
+          ' — kliknij poniżej, żeby skopiować dziennik.';
+        showDiagOnly(ui);
       }
     }
+  }
+
+  // Awaryjne wyjście: gdy nie ma wyniku, panel i tak musi dać dziennik do
+  // schowka — bez niego zostaje samo „Błąd" i nic do wklejenia.
+  function showDiagOnly(ui) {
+    const rb = ui.el('resultbox');
+    rb.style.display = 'flex';
+    rb.innerHTML = '<button data-role="diag" type="button" style="width:100%;cursor:pointer;' +
+      'font:inherit;font-size:12px;padding:7px 10px;border:0;border-radius:4px;' +
+      'background:#5a3a3a;color:#ffd9d4;font-weight:600">📄 Kopiuj dziennik przebiegu</button>';
+    const b = rb.querySelector('[data-role="diag"]');
+    b.addEventListener('click', async () => {
+      const ok = await copyToClipboard(diagReport());
+      b.textContent = ok ? '✔ Dziennik w schowku (' + DIAG.lines.length + ' linii)' : '✘ Nie udało się';
+      if (!ok) console.log(diagReport());
+      setTimeout(() => { b.textContent = '📄 Kopiuj dziennik przebiegu'; }, 2500);
+    });
   }
 
   // ---------- Wstrzyknięcie przycisku ----------
