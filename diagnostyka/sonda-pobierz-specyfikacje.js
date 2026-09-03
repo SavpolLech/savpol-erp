@@ -1,5 +1,5 @@
 // Sonda: czy skrypt pobierze specyfikację PDF sam, przez API? — wklej w konsolę.
-// WERSJA: 2026-09-03.8
+// WERSJA: 2026-09-03.9
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -17,7 +17,9 @@
 // ani w ERP.
 //
 // Jak używać:
-//   1. Otwórz kartę produktu w ERP (dowolną zakładkę) i wklej ten plik.
+//   1. OTWÓRZ PRODUKT przyciskiem EDYCJA — adres musi zawierać
+//      /pl/<SKU>/csitemsonebro-… . Na liście katalogu sonda nie zadziała,
+//      bo ERP wysyła tam żądania innego rodzaju. Potem wklej ten plik.
 //   2. savpolSondaSpec()
 //   3. Wejdź na karcie produktu w zakładkę ZAŁĄCZNIKI. Sonda potrzebuje
 //      kliknięcia, po którym ERP naprawdę czyta dane, a nie tylko przerysowuje
@@ -33,7 +35,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-03.8';
+  const WERSJA = '2026-09-03.9';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const TYP_SPECYFIKACJI = '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0';
@@ -433,7 +435,24 @@
     return s;
   };
 
+  // Sonda działa TYLKO na otwartej karcie produktu (widok csItemsOneBro).
+  // Na liście katalogu ERP wysyła żądania innego rodzaju: jest ich sporo, więc
+  // licznik rośnie i wygląda, jakby wszystko szło dobrze, ale nie niosą ani
+  // danych sesji, ani wiersza produktu. Bez tego sprawdzenia użytkownik klika
+  // w nieskończoność, a sonda milczy.
+  function naKarcieProduktu() {
+    return /\/csitemsonebro/i.test(location.href);
+  }
+
   window.savpolSondaSpec = function () {
+    if (!naKarcieProduktu()) {
+      console.warn('%c[sonda] JESTEŚ NA LIŚCIE KATALOGU, NIE NA KARCIE PRODUKTU.\n'
+        + 'Adres: ' + location.href + '\n'
+        + 'Otwórz produkt przyciskiem EDYCJA (adres zmieni się na /pl/<SKU>/csitemsonebro-…),\n'
+        + 'wklej plik ponownie i uruchom savpolSondaSpec().',
+        'font-weight:bold');
+      return;
+    }
     const origSend = XMLHttpRequest.prototype.send;
     const origOpen = XMLHttpRequest.prototype.open;
     ruszone = false;
