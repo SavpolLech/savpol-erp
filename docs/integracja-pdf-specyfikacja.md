@@ -89,6 +89,30 @@ Przydatne pola wiersza `csAttachments`:
 | `IsFile` | `1` | czy to plik, a nie link |
 | `VersionId` | `2` | wersja; akcja bierze ostatnią |
 
+## Potwierdzone na żywym ERP (3 września 2026)
+
+Sonda przeszła cały łańcuch na produkcie `0004288`, który ma trzy załączniki,
+w tym **dwie** specyfikacje — czyli dokładnie przypadek wymagający wyboru po
+dacie:
+
+```
+wierszy załączników: 3
+  Specyfikacja … | wersja=1   | dodano=2017-02-01
+  Specyfikacja … | wersja=1   | dodano=2019-05-30
+  Atest          | wersja=108 | dodano=2026-08-17
+kandydatów: 2, biorę najnowszy (2019-05-30)
+HTTP 200 | typ: application/pdf | bajtów: 796457 | sygnatura "%PDF-"
+```
+
+**Nazwę pliku bierzemy z odpowiedzi akcji (`FileName`), nie z siatki.** Serwer
+oddaje ją już oczyszczoną i to ona pasuje do adresu. W tym przypadku
+`LocalFileName` i `FileName` były zgodne, ale w nagraniu z `0011347` różniły
+się myślnikami i podkreślnikami — po co zgadywać, skoro serwer podaje gotową.
+
+**Skrót „FileIdent = RemoteIdent wielkimi literami" znowu się potwierdził**,
+ale zostajemy przy akcji. Obie specyfikacje miały wersję 1, więc ten przebieg
+w ogóle nie sprawdził przypadku wielu wersji — a Atest obok ma ich 108.
+
 ## Rzecz do sprawdzenia przy implementacji
 
 W adresie nazwa pliku brzmi `CM_CAL_E4_U70.pdf`, a w siatce `LocalFileName`

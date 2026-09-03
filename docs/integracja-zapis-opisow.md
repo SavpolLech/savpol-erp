@@ -94,16 +94,59 @@ czasie, nadpiszemy go bez ostrzeżenia i bez śladu.
 Dlatego zapamiętanie poprzedniej treści przed zapisem nie jest wygodą, tylko
 warunkiem — to jedyna droga powrotu.
 
+## Jak wywołać API ze skryptu (potwierdzone 3 września 2026)
+
+Sprawdzone na żywym ERP sondą `diagnostyka/sonda-pobierz-specyfikacje.js`
+(cały łańcuch odczyt → akcja → pobranie pliku przeszedł).
+
+**Dane sesji bierzemy z żywego żądania.** `SID`, `SessionId`, `CompaniesId`,
+`CPG` i `ParentUniqName` (identyfikator widoku) da się przechwycić, podpinając
+się pod `XMLHttpRequest`, i serwer je przyjmuje. `ParentUniqName` zmienia się
+między sesjami, więc nic z tego nie wolno wpisać na sztywno.
+
+**Żądania odczytu odtwarzamy z wzorca strony, nie składamy sami.** Próba
+złożenia własnego zapytania o siatkę kończyła się kolejnymi odmowami
+(„Brakujący: cssuplangmasterdata", potem „Brakujący: csitems"), a gdy dołożono
+komplet zestawów — wyjątkiem po stronie serwera. Skuteczna okazała się metoda
+prostsza: złapać żądanie, które strona wysyła sama przy wejściu na daną
+zakładkę, i powtórzyć je, podmieniając wyłącznie `DelegateIdent` i `QueryUID`
+(te są jednorazowe).
+
+**Uwaga na kartoteki.** Jeden produkt bywa kilkoma kartotekami (`0004288`
+i `0004288-M`), a wyszukiwanie zwraca obie. Wiersz `csItems` trzeba wybierać
+po SKU z adresu strony, nie brać ostatniego widzianego.
+
+## Kształt ODPOWIEDZI różni się od żądania
+
+To kosztowało kilka podejść, bo objawiało się jako „zero wierszy" przy
+poprawnym zapytaniu — czyli wyglądało na brak danych w ERP, a było błędem
+czytania.
+
+Siatki w odpowiedzi leżą w:
+
+```
+Result.RefreshObjectReturnList[N].DataTable
+```
+
+i mają `DataSetSQLIdent` równe **`null`**. Szukanie ich po nazwie zestawu nie
+zadziała. **Rozpoznajemy je po kolumnach** — np. siatka załączników to ta,
+która ma `csAttachmentsId`.
+
+Sama odpowiedź jest w `JSONResult`: base64 ZIP-a spakowanego **deflate**
+(w żądaniach ZIP jest bez kompresji — to nie to samo). W przeglądarce
+rozpakowuje to `DecompressionStream('deflate-raw')` po ręcznym odcięciu
+nagłówka ZIP-a.
+
 ## Czego jeszcze nie wiemy
 
 1. **GUID-y pozostałych rodzajów opisu.** Znamy tylko „Nazwa produktu".
    Opis PDP, meta title i meta description mają własne `csB2BDescriptionTypesG`
    — do odczytania przez jednorazową edycję każdego z tych pól z włączonym
-   nagraniem.
-2. **Skąd wziąć `SID` i `SessionId`** bez podsłuchiwania żądań. Siedzą
-   w payloadzie, więc strona musi je gdzieś trzymać; do znalezienia w globalach.
-3. **`csItemsDesc4B2BPortalsId` dla nowego opisu** — gdy produkt jeszcze nie ma
+   nagraniem (nagrania A, B, C).
+2. **`csItemsDesc4B2BPortalsId` dla nowego opisu** — gdy produkt jeszcze nie ma
    wiersza danego typu. Zapewne osobna akcja „dodaj", nie „zmień".
+3. **Przełącznik WYSIWYG → textarea** (`isExternalEditor`?) — czy przy zapisie
+   przez API trzeba go ustawiać razem z treścią.
 
 ## Zasady zapisu (obowiązują niezależnie od transportu)
 
