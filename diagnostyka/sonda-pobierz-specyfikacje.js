@@ -1,5 +1,5 @@
 // Sonda: czy skrypt pobierze specyfikację PDF sam, przez API? — wklej w konsolę.
-// WERSJA: 2026-09-03.7
+// WERSJA: 2026-09-03.8
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -24,13 +24,16 @@
 //      ekran — ta zakładka zawsze idzie po dane. Potem rusza sama.
 //   4. savpolSondaKopiuj()  → wynik do schowka.
 //
+// Gdy sonda milczy: savpolSondaStan() powie od razu, czego jej brakuje —
+// nie trzeba czekać, aż skończy się poczekalnia.
+//
 // Wynik ma wycięte hasło, ale ZOSTAWIA SID (bez niego nie widać, czy adres
 // pliku był poprawny). Traktuj go jak dane sesji: nie wrzucaj do repo.
 
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-03.7';
+  const WERSJA = '2026-09-03.8';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const TYP_SPECYFIKACJI = '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0';
@@ -408,11 +411,35 @@
     console.log('%c[sonda] GOTOWE — po wynik: savpolSondaKopiuj()', 'font-weight:bold');
   }
 
+  // Stan nasłuchu trzymany na zewnątrz, żeby dało się o niego zapytać w każdej
+  // chwili. Wcześniej siedział w domknięciu i jedyną drogą do informacji
+  // „na czym stanęło" było odczekanie pełnej poczekalni — czyli półtorej
+  // minuty na odpowiedź, która jest gotowa od pierwszej sekundy.
+  let ruszone = false;
+  let kopertaZRodzicem = null;
+  let wszystkich = 0, pasujacych = 0;
+
+  window.savpolSondaStan = function () {
+    const s = [
+      'stan sondy (wersja ' + WERSJA + ')',
+      '  żądań widzianych: ' + wszystkich + ', w tym do API ERP: ' + pasujacych,
+      '  dane sesji: ' + (kopertaZRodzicem ? 'mam' : 'BRAK'),
+      '  widziane kartoteki: ' + (Object.keys(produkty).join(', ') || '(żadnej)'),
+      '  zebrane zestawy: ' + (Object.keys(kontekst).length || 0),
+      '  ruszyła: ' + (ruszone ? 'tak' : 'nie'),
+      '  adres strony: ' + location.href
+    ].join('\n');
+    console.log(s);
+    return s;
+  };
+
   window.savpolSondaSpec = function () {
     const origSend = XMLHttpRequest.prototype.send;
     const origOpen = XMLHttpRequest.prototype.open;
-    let ruszone = false;
-    let kopertaZRodzicem = null;
+    ruszone = false;
+    kopertaZRodzicem = null;
+    wszystkich = 0;
+    pasujacych = 0;
 
     function odepnij() {
       XMLHttpRequest.prototype.send = origSend;
@@ -453,8 +480,6 @@
     // przechwyciłem" ma dwa zupełnie różne znaczenia: albo klikasz w miejsca,
     // które nie idą po dane, albo konsola jest podpięta do innej ramki niż ta,
     // w której ERP pracuje (aplikacja ma w sobie iframe). Licznik je rozdziela.
-    let wszystkich = 0, pasujacych = 0;
-
     XMLHttpRequest.prototype.open = function (m, u) { this.__url = u; return origOpen.apply(this, arguments); };
     XMLHttpRequest.prototype.send = function (body) {
       try {
@@ -472,8 +497,8 @@
 
     // Sygnał życia po 12 s — żeby nie czekać półtorej minuty na wiadomość,
     // że nasłuch w ogóle nie ma czego słuchać.
-    setTimeout(() => {
-      if (ruszone) return;
+    const bicie = setInterval(() => {
+      if (ruszone) { clearInterval(bicie); return; }
       if (wszystkich === 0) {
         console.warn('%c[sonda] NIE WIDZĘ ŻADNYCH ŻĄDAŃ. To najpewniej nie wina '
           + 'klikania: konsola jest podpięta do innej ramki niż ERP. Nad konsolą '
@@ -481,16 +506,19 @@
           + 'aplikacji, wklej plik ponownie i uruchom savpolSondaSpec().',
           'font-weight:bold');
       } else {
-        console.log('[sonda] żądań widzianych: ' + wszystkich + ', w tym do API ERP: '
-          + pasujacych + '. Jeśli drugie jest zerem, kliknij zakładkę ZAŁĄCZNIKI.');
+        console.log('[sonda] żądań: ' + wszystkich + ', do API ERP: ' + pasujacych
+          + ' | dane sesji: ' + (kopertaZRodzicem ? 'mam' : 'brak')
+          + ' | kartoteki: ' + (Object.keys(produkty).join(', ') || 'brak')
+          + '  → czekam. Zakładka ZAŁĄCZNIKI daje komplet.');
       }
-    }, 12000);
+    }, 10000);
 
     // Poczekalnia jest dłuższa (90 s), bo trzeba trafić w konkretne kliknięcie,
     // a nie w jakiekolwiek. Po czasie sonda NIE MILCZY: składa wynik tak samo
     // jak przy udanym przebiegu, żeby zawsze było co przysłać.
     setTimeout(() => {
       if (!ruszone) {
+        clearInterval(bicie);
         odepnij();
         naglowek('NIE UDAŁO SIĘ ZEBRAĆ DANYCH STARTOWYCH');
         log('żądań widzianych w ogóle: ' + wszystkich + ', w tym do API ERP: ' + pasujacych);
