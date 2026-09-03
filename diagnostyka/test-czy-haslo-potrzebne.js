@@ -1,4 +1,7 @@
 // Czy ERP wymaga hasła w payloadzie, czy wystarczy sesja? — wklej w konsolę.
+// WERSJA: 2026-09-03.3
+//            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
+//            inny numer, w przegladarce siedzi starsza kopia.
 //
 // PO CO TO: ERP dokleja `LoginInfo` z loginem i hasłem otwartym tekstem do
 // KAŻDEGO żądania. Jeśli serwer faktycznie to hasło sprawdza, skrypt musiałby
@@ -28,6 +31,8 @@
 
 (function () {
   'use strict';
+
+  const WERSJA = '2026-09-03.3';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const WRAZLIWE = /("(?:Password|Pwd|Haslo|Hasło|Token|AccessToken|ApiKey)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
@@ -282,5 +287,5 @@
                    : '[test] NIE UDAŁO SIĘ skopiować — użyj: copy(savpolTestWynik)');
   }
 
-  console.log('[test] gotowe. Uruchom: savpolTestHasla(). Wynik NIE trafi sam do schowka — po niego savpolTestKopiuj()');
+  console.log('[test] wersja ' + WERSJA + ' — gotowe. Uruchom: savpolTestHasla(). Wynik NIE trafi sam do schowka — po niego savpolTestKopiuj()');
 })();

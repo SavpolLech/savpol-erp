@@ -1,4 +1,7 @@
 // Sonda: czy skrypt pobierze specyfikację PDF sam, przez API? — wklej w konsolę.
+// WERSJA: 2026-09-03.5
+//            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
+//            inny numer, w przegladarce siedzi starsza kopia.
 //
 // PO CO: chcemy, żeby skrypt sam ściągał specyfikację i wysyłał ją do apki,
 // zamiast żebyś przeklejał PDF ręcznie. Zanim to trafi do skryptu na stałe,
@@ -26,6 +29,8 @@
 
 (function () {
   'use strict';
+
+  const WERSJA = '2026-09-03.5';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const TYP_SPECYFIKACJI = '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0';
@@ -458,5 +463,5 @@
     console.log('[sonda] słucham. Wejdź na karcie produktu w zakładkę ZAŁĄCZNIKI — to kliknięcie niesie komplet danych, których potrzebuję.');
   };
 
-  console.log('[sonda] gotowe. Uruchom: savpolSondaSpec()');
+  console.log('[sonda] wersja ' + WERSJA + ' — gotowe. Uruchom: savpolSondaSpec()');
 })();

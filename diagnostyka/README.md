@@ -38,3 +38,26 @@ kolumny w siatce, inne zakładki i brak przycisku akcji w wierszu. Selektor
 działający u jednego pracownika trafia wtedy w nic u drugiego. Zgadywanie,
 czym się różnią, kosztowało już trzy podejścia przy wykrywaniu zakładki
 katalogu — log zastępuje zgadywanie.
+
+## Wersjonowanie snippetów
+
+Każdy plik `.js` w tym katalogu ma u góry linię:
+
+```
+// WERSJA: 2026-09-03.5
+```
+
+i wypisuje ten numer w konsoli zaraz po wklejeniu:
+
+```
+[sonda] wersja 2026-09-03.5 — gotowe. Uruchom: savpolSondaSpec()
+```
+
+**Po co.** Snippety poprawia się po kilka razy dziennie, a schowek i historia
+konsoli żyją własnym życiem — łatwo wkleić starą kopię i zastanawiać się przez
+kwadrans, dlaczego zachowuje się inaczej, niż mówi rozmowa. Zdarzyło się
+dokładnie to. Numer w konsoli rozstrzyga to jednym spojrzeniem.
+
+Format: `RRRR-MM-DD.N`, gdzie `N` rośnie z każdą poprawką tego samego dnia.
+Podbijaj przy KAŻDEJ zmianie treści, choćby jednoznakowej — numer jest po to,
+żeby dwie kopie dało się odróżnić, a nie żeby opisywał wagę zmian.

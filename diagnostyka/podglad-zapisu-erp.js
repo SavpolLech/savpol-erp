@@ -1,4 +1,7 @@
 // Podgląd żądań zapisu w ERP — do wklejenia w konsolę przeglądarki.
+// WERSJA: 2026-09-03.2
+//            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
+//            inny numer, w przegladarce siedzi starsza kopia.
 //
 // Po co: zanim skrypt zacznie zapisywać opisy przez API ERP, trzeba wiedzieć,
 // JAK ten zapis wygląda naprawdę — który endpoint, jakie pola, co jest
@@ -25,6 +28,8 @@
 
 (function () {
   'use strict';
+
+  const WERSJA = '2026-09-03.2';
 
   const MUTUJACE = ['POST', 'PUT', 'PATCH', 'DELETE'];
   const LIMIT_TRESCI = 20000;   // dłuższe ciała ucinamy, żeby schowek nie puchł
@@ -199,5 +204,5 @@
                    : '[sniff] NIE UDAŁO SIĘ skopiować — użyj: copy(savpolSniffText())');
   }
 
-  console.log('[sniff] gotowe. savpolSniffStart() → zapisz w ERP → savpolSniffCopy()');
+  console.log('[sniff] wersja ' + WERSJA + ' — gotowe. savpolSniffStart() → zapisz w ERP → savpolSniffCopy()');
 })();
