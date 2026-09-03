@@ -1,5 +1,5 @@
 // Sonda: czy skrypt pobierze specyfikację PDF sam, przez API? — wklej w konsolę.
-// WERSJA: 2026-09-03.6
+// WERSJA: 2026-09-03.7
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -30,7 +30,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-03.6';
+  const WERSJA = '2026-09-03.7';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const TYP_SPECYFIKACJI = '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0';
@@ -157,6 +157,16 @@
   // twarde wartości byłyby złe i przestarzałe.
   const kontekst = {};
 
+  // Produkty widziane po drodze, każdy osobno pod swoim SKU.
+  //
+  // Zwykłe „nowszy wypiera starszy" tu nie wystarcza: jeden produkt ma czasem
+  // kilka kartotek (0004288 i 0004288-M — ta druga na potrzeby wewnętrzne),
+  // a szukanie po numerze zwraca obie. Kliknięcie w każdą z nich wysyła jej
+  // wiersz, więc do sondy trafiał ten kliknięty JAKO OSTATNI, a nie ten,
+  // którego kartę użytkownik faktycznie otworzył. Zapytanie szło wtedy
+  // o niewłaściwą kartotekę i wracało puste.
+  const produkty = {};
+
   function zbierzKontekst(koperta) {
     const lista = koperta && koperta.OperationInvokeInput
       && koperta.OperationInvokeInput.RefreshInputObject
@@ -170,6 +180,18 @@
       if (!id) return;
       if (!kontekst[id]) n++;
       kontekst[id] = w;   // nowszy stan wypiera starszy
+
+      // csItems rozbijamy na pojedyncze wiersze, żeby dało się później wybrać
+      // ten właściwy zamiast brać ostatni z brzegu.
+      if (id === 'csItems') {
+        const dt = w.DataTableInit && w.DataTableInit.DataTable;
+        naObiekty(dt).forEach((wiersz, idx) => {
+          if (!wiersz.Item) return;
+          const kopia = JSON.parse(JSON.stringify(w));
+          kopia.DataTableInit.DataTable.Rows = [dt.Rows[idx]];
+          produkty[wiersz.Item] = kopia;
+        });
+      }
     });
     return n;
   }
@@ -186,23 +208,29 @@
     log('ParentUniqName (widok): ' + (rodzic || '(brak — spróbuję bez niego)'));
     const nazwyKtx = Object.keys(kontekst);
     log('zebrany kontekst: ' + (nazwyKtx.length ? nazwyKtx.join(', ') : '(NIC)'));
-    const produkt = kontekst.csItems && naObiekty(kontekst.csItems.DataTableInit.DataTable)[0];
-    if (produkt) log('produkt w kontekście: ' + produkt.Item + ' (csItemsId=' + produkt.csItemsId + ')');
-
-    // Wiersz produktu bierzemy z ostatniego żądania strony, a ono nie musi
-    // dotyczyć karty, którą masz przed oczami — może pochodzić z listy albo
-    // z karty pomocniczej (końcówka -M). Adres strony zawiera SKU otwartej
-    // karty, więc porównanie jest darmowe, a bez niego „zero załączników"
-    // znaczy dwie różne rzeczy naraz.
+    // O produkt pytamy tego, którego kartę masz otwartą — SKU jest w adresie.
+    // Wcześniej sonda brała po prostu ostatni widziany wiersz, przez co przy
+    // dwóch kartotekach tego samego produktu trafiała w niewłaściwą.
     log('adres strony: ' + location.href);
+    log('widziane kartoteki: ' + (Object.keys(produkty).join(', ') || '(żadnej)'));
+
     const zUrl = /\/pl\/([^/]+)\/csitemsonebro/i.exec(location.href);
-    if (zUrl && produkt) {
-      const wUrl = decodeURIComponent(zUrl[1]);
-      if (wUrl !== produkt.Item) {
-        log('UWAGA: karta pokazuje ' + wUrl + ', a kontekst dotyczy ' + produkt.Item + '.');
-        log('  Pytam o ten z kontekstu. Jeśli to nie ten, o który Ci chodzi:');
-        log('  odśwież kartę właściwego produktu i uruchom sondę od nowa.');
-      }
+    const wUrl = zUrl ? decodeURIComponent(zUrl[1]) : null;
+    let wybranyId = null;
+
+    if (wUrl && produkty[wUrl]) {
+      kontekst.csItems = produkty[wUrl];
+      wybranyId = wUrl;
+      log('biorę kartotekę z adresu strony: ' + wUrl);
+    } else if (wUrl) {
+      log('UWAGA: karta pokazuje ' + wUrl + ', ale nie widziałem jej wiersza.');
+      log('  Wejdź na tej karcie w zakładkę ZAŁĄCZNIKI i uruchom sondę od nowa.');
+    }
+
+    const produkt = kontekst.csItems && naObiekty(kontekst.csItems.DataTableInit.DataTable)[0];
+    if (produkt) {
+      log('produkt w kontekście: ' + produkt.Item + ' (csItemsId=' + produkt.csItemsId + ')'
+        + (wybranyId ? '' : '  ← ostatni widziany, NIE z adresu'));
     }
 
     naglowek('2. Odczyt listy załączników');
