@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Mapa produktów (waga per grupa klientów)
 // @namespace    savpol-erp-tools
-// @version      1.3.0
+// @version      1.4.0
 // @description  Przechodzi przefiltrowaną listę dokumentów sprzedaży, otwiera każdą fakturę, zbiera SKU/ilości/netto i buduje listę produktów posortowaną po wadze (częstotliwość x obrót), z medianą i P90 sprzedaży. Wynik do schowka jednym klikiem.
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-mapa-produktow.user.js
@@ -66,13 +66,30 @@
   // spisem magazynu. Po zakończeniu przebiegu próg reguluje się w panelu,
   // bo dopiero na gotowej liście widać, gdzie naprawdę wypada granica.
   const COPY_MIN_WEIGHT = 15;
-  const COPY_WEIGHT_STEP = 1;
-  const COPY_WEIGHT_MAX = 100;
 
-  // Bieżący próg. Trzymany osobno od stałej, bo zmienia go użytkownik w panelu,
-  // a filtry (copyItems) są wołane z kilku miejsc — przekazywanie progu przez
-  // wszystkie te wywołania zaśmiecałoby je bez potrzeby.
-  let copyThreshold = COPY_MIN_WEIGHT;
+  // Ręczne odstępstwa od progu, po SKU. Próg jest tylko punktem wyjścia —
+  // ostateczną listę składa człowiek klikając wiersze, bo o tym, czy produkt
+  // należy do listy grupy, decyduje wiedza o towarze, a nie sama arytmetyka.
+  // Dwa zbiory, a nie jeden „wybrane", żeby zmiana progu w kodzie nie
+  // unieważniała ręcznych decyzji.
+  const manualIn = new Set();
+  const manualOut = new Set();
+
+  function isSelected(item) {
+    if (manualIn.has(item.sku)) return true;
+    if (manualOut.has(item.sku)) return false;
+    return item.weight > COPY_MIN_WEIGHT;
+  }
+
+  function toggleSelected(item) {
+    if (isSelected(item)) {
+      manualIn.delete(item.sku);
+      if (item.weight > COPY_MIN_WEIGHT) manualOut.add(item.sku);
+    } else {
+      manualOut.delete(item.sku);
+      if (!(item.weight > COPY_MIN_WEIGHT)) manualIn.add(item.sku);
+    }
+  }
 
   // ---------- Warunki przewozu (esavpol.pl) ----------
   // ERP nie trzyma informacji o tym, czy towar jedzie w chłodni — to wie sklep.
@@ -744,10 +761,11 @@
   // tę samą wartość, więc wklej zostaje czterokolumnowy.
   const TRANSPORT_COLUMN = ['Przewóz', i => i.transport || ''];
 
-  // Kandydaci do arkusza: sam bieżący próg wagi. Ten sam zestaw idzie do
-  // sprawdzania w sklepie, więc chłodnia nie jest tu jeszcze brana pod uwagę.
+  // Kandydaci do arkusza: zaznaczone wiersze (próg + ręczne poprawki). Ten sam
+  // zestaw idzie do sprawdzania w sklepie, więc chłodnia nie jest tu jeszcze
+  // brana pod uwagę.
   function copyItems(items) {
-    return items.filter(i => i.weight > copyThreshold);
+    return items.filter(isSelected);
   }
 
   function clipboardRows(items, onlyNonCold) {
@@ -795,7 +813,7 @@
     box.id = PANEL_ID;
     box.style.cssText = [
       'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483000',
-      'width:420px', 'max-width:92vw', 'max-height:80vh', 'box-sizing:border-box',
+      'width:560px', 'max-width:94vw', 'max-height:82vh', 'box-sizing:border-box',
       'display:flex', 'flex-direction:column',
       'padding:14px 16px', 'background:#1f2933', 'color:#f5f7fa', 'border-radius:8px',
       'box-shadow:0 6px 24px rgba(0,0,0,.35)',
@@ -818,9 +836,12 @@
       '  <span data-role="time"></span>',
       '</div>',
       '<div data-role="detail" style="margin-top:8px;font-size:12px;opacity:.7;word-break:break-word"></div>',
+      // flex-direction i gap są tu, a nie w treści wyniku, bo treść jest
+      // przerysowywana po każdej zmianie progu. `min-height:0` pozwala tabeli
+      // się skrócić i przewijać, zamiast rozpychać panel poza ekran.
       '<div data-role="resultbox" style="display:none;margin-top:10px;padding-top:10px;',
-      '    border-top:1px solid rgba(255,255,255,.15);min-height:0;display:none;',
-      '    flex-direction:column"></div>'
+      '    border-top:1px solid rgba(255,255,255,.15);min-height:0;',
+      '    flex-direction:column;gap:8px"></div>'
     ].join('');
 
     document.body.appendChild(box);
@@ -882,7 +903,9 @@
         el('phase').textContent = text;
         el('bar').style.width = '100%';
         el('bar').style.background = ok ? '#36b37e' : '#ff5630';
-        el('time').textContent = formatElapsed(Date.now() - started);
+        const elapsed = formatElapsed(Date.now() - started);
+        el('time').textContent = elapsed;
+        return elapsed;
       }
     };
   }
@@ -906,16 +929,20 @@
   let onlyNonColdState = COLD_CHAIN.ONLY_NON_COLD_DEFAULT;
 
   // Blokada na czas dociągania danych ze sklepu. Bez niej szybkie klikanie
-  // w „−/+" odpalałoby kilka nakładających się przebiegów po tych samych SKU.
-  let thresholdBusy = false;
+  // w wiersze odpalałoby kilka nakładających się przebiegów po tych samych SKU.
+  let selectionBusy = false;
 
   function showResults(ui, items, meta) {
     const totalNet = items.reduce((s, i) => s + i.net, 0);
     const hasTransport = items.some(i => i.transport);
 
-    ui.finish(meta.partial
+    const elapsed = ui.finish(meta.partial
       ? 'Zatrzymane w trakcie — wynik częściowy'
       : 'Gotowe', !meta.partial);
+    // Licznik po zakończeniu podsumowuje CAŁY przebieg. Bez tego zostawał na
+    // nim stan ostatniego etapu („6 z 6 produktów"), co wyglądało, jakby
+    // przebieg objął sześć faktur.
+    ui.counts(meta.invoices + ' faktur → ' + items.length + ' produktów', elapsed);
 
     const candidates = copyItems(items);
     const coldCount = candidates.filter(i => i.cold).length;
@@ -923,16 +950,22 @@
 
     ui.el('detail').textContent = items.length + ' produktów z ' + meta.invoices +
       ' faktur, obrót netto ' + formatPl(totalNet, 2) + ' PLN. ' +
-      'Nad progiem wagi ' + copyThreshold + ': ' + candidates.length + '.' +
+      'Zaznaczonych: ' + candidates.length + ' (próg wagi ' + COPY_MIN_WEIGHT + ').' +
       (hasTransport ? ' W chłodni/mroźni: ' + coldCount +
         (unknownCount ? ', nierozpoznanych: ' + unknownCount : '') + '.' : '') +
       (meta.partial ? ' Przebieg nie objął całej listy — potraktuj to jako próbkę.' : '');
 
-    // Wiersze pod progiem są wyszarzone, a nie ukryte: widać wtedy, co siedzi
-    // tuż pod granicą, i można świadomie ruszyć próg zamiast się domyślać,
-    // czy nie odciął czegoś ważnego.
-    const rows = items.slice(0, 40).map(i =>
-      '<tr style="' + (i.weight > copyThreshold ? '' : 'opacity:.4') + '">' +
+    // WSZYSTKIE produkty, nie pierwsze 40: skoro listę składa się klikaniem,
+    // każdy wiersz musi być dostępny. Tabela ma własne przewijanie.
+    // Niezaznaczone są wyszarzone, a nie ukryte — widać wtedy, co siedzi tuż
+    // pod progiem i co warto dobrać ręcznie.
+    const rows = items.map(i =>
+      '<tr data-sku="' + i.sku + '" title="Kliknij, żeby ' +
+      (isSelected(i) ? 'usunąć z listy' : 'dodać do listy') + '" style="cursor:pointer;' +
+      (isSelected(i) ? '' : 'opacity:.4') + '">' +
+      '<td style="padding:2px 4px;text-align:center;' +
+      (isSelected(i) ? 'color:#36b37e' : 'opacity:.5') + '">' +
+      (isSelected(i) ? '&#10003;' : '&#183;') + '</td>' +
       '<td style="padding:2px 4px;opacity:.5">' + i.rank + '</td>' +
       '<td style="padding:2px 4px;font-weight:600;white-space:nowrap">' + i.sku + '</td>' +
       '<td style="padding:2px 4px">' + i.name + '</td>' +
@@ -946,29 +979,28 @@
     const rb = ui.el('resultbox');
     rb.style.display = 'flex';
     rb.innerHTML = [
-      '<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;font-size:12px">',
-      '  <span>Próg wagi</span>',
-      '  <button data-role="wdown" type="button" title="Obniż próg" style="cursor:pointer;font:inherit;',
-      '      width:26px;padding:2px 0;border:1px solid rgba(255,255,255,.25);border-radius:4px;',
-      '      background:transparent;color:#f5f7fa">&minus;</button>',
-      '  <input data-role="wval" type="number" step="', COPY_WEIGHT_STEP, '" min="0" max="', COPY_WEIGHT_MAX, '"',
-      '      value="', copyThreshold, '" style="width:58px;font:inherit;padding:2px 4px;text-align:center;',
-      '      border:1px solid rgba(255,255,255,.25);border-radius:4px;background:#111a22;color:#f5f7fa">',
-      '  <button data-role="wup" type="button" title="Podnieś próg" style="cursor:pointer;font:inherit;',
-      '      width:26px;padding:2px 0;border:1px solid rgba(255,255,255,.25);border-radius:4px;',
-      '      background:transparent;color:#f5f7fa">+</button>',
-      '  <span data-role="wnote" style="opacity:.55;margin-left:4px"></span>',
+      '<div style="flex:0 0 auto;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px">',
+      '  <span style="opacity:.65;flex:1 1 220px;min-width:0">Kliknij wiersz, żeby dodać',
+      '    produkt do listy albo go usunąć</span>',
+      (manualIn.size || manualOut.size)
+        ? '<button data-role="reset" type="button" style="flex:0 0 auto;cursor:pointer;' +
+          'font:inherit;font-size:11px;padding:2px 8px;border:1px solid rgba(255,255,255,.25);' +
+          'border-radius:4px;background:transparent;color:#f5f7fa">wróć do progu (' +
+          (manualIn.size + manualOut.size) + ')</button>'
+        : '',
       '</div>',
-      hasTransport ? '<label style="display:flex;gap:6px;align-items:center;margin-bottom:8px;' +
+      hasTransport ? '<label style="flex:0 0 auto;display:flex;gap:6px;align-items:center;' +
         'font-size:12px;cursor:pointer"><input data-role="onlynoncold" type="checkbox"' +
         (onlyNonColdState ? ' checked' : '') + '>' +
         '<span>tylko bez chłodni i mroźni</span></label>' : '',
-      '<button data-role="copy" type="button" style="width:100%;cursor:pointer;font:inherit;',
-      '    font-size:12px;padding:7px 10px;border:0;border-radius:4px;background:#36b37e;',
-      '    color:#04231a;font-weight:600"></button>',
-      '<div style="margin-top:8px;overflow:auto;min-height:0">',
+      '<button data-role="copy" type="button" style="flex:0 0 auto;width:100%;cursor:pointer;',
+      '    font:inherit;font-size:12px;padding:7px 10px;border:0;border-radius:4px;',
+      '    background:#36b37e;color:#04231a;font-weight:600"></button>',
+      // Tabela jest JEDYNYM elementem, który wolno skracać i przewijać.
+      '<div style="flex:1 1 auto;overflow:auto;min-height:0">',
       '  <table style="border-collapse:collapse;font-size:11px;width:100%">',
       '    <thead><tr style="text-align:left;opacity:.6">',
+      '      <th style="padding:2px 4px"></th>',
       '      <th style="padding:2px 4px"></th><th style="padding:2px 4px">SKU</th>',
       '      <th style="padding:2px 4px">Nazwa</th>',
       '      <th style="padding:2px 4px;text-align:right">Waga</th>',
@@ -977,8 +1009,6 @@
       hasTransport ? '<th style="padding:2px 4px">Przewóz</th>' : '',
       '      <th style="padding:2px 4px;text-align:right">Fkt</th>',
       '    </tr></thead><tbody>', rows, '</tbody></table>',
-      items.length > 40 ? '<div style="opacity:.5;padding:4px">...pozostałe ' +
-        (items.length - 40) + ' w schowku i w konsoli</div>' : '',
       '</div>'
     ].join('');
 
@@ -1004,54 +1034,49 @@
       setTimeout(refreshCopyLabel, 2500);
     });
 
-    // ---------- Regulacja progu ----------
+    // ---------- Ręczne składanie listy ----------
 
-    const wval = rb.querySelector('[data-role="wval"]');
-    const wnote = rb.querySelector('[data-role="wnote"]');
-    const wdown = rb.querySelector('[data-role="wdown"]');
-    const wup = rb.querySelector('[data-role="wup"]');
+    // Dodanie produktu spod progu wpuszcza SKU, które nigdy nie było
+    // sprawdzane w sklepie — wtedy dociągamy warunki przewozu dla tego
+    // jednego produktu. Usunięcie z listy nigdy nic nie dociąga.
+    async function toggleRow(sku) {
+      if (selectionBusy) return;
+      const item = items.find(i => i.sku === sku);
+      if (!item) return;
 
-    // Ile produktów wejdzie po obniżeniu progu, a nie ma jeszcze warunków
-    // przewozu — to one wymagają odpytania sklepu.
-    const missingCount = copyItems(items).filter(i => !i.transport).length;
-    wnote.textContent = missingCount
-      ? missingCount + ' bez danych o przewozie'
-      : (hasTransport ? 'warunki przewozu kompletne' : '');
+      toggleSelected(item);
 
-    async function applyThreshold(next) {
-      if (thresholdBusy) return;
-      const clamped = Math.max(0, Math.min(COPY_WEIGHT_MAX, Math.round(next)));
-      if (clamped === copyThreshold) { wval.value = copyThreshold; return; }
-      copyThreshold = clamped;
-
-      // Obniżenie progu wpuszcza produkty, których jeszcze nie sprawdzaliśmy
-      // w sklepie. Podniesienie progu nigdy nic nie dociąga — tylko zawęża
-      // to, co już jest.
-      const pending = COLD_CHAIN.ENABLE && copyItems(items).filter(i => !i.transport).length;
+      const pending = COLD_CHAIN.ENABLE && copyItems(items).some(i => !i.transport);
       if (!pending) { showResults(ui, items, meta); return; }
 
-      thresholdBusy = true;
-      [wval, wdown, wup].forEach(e => { e.disabled = true; });
+      selectionBusy = true;
       try {
         await annotateTransport(items, ui);
       } catch (err) {
         if (err && err.aborted) console.warn(LOG, 'Dociąganie warunków przewozu przerwane.');
         else console.error(LOG, 'Dociąganie warunków przewozu nie udało się:', err);
       } finally {
-        thresholdBusy = false;
-        // Przerysowanie odtwarza panel z nowym progiem i świeżymi flagami;
+        selectionBusy = false;
+        // Przerysowanie odtwarza panel z nowym zaznaczeniem i świeżymi flagami;
         // stan przełącznika chłodni siedzi poza tą funkcją, więc nie przepada.
         showResults(ui, items, meta);
       }
     }
 
-    wdown.addEventListener('click', () => applyThreshold(copyThreshold - COPY_WEIGHT_STEP));
-    wup.addEventListener('click', () => applyThreshold(copyThreshold + COPY_WEIGHT_STEP));
-    // Reagujemy na „change", nie na „input" — inaczej wpisanie „25" ręcznie
-    // odpalałoby przebieg najpierw dla progu 2.
-    wval.addEventListener('change', () => applyThreshold(parseFloat(wval.value)));
-    wval.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); applyThreshold(parseFloat(wval.value)); }
+    // Nasłuch na tbody, nie na każdym wierszu: wierszy jest tyle, ile
+    // produktów, a panel przerysowuje się po każdym kliknięciu.
+    const tbody = rb.querySelector('tbody');
+    if (tbody) tbody.addEventListener('click', e => {
+      const tr = e.target.closest('tr[data-sku]');
+      if (tr) toggleRow(tr.getAttribute('data-sku'));
+    });
+
+    const resetBtn = rb.querySelector('[data-role="reset"]');
+    if (resetBtn) resetBtn.addEventListener('click', () => {
+      if (selectionBusy) return;
+      manualIn.clear();
+      manualOut.clear();
+      showResults(ui, items, meta);
     });
 
     console.log(LOG, 'Wynik:', items);
