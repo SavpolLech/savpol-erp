@@ -1,5 +1,5 @@
 // Sonda: czy skrypt pobierze specyfikację PDF sam, przez API? — wklej w konsolę.
-// WERSJA: 2026-09-03.12
+// WERSJA: 2026-09-03.13
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -35,7 +35,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-03.12';
+  const WERSJA = '2026-09-03.13';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const TYP_SPECYFIKACJI = '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0';
@@ -75,17 +75,39 @@
   // Odpowiedzi ERP to base64 ZIP-a spakowanego deflate, w dodatku zapisanego
   // strumieniowo (rozmiary 0xFFFFFFFF). Rozpakowujemy przez DecompressionStream,
   // wycinając nagłówek ZIP-a ręcznie — biblioteki nie mamy i nie chcemy.
+  // Rozpakowanie MELDUJE, na czym stanelo. Wczesniej oddawalo null przy kazdym
+  // niepowodzeniu, wiec sonda pracowala na pustce i raportowala „zero wierszy",
+  // co wygladalo jak brak danych w ERP zamiast jak wlasna awaria.
+  let ostatniProblem = null;
+
   async function rozpakujOdpowiedz(b64) {
-    const sur = atob(b64);
+    ostatniProblem = null;
+    let sur;
+    try { sur = atob(b64); } catch (e) { ostatniProblem = 'base64 nie do odczytu'; return null; }
     const bajty = Uint8Array.from(sur, c => c.charCodeAt(0));
-    if (bajty[0] !== 0x50 || bajty[1] !== 0x4b) return null;
+    if (bajty[0] !== 0x50 || bajty[1] !== 0x4b) {
+      // Nie ZIP — byc moze zwykly tekst.
+      const jako = new TextDecoder().decode(bajty);
+      if (jako.trim().charAt(0) === '{') return jako;
+      ostatniProblem = 'to nie ZIP ani JSON (pierwsze bajty: '
+        + Array.from(bajty.slice(0, 4)).join(',') + ')';
+      return null;
+    }
     const metoda = bajty[8] | (bajty[9] << 8);
     const start = 30 + (bajty[26] | (bajty[27] << 8)) + (bajty[28] | (bajty[29] << 8));
     const dane = bajty.slice(start);
     if (metoda === 0) return new TextDecoder().decode(dane);
-    if (typeof DecompressionStream !== 'function') return null;
-    const st = new Blob([dane]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-    return await new Response(st).text();
+    if (typeof DecompressionStream !== 'function') {
+      ostatniProblem = 'przeglądarka nie ma DecompressionStream';
+      return null;
+    }
+    try {
+      const st = new Blob([dane]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return await new Response(st).text();
+    } catch (e) {
+      ostatniProblem = 'deflate padł: ' + (e && e.message || e) + ' (metoda ' + metoda + ')';
+      return null;
+    }
   }
 
   function wyslij(body) {
@@ -117,7 +139,12 @@
       const j = JSON.parse(odp.tekst);
       blad = j.Error || null;
       if (!blad && j.JSONResult) {
-        return { ok: true, tresc: await rozpakujOdpowiedz(j.JSONResult) };
+        const tresc = await rozpakujOdpowiedz(j.JSONResult);
+        if (tresc === null) {
+          return { ok: false, blad: 'nie rozpakowałem odpowiedzi: ' + (ostatniProblem || '?'),
+                   surowa: String(j.JSONResult).slice(0, 120) + '…' };
+        }
+        return { ok: true, tresc: tresc };
       }
     } catch (e) { blad = 'nieczytelna odpowiedź'; }
     return { ok: false, blad: blad || ('HTTP ' + odp.status), surowa: odp.tekst.slice(0, 300) };
@@ -363,8 +390,13 @@
       }
       return koniec();
     }
+    log('odpowiedź rozpakowana: ' + (lista.tresc ? lista.tresc.length + ' znaków' : 'PUSTA'));
     let dane;
-    try { dane = JSON.parse(lista.tresc); } catch (e) { dane = null; }
+    try { dane = JSON.parse(lista.tresc); } catch (e) {
+      dane = null;
+      log('odpowiedź nie jest JSON-em: ' + (e && e.message || e));
+      log('początek: ' + String(lista.tresc || '').slice(0, 200));
+    }
     const znal = siatkaPoKolumnie(dane, 'csAttachmentsId');
     log('siatek w odpowiedzi: ' + znal.wszystkie.length);
     znal.wszystkie.forEach(sk => log('  ' + sk.sciezka + ' — wierszy ' + sk.wierszy
