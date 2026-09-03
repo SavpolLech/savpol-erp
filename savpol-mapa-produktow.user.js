@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Mapa produktów (waga per grupa klientów)
 // @namespace    savpol-erp-tools
-// @version      1.4.0
+// @version      1.5.0
 // @description  Przechodzi przefiltrowaną listę dokumentów sprzedaży, otwiera każdą fakturę, zbiera SKU/ilości/netto i buduje listę produktów posortowaną po wadze (częstotliwość x obrót), z medianą i P90 sprzedaży. Wynik do schowka jednym klikiem.
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-mapa-produktow.user.js
@@ -338,6 +338,15 @@
     return isNaN(n) ? null : n;
   }
 
+  function pagerPageCount(pager) {
+    if (!pager) return null;
+    const e = pager.querySelector('.TotalPagesCount');
+    if (!e) return null;
+    const raw = (e.value || e.textContent || '').replace(/\s/g, '');
+    const n = parseInt(raw, 10);
+    return isNaN(n) ? null : n;
+  }
+
   function describePager(pager) {
     if (!pager) return '(brak widocznego pagera)';
     const val = sel => {
@@ -350,23 +359,75 @@
       'nextClass="' + (next ? next.className : 'brak') + '"'].join(' | ');
   }
 
+  // Zmiana strony potwierdzana jest numerem w polu strony, nie samym klikiem.
+  // Gdy klik w „następną" nie zadziała, jest DRUGIE podejście: numer strony
+  // wpisany wprost w pole. Powód: zaobserwowany przebieg, w którym po dwóch
+  // stronach klik przestawał ruszać siatkę, a przycisk nadal był aktywny.
   async function goToNextPage(pager) {
-    const inputBefore = pager.querySelector('.ActivePageNoInput');
-    const beforeVal = inputBefore ? inputBefore.value : null;
-    const next = pager.querySelector('.NextPageButton');
-    if (!next) return false;
-    next.click();
-    const changed = await waitFor(() => {
+    const pageNoBefore = pager.querySelector('.ActivePageNoInput');
+    const beforeVal = pageNoBefore ? pageNoBefore.value : null;
+    const beforeNum = parseInt((beforeVal || '').replace(/\s/g, ''), 10);
+
+    const pageChanged = () => {
       const p = getVisiblePager();
       const inp = p && p.querySelector('.ActivePageNoInput');
       return inp && inp.value !== beforeVal;
-    }, 40, 250);
-    await sleep(DELAY_AFTER_PAGE);
-    if (!changed) {
-      console.warn(LOG, 'Numer strony nie zmienił się po kliknięciu. Przed:', beforeVal,
-        '| po:', describePager(getVisiblePager()));
+    };
+
+    const next = pager.querySelector('.NextPageButton');
+    if (next) {
+      next.click();
+      if (await waitFor(pageChanged, 40, 250)) {
+        await sleep(DELAY_AFTER_PAGE);
+        return true;
+      }
+      console.warn(LOG, 'Klik w „następną stronę" nie zmienił numeru strony. Przed:',
+        beforeVal, '| po:', describePager(getVisiblePager()));
+    } else {
+      console.warn(LOG, 'Brak przycisku „następna strona" w widocznym pagerze.');
     }
-    return !!changed;
+
+    // Podejście drugie: wpisanie numeru strony. Pole reaguje na change i Enter,
+    // więc wysyłamy oba — nie wiadomo, którego słucha ta wersja interfejsu.
+    if (!isNaN(beforeNum)) {
+      const p = getVisiblePager();
+      const inp = p && p.querySelector('.ActivePageNoInput');
+      if (inp) {
+        console.warn(LOG, 'Próbuję wpisać numer strony ' + (beforeNum + 1) + ' wprost w pole.');
+        inp.focus();
+        inp.value = String(beforeNum + 1);
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+        inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true }));
+        inp.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, bubbles: true }));
+
+        // Tu numer w polu jest już zmieniony NASZĄ ręką, więc zmiana pola
+        // niczego nie dowodzi — czekamy na inne numery dokumentów w siatce.
+        const docsBefore = targetRows().map(rowDocNumber).join('|');
+        const moved = await waitFor(() => {
+          const now = targetRows().map(rowDocNumber).join('|');
+          return now && now !== docsBefore;
+        }, 40, 250);
+        await sleep(DELAY_AFTER_PAGE);
+        if (moved) {
+          console.log(LOG, 'Wpisanie numeru strony zadziałało.');
+          return true;
+        }
+        console.error(LOG, 'Wpisanie numeru strony też nie ruszyło siatki.');
+      }
+    }
+
+    // Pełny zrzut pagera do diagnozy — bez niego zostaje samo „stanęło".
+    const pagerNow = getVisiblePager();
+    console.error(LOG, 'Paginacja stanęła. Stan pagera: ' + describePager(pagerNow));
+    console.error(LOG, 'HTML pagera:', pagerNow ? pagerNow.outerHTML : '(brak pagera)');
+    console.error(LOG, 'Widocznych pagerów na stronie: ' +
+      Array.from(document.querySelectorAll('.csDataPager')).filter(e => e.offsetParent !== null).length +
+      ', wszystkich: ' + document.querySelectorAll('.csDataPager').length +
+      ', widoczna siatka listy: ' + !!getVisibleListGrid() +
+      ', widoczna siatka pozycji: ' + !!getVisiblePositionsGrid() +
+      ', aktywna zakładka: ' + (document.querySelector('li.k-state-active .k-link[title]') || {}).title);
+    return false;
   }
 
   // ---------- Zbieranie ----------
@@ -381,8 +442,43 @@
     let processed = 0;
     let pageNum = 1;
 
-    const total = pagerRecordCount(getVisiblePager());
-    ui.total(total);
+    // Licznik rekordów w ERP potrafi kłamać: na starcie pokazywał 21 (tyle, ile
+    // wierszy na stronie) przy 49 rekordach na trzech stronach. Dlatego suma
+    // jest ODŚWIEŻANA na każdej stronie, brana jako maksimum z obserwacji i —
+    // gdy licznik przeczy sam sobie — szacowana z liczby stron. Wpływa tylko na
+    // pasek postępu i ETA; pętlą nadal steruje przycisk „następna" i
+    // deduplikacja numerów dokumentów.
+    let knownTotal = null;
+    let maxRowsPerPage = 0;
+    // Dwie wartości osobno, NIE jedno maksimum: raz odczytany wiarygodny
+    // licznik (49) musi wygrywać z szacunkiem z liczby stron (3 × 21 = 63),
+    // także wtedy, gdy licznik zepsuje się w kolejnym kroku. Zwykłe
+    // maksimum podbijało wtedy poprawne 49 do 63.
+    let trustedTotal = null;
+    let estimatedTotal = null;
+
+    function refreshTotal() {
+      const pager = getVisiblePager();
+      const rec = pagerRecordCount(pager);
+      const pages = pagerPageCount(pager);
+      maxRowsPerPage = Math.max(maxRowsPerPage, targetRows().length);
+
+      // Licznik jest wiarygodny, gdy jest jedna strona albo gdy podaje więcej,
+      // niż mieści się na jednej stronie. Wartość równa liczbie wierszy na
+      // stronie przy wielu stronach to właśnie ten zaobserwowany bug.
+      if (rec && (!pages || pages <= 1 || rec > maxRowsPerPage)) {
+        trustedTotal = Math.max(trustedTotal || 0, rec);
+      }
+      if (pages && pages > 1 && maxRowsPerPage) {
+        estimatedTotal = pages * maxRowsPerPage;
+      }
+
+      const best = trustedTotal || estimatedTotal;
+      if (best && best !== knownTotal) {
+        knownTotal = best;
+        ui.total(best);
+      }
+    }
 
     while (processed < MAX_INVOICES && pageNum <= MAX_PAGES) {
       throwIfAborted();
@@ -393,6 +489,8 @@
       if (targetRows().length === 0) {
         await waitFor(() => targetRows().length > 0, 20, 300);
       }
+
+      refreshTotal();
 
       const docsOnPage = targetRows()
         .map(rowDocNumber)
@@ -464,6 +562,18 @@
 
       if (processed >= MAX_INVOICES) break;
 
+      // Zabłąkana zakładka faktury przykrywa listę, a wtedy getVisiblePager()
+      // zwraca pager NIE tej siatki i klik w „następną" idzie w próżnię.
+      if (!getVisibleListGrid() || getVisiblePositionsGrid()) {
+        const stray = document.querySelector('li.k-state-active .csCloseButton_span');
+        if (stray) {
+          console.warn(LOG, 'Przed zmianą strony domykam zakładkę, która przykryła listę.');
+          stray.click();
+          await waitFor(() => getVisibleListGrid());
+          await sleep(DELAY_AFTER_CLOSE);
+        }
+      }
+
       const pager = getVisiblePager();
       if (!pagerHasNextPage(pager)) {
         ui.phase('Brak kolejnych stron.');
@@ -472,8 +582,8 @@
 
       ui.phase('Przechodzę do strony ' + (pageNum + 1) + '...');
       if (!await goToNextPage(pager)) {
-        console.warn(LOG, 'Paginacja stanęła. Zebrano', processed, 'faktur. Pager:',
-          describePager(getVisiblePager()));
+        console.error(LOG, 'Kończę na ' + processed + ' fakturach z ' +
+          (knownTotal || '?') + ' — nie udało się przejść na stronę ' + (pageNum + 1) + '.');
         return { positions, invoices: processed, partial: true };
       }
       pageNum++;
