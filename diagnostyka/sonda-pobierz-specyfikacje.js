@@ -185,20 +185,41 @@
     if (produkt) log('produkt w kontekście: ' + produkt.Item + ' (csItemsId=' + produkt.csItemsId + ')');
 
     naglowek('2. Odczyt listy załączników');
-    // Cały zebrany kontekst plus nasze żądanie o załączniki. Własny wpis
-    // csAttachments pomijamy — zastępujemy go świeżym odczytem.
+    // NIE WYSYŁAMY CAŁEGO ZEBRANEGO KONTEKSTU. Próba „damy serwerowi wszystko,
+    // to na pewno nie zabraknie" skończyła się po jego stronie wyjątkiem
+    // (Odwołanie do obiektu nie zostało ustawione…) — 32 zestawy, w tym masa
+    // formularzy edycyjnych, to dla niego bełkot.
+    //
+    // Odtwarzamy dokładnie ten zestaw, który wysyła sama strona przy wejściu
+    // na zakładkę Załączniki: dwie siatki do odczytu i dwa zestawy stanu.
+    const POTRZEBNE = ['csSupLangMasterData', 'csItems'];
+    const brakujace = POTRZEBNE.filter(id => !kontekst[id]);
+    if (brakujace.length) {
+      log('brak w kontekście: ' + brakujace.join(', ') + ' — przerywam.');
+      return koniec();
+    }
+
     const tablice = {};
     let i = 0;
-    nazwyKtx.forEach(id => {
-      if (id === 'csAttachments') return;
-      tablice[String(i++)] = kontekst[id];
-    });
+    // Najpierw to, co ma wrócić z serwera…
     tablice[String(i++)] = {
       DataSetSQLIdent: 'csAttachments', SortList: [], DataTableInit: null,
       Refresh: true, PageSizeFromClient: 100, PageActual: 0,
       SelectStmType: 2, QueryUID: guid(), KeepPage: false
     };
+    tablice[String(i++)] = {
+      DataSetSQLIdent: 'csAttachmentsVersions',
+      SortList: [
+        { Alias: null, CaptionGuid: null, DefaultDirectSort: 2, DirectSort: 0, FieldName: 'ValidTo' },
+        { Alias: null, CaptionGuid: null, DefaultDirectSort: 2, DirectSort: 0, FieldName: 'VersionId' }
+      ],
+      DataTableInit: null, Refresh: true, PageSizeFromClient: 21, PageActual: 0,
+      SelectStmType: 2, QueryUID: guid(), KeepPage: false
+    };
+    // …potem stan, który serwer musi znać, żeby wiedzieć czyje i w jakim języku.
+    POTRZEBNE.forEach(id => { tablice[String(i++)] = kontekst[id]; });
     tablice.length = i;
+    log('wysyłam zestawy: csAttachments, csAttachmentsVersions, ' + POTRZEBNE.join(', '));
 
     const lista = await wywolaj(koperta, {
       OperationName: 'RefreshDataSetSQL_Synchronous',
