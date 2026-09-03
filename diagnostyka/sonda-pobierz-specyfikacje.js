@@ -1,5 +1,5 @@
 // Sonda: czy skrypt pobierze specyfikację PDF sam, przez API? — wklej w konsolę.
-// WERSJA: 2026-09-03.9
+// WERSJA: 2026-09-03.10
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -35,7 +35,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-03.9';
+  const WERSJA = '2026-09-03.10';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const TYP_SPECYFIKACJI = '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0';
@@ -420,6 +420,10 @@
   let ruszone = false;
   let kopertaZRodzicem = null;
   let wszystkich = 0, pasujacych = 0;
+  // Bez tej flagi savpolSondaStan() pokazywal zamrozone liczniki po wygasnieciu
+  // nasluchu i wygladalo to jak "klikam, a nic nie przybywa" - podczas gdy sonda
+  // po prostu juz nie sluchala.
+  let nasluchuje = false;
 
   window.savpolSondaStan = function () {
     const s = [
@@ -428,6 +432,7 @@
       '  dane sesji: ' + (kopertaZRodzicem ? 'mam' : 'BRAK'),
       '  widziane kartoteki: ' + (Object.keys(produkty).join(', ') || '(żadnej)'),
       '  zebrane zestawy: ' + (Object.keys(kontekst).length || 0),
+      '  nasłuch: ' + (nasluchuje ? 'aktywny' : 'ZAKOŃCZONY — uruchom savpolSondaSpec() ponownie'),
       '  ruszyła: ' + (ruszone ? 'tak' : 'nie'),
       '  adres strony: ' + location.href
     ].join('\n');
@@ -459,10 +464,12 @@
     kopertaZRodzicem = null;
     wszystkich = 0;
     pasujacych = 0;
+    nasluchuje = true;
 
     function odepnij() {
       XMLHttpRequest.prototype.send = origSend;
       XMLHttpRequest.prototype.open = origOpen;
+      nasluchuje = false;
     }
 
     // Nie startujemy z pierwszego lepszego żądania. Potrzebujemy koperty,
