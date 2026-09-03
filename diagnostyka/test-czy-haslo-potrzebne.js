@@ -37,6 +37,18 @@
     return (od < 0 || doo <= od) ? null : surowy.slice(od, doo + 1);
   }
 
+  // `Compress:false` nie znaczy „przyjmij goły JSON" — serwer nadal dekoduje
+  // Input z base64, tylko pomija rozpakowanie ZIP-a. Pierwsza wersja testu
+  // wysyłała czysty tekst i dostawała „dane wejściowe nie są prawidłowym
+  // ciągiem Base-64", czyli odpowiedź na pytanie, którego nie zadawaliśmy.
+  //
+  // btoa() przyjmuje znaki 0-255, a rozpakuj() oddaje dokładnie taki ciąg
+  // bajtów (atob nie dotyka kodowania), więc obieg tam i z powrotem jest
+  // wierny co do bajtu - także dla polskich znaków w treści.
+  function zapakuj(json) {
+    try { return btoa(json); } catch (e) { return null; }
+  }
+
   function wyslij(body) {
     return new Promise(resolve => {
       const x = new XMLHttpRequest();
@@ -147,26 +159,57 @@
     const zmieniono = bezHasla !== jsonSrodka;
     linie.push('Hasło znalezione i wyczyszczone w kopii: ' + (zmieniono ? 'tak' : 'NIE (wzorzec go nie zawierał)'));
 
-    // 1. Payload bez pakowania, z hasłem — sprawdza samą flagę Compress.
-    naglowek('1. Compress:false, hasło zostawione');
+    const b64Pelny = zapakuj(jsonSrodka);
+    const b64BezHasla = zapakuj(bezHasla);
+    if (!b64Pelny || !b64BezHasla) {
+      linie.push('');
+      linie.push('NIE UDAŁO SIĘ zakodować payloadu do base64 — reszta bez sensu.');
+      doSchowka(linie.join('\n'));
+      return;
+    }
+
+    // 1. Bez ZIP-a, ale w base64, z hasłem. Sprawdza samą flagę Compress:
+    //    jeśli to przejdzie, implementacja nie musi umieć pakować ZIP-a.
+    naglowek('1. Compress:false + base64, hasło zostawione');
     const a = await wyslij(JSON.stringify({
-      DictIdent: paczka.DictIdent, Input: jsonSrodka, Compress: false
+      DictIdent: paczka.DictIdent, Input: b64Pelny, Compress: false
     }));
     linie.push(ocena(a));
-    linie.push(odchudz(a.tekst));
+    linie.push(odchudz(a.tekst).slice(0, 400));
 
     // 2. To samo, ale z pustym hasłem — właściwe pytanie testu.
-    naglowek('2. Compress:false, hasło PUSTE');
+    naglowek('2. Compress:false + base64, hasło PUSTE');
     const b = await wyslij(JSON.stringify({
-      DictIdent: paczka.DictIdent, Input: bezHasla, Compress: false
+      DictIdent: paczka.DictIdent, Input: b64BezHasla, Compress: false
     }));
     linie.push(ocena(b));
-    linie.push(odchudz(b.tekst));
+    linie.push(odchudz(b.tekst).slice(0, 400));
+
+    // 3. Gdyby serwer nie chciał rozmawiać bez ZIP-a, pytanie o hasło i tak
+    //    zostaje otwarte — więc powtarzamy je na ORYGINALNEJ paczce, podmieniając
+    //    hasło w środku. ZIP jest tu zapisany bez kompresji, a hasło ma stałą
+    //    długość, więc podmiana znak w znak nie rusza rozmiarów ani CRC.
+    let c2 = null;
+    if (ocena(b) !== 'PRZYJĘTE') {
+      const tejSamejDlugosci = jsonSrodka.replace(
+        /("Password"\s*:\s*")([^"\\]*)(")/i,
+        (m, p, tresc, k) => p + 'x'.repeat(tresc.length) + k);
+      if (tejSamejDlugosci !== jsonSrodka) {
+        naglowek('3. Oryginalny ZIP, hasło podmienione na błędne (ta sama długość)');
+        const surowyZip = atob(paczka.Input);
+        const podmieniony = surowyZip.replace(jsonSrodka, tejSamejDlugosci);
+        c2 = await wyslij(JSON.stringify({
+          DictIdent: paczka.DictIdent, Input: btoa(podmieniony), Compress: true
+        }));
+        linie.push(ocena(c2));
+        linie.push(odchudz(c2.tekst).slice(0, 400));
+      }
+    }
 
     // 3. Oryginał w całości — punkt odniesienia. Gdyby padł, to znaczy że
     //    zepsuło się coś poza testem (wygasła sesja, zmienił się QueryUID)
     //    i wyników 1-2 nie wolno interpretować.
-    naglowek('3. Oryginalny payload bez zmian (punkt odniesienia)');
+    naglowek('4. Oryginalny payload bez zmian (punkt odniesienia)');
     const c = await wyslij(wzorzec);
     linie.push(ocena(c));
 
@@ -174,11 +217,18 @@
     if (ocena(c) !== 'PRZYJĘTE') {
       linie.push('Punkt odniesienia padł — test nierozstrzygający, powtórz.');
     } else if (ocena(b) === 'PRZYJĘTE') {
-      linie.push('Hasło NIE jest wymagane — wystarcza sesja. Droga przez API otwarta.');
+      linie.push('Hasło NIE jest wymagane, ZIP też nie. Droga przez API otwarta i prosta.');
+    } else if (c2 && ocena(c2) === 'PRZYJĘTE') {
+      linie.push('Hasło NIE jest sprawdzane (błędne przeszło) — wystarcza sesja,');
+      linie.push('ale payload musi być spakowany do ZIP-a.');
+    } else if (c2) {
+      linie.push('Hasło JEST sprawdzane — błędne zostało odrzucone.');
+      linie.push('Skrypt musiałby je przechowywać, więc droga przez API odpada.');
     } else if (ocena(a) === 'PRZYJĘTE') {
-      linie.push('Hasło JEST wymagane (bez niego odmowa), ale ZIP nie jest.');
+      linie.push('Hasło JEST wymagane (puste odrzucone), ale ZIP nie jest.');
     } else {
-      linie.push('Serwer odrzucił payload bez ZIP-a — flagi Compress nie da się pominąć.');
+      linie.push('Serwer nie przyjął payloadu bez ZIP-a i nie dało się podmienić hasła.');
+      linie.push('Test nierozstrzygający.');
     }
 
     doSchowka(linie.join('\n'));
