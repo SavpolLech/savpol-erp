@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.47.0
+// @version      2.48.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -120,6 +120,21 @@
   const GENERATOR = {
     ENABLE: true,
     URL: 'https://esavpol-pdp.vercel.app/'
+  };
+
+  // ---------- Konfiguracja: specyfikacja PDP z ERP do apki ----------
+  // Specyfikacja wisi w ERP przy produkcie jako zalacznik. Skrypt pobiera ja
+  // sam i wysyla do generatora, zeby uzytkownik nie musial jej przeklejac.
+  // Kontrakt: docs/integracja-pdf-specyfikacja.md.
+  const ERP_API = {
+    ENDPOINT: '/api/CommS_WCF_JSON.svc/OperatrionInvoke'  // literowka dostawcy
+  };
+  const SPEC_PDF = {
+    ENABLE: true,
+    ENDPOINT: '/api/spec-pdf',
+    // „Specyfikacja i wartosc energetyczna produktu" — produkt miewa tez inne
+    // zalaczniki (Atest), wiec filtr po typie jest konieczny.
+    TYP_GUID: '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0'
   };
 
   // ---------- Konfiguracja: historia faktur do repo ----------
@@ -1806,6 +1821,363 @@
   // Świadomie nie wysyłamy flagi „niepewne". Próg, poniżej którego wynik uchodzi
   // za słaby, trzyma generator — inaczej jego zmiana wymagałaby aktualizacji
   // skryptu u każdego pracownika z osobna.
+  // ==================== SPECYFIKACJA PDP: ERP → apka ====================
+  //
+  // Do tej pory jedynym ręcznym krokiem w budowaniu opisu było wklejenie do
+  // generatora PDF-a ze specyfikacją. Plik wisi w ERP przy produkcie, więc
+  // skrypt może go pobrać sam i wysłać do apki — użytkownik dostaje generator
+  // z gotową specyfikacją.
+  //
+  // Kontrakt i ustalenia: docs/integracja-pdf-specyfikacja.md.
+
+  // Podsłuch API ERP.
+  //
+  // Skrypt nie umie się do ERP zalogować i nie ma po co: strona robi to za
+  // niego. Wystarczy podpatrzyć jedno jej żądanie i przejąć z niego dane sesji.
+  // Sprawdzone sondą — serwer takie powtórzenie przyjmuje.
+  //
+  // Podsłuch jest BIERNY: niczego nie wysyła, tylko zapamiętuje. Instalujemy go
+  // przy starcie, żeby do czasu kliknięcia przycisku miał już komplet.
+  const erpPodsluch = {
+    koperta: null,          // ostatnia koperta z ParentUniqName (dane sesji)
+    szablonZalacznikow: null, // żądanie strony o listę załączników
+    produkty: {}            // wiersze csItems pod swoimi SKU
+  };
+
+  function erpZapamietaj(koperta) {
+    const wej = koperta && koperta.OperationInvokeInput;
+    const ri = wej && wej.RefreshInputObject;
+    if (!wej) return;
+    if (ri && ri.ParentUniqName) erpPodsluch.koperta = koperta;
+
+    const lista = ri && ri.DataTableInitList;
+    if (!lista) return;
+
+    let maZalaczniki = false;
+    Object.keys(lista).forEach(k => {
+      const w = lista[k];
+      if (!w || typeof w !== 'object') return;
+      const id = String(w.DataSetSQLIdent || '');
+      if (id === 'csAttachments' && w.Refresh === true) maZalaczniki = true;
+      if (id !== 'csItems' || !w.DataTableInit) return;
+
+      // Jeden produkt bywa kilkoma kartotekami (0004288 i 0004288-M), a szukanie
+      // po numerze zwraca obie. Trzymamy każdą osobno, żeby później wybrać tę
+      // właściwą zamiast ostatniej widzianej.
+      const dt = w.DataTableInit.DataTable;
+      erpNaObiekty(dt).forEach((wiersz, idx) => {
+        if (!wiersz.Item) return;
+        const kopia = JSON.parse(JSON.stringify(w));
+        kopia.DataTableInit.DataTable.Rows = [dt.Rows[idx]];
+        erpPodsluch.produkty[wiersz.Item] = kopia;
+      });
+    });
+    if (maZalaczniki) erpPodsluch.szablonZalacznikow = koperta;
+  }
+
+  function erpZainstalujPodsluch() {
+    const W = (typeof unsafeWindow !== 'undefined' && unsafeWindow) || window;
+    const XHR = W.XMLHttpRequest;
+    if (!XHR || XHR.prototype.__savpolPodsluch) return;
+    const origOpen = XHR.prototype.open;
+    const origSend = XHR.prototype.send;
+
+    XHR.prototype.open = function (m, u) {
+      this.__savpolUrl = u;
+      return origOpen.apply(this, arguments);
+    };
+    XHR.prototype.send = function (body) {
+      try {
+        if (typeof body === 'string'
+            && String(this.__savpolUrl || '').indexOf(ERP_API.ENDPOINT) >= 0) {
+          const paczka = JSON.parse(body);
+          const srodek = paczka && paczka.Input ? erpRozpakujZadanie(paczka.Input) : null;
+          if (srodek) erpZapamietaj(JSON.parse(srodek));
+        }
+      } catch (e) { /* jedno nieczytelne żądanie nie psuje podsłuchu */ }
+      return origSend.apply(this, arguments);
+    };
+    XHR.prototype.__savpolPodsluch = true;
+  }
+
+  // Żądania: base64 ZIP-a BEZ kompresji, więc JSON leży w środku otwartym
+  // tekstem — wystarczy odciąć nagłówki.
+  function erpRozpakujZadanie(b64) {
+    let s;
+    try { s = atob(b64); } catch (e) { return null; }
+    const a = s.indexOf('{'), b = s.lastIndexOf('}');
+    return (a < 0 || b <= a) ? null : s.slice(a, b + 1);
+  }
+
+  // Odpowiedzi: base64 ZIP-a spakowanego DEFLATE — to nie to samo co żądania.
+  async function erpRozpakujOdpowiedz(b64) {
+    const sur = atob(b64);
+    const bajty = Uint8Array.from(sur, c => c.charCodeAt(0));
+    if (bajty[0] !== 0x50 || bajty[1] !== 0x4b) {
+      const jako = new TextDecoder().decode(bajty);
+      return jako.trim().charAt(0) === '{' ? jako : null;
+    }
+    const metoda = bajty[8] | (bajty[9] << 8);
+    const start = 30 + (bajty[26] | (bajty[27] << 8)) + (bajty[28] | (bajty[29] << 8));
+    const dane = bajty.slice(start);
+    if (metoda === 0) return new TextDecoder().decode(dane);
+    if (typeof DecompressionStream !== 'function') return null;
+    const st = new Blob([dane]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return await new Response(st).text();
+  }
+
+  function erpNaObiekty(dt) {
+    if (!dt || !dt.FieldDefs || !dt.Rows) return [];
+    const nazwy = dt.FieldDefs.map(f => f.FieldName);
+    return dt.Rows.map(r => {
+      const o = {};
+      r.forEach((k, i) => { o[nazwy[i]] = k && 'Item' in k ? k.Item : k; });
+      return o;
+    });
+  }
+
+  // W ODPOWIEDZI SIATKI ROZPOZNAJEMY PO KOLUMNACH, NIE PO NAZWIE.
+  // Odpowiedź ma inny kształt niż żądanie: siatki leżą w
+  // Result.RefreshObjectReturnList[N].DataTable i mają DataSetSQLIdent = null.
+  // Szukanie po nazwie zwracało pustkę, co wyglądało jak brak danych w ERP,
+  // a było błędem czytania — kosztowało to cztery przebiegi sondy.
+  function erpSiatkaPoKolumnie(obj, kolumna, glebokosc) {
+    if (!obj || typeof obj !== 'object' || (glebokosc || 0) > 14) return null;
+    if (Array.isArray(obj.FieldDefs) && Array.isArray(obj.Rows)
+        && obj.FieldDefs.some(f => f.FieldName === kolumna)) return obj;
+    for (const k of Object.keys(obj)) {
+      const w = erpSiatkaPoKolumnie(obj[k], kolumna, (glebokosc || 0) + 1);
+      if (w) return w;
+    }
+    return null;
+  }
+
+  function erpGuid() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
+
+  // Wysyłka do API ERP: Compress:false + base64 samego JSON-a (ZIP zbędny).
+  // Hasła nie wysyłamy — serwer go nie sprawdza, więc nie ma powodu, żeby
+  // krążyło po sieci.
+  function erpWywolaj(operacja) {
+    const koperta = erpPodsluch.koperta;
+    if (!koperta) return Promise.resolve({ ok: false, blad: 'brak danych sesji' });
+    const paczka = JSON.parse(JSON.stringify(koperta));
+    paczka.OperationInvokeInput = Object.assign({}, paczka.OperationInvokeInput, operacja);
+    if (paczka.LoginInfo) paczka.LoginInfo.Password = '';
+
+    return new Promise(resolve => {
+      const x = new XMLHttpRequest();
+      x.open('POST', location.origin + ERP_API.ENDPOINT, true);
+      x.setRequestHeader('Content-Type', 'application/json; charset=utf-8');
+      x.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+      x.onloadend = async () => {
+        try {
+          const j = JSON.parse(x.responseText || '');
+          if (j.Error) return resolve({ ok: false, blad: String(j.Error).slice(0, 200) });
+          const tresc = j.JSONResult ? await erpRozpakujOdpowiedz(j.JSONResult) : null;
+          if (!tresc) return resolve({ ok: false, blad: 'nie rozpakowałem odpowiedzi' });
+          resolve({ ok: true, dane: JSON.parse(tresc) });
+        } catch (e) {
+          resolve({ ok: false, blad: 'nieczytelna odpowiedź: ' + (e && e.message || e) });
+        }
+      };
+      x.onerror = () => resolve({ ok: false, blad: 'błąd sieci' });
+      x.send(JSON.stringify({
+        DictIdent: 'csItemsOneBro',
+        Input: btoa(JSON.stringify(paczka)),
+        Compress: false
+      }));
+    });
+  }
+
+  // Lista załączników produktu.
+  //
+  // Odtwarzamy żądanie, które strona wysyła sama przy wejściu na zakładkę
+  // Załączniki, podmieniając wyłącznie jednorazowe identyfikatory. Składanie
+  // takiego zapytania od zera kończyło się serią odmów („Brakujący: …"), a po
+  // dołożeniu kompletu zestawów — wyjątkiem po stronie serwera.
+  async function erpCzytajZalaczniki(sku) {
+    const szablon = erpPodsluch.szablonZalacznikow;
+    if (!szablon) return { ok: false, blad: 'nie widziałem żądania o załączniki' };
+
+    const operacja = JSON.parse(JSON.stringify(szablon.OperationInvokeInput));
+    operacja.DelegateIdent = erpGuid();
+    const lista = operacja.RefreshInputObject && operacja.RefreshInputObject.DataTableInitList;
+    if (lista) Object.keys(lista).forEach(k => {
+      const w = lista[k];
+      if (!w || typeof w !== 'object') return;
+      if (w.QueryUID) w.QueryUID = erpGuid();
+      // Kartotekę podmieniamy na tę, o którą naprawdę pytamy — szablon mógł
+      // powstać przy innym produkcie.
+      if (String(w.DataSetSQLIdent || '') === 'csItems' && erpPodsluch.produkty[sku]) {
+        lista[k] = erpPodsluch.produkty[sku];
+      }
+    });
+
+    const odp = await erpWywolaj(operacja);
+    if (!odp.ok) return odp;
+    const siatka = erpSiatkaPoKolumnie(odp.dane, 'csAttachmentsId');
+    if (!siatka) return { ok: false, blad: 'w odpowiedzi nie ma siatki załączników' };
+    return { ok: true, wiersze: erpNaObiekty(siatka) };
+  }
+
+  // Wybór specyfikacji — dwa kroki, tak jak robi to człowiek:
+  //   1. który załącznik: typ „specyfikacja", a przy kilku najnowsza data;
+  //   2. która wersja: zawsze najnowsza, czym zajmuje się akcja w ERP.
+  function erpWybierzSpecyfikacje(wiersze) {
+    return wiersze
+      .filter(w => String(w.csAttachmentsTypesG || '').toLowerCase() === SPEC_PDF.TYP_GUID)
+      .sort((a, b) => String(b.AddDate || '').localeCompare(String(a.AddDate || '')))[0] || null;
+  }
+
+  async function erpInfoOPliku(wiersz) {
+    const odp = await erpWywolaj({
+      OperationName: 'ActionExecute',
+      Params: {
+        DictIdent: 'csItemsOneBro',
+        ActionIdent: 'csAttachmentsSaveToFileLastVersion',
+        DataSetTypeIdent: 'csAttachments',
+        __StartField__: 'FileDesc',
+        __SelectedRecords__: '<csSelectedRows><row><csAttachmentsG>'
+          + wiersz.csAttachmentsG + '</csAttachmentsG></row></csSelectedRows>',
+        __PageRecords__: '<csPageRecords><row></row></csPageRecords>',
+        __SortList__: '<SortList></SortList>',
+        HasParams: '0', ActionExecuteType: 0, LoginProviderObject: null
+      },
+      DelegateIdent: erpGuid(),
+      RefreshInputObject: null,
+      DataTableInitList: {
+        '0': {
+          DataSetSQLIdent: 'ActiveRecord', SortList: [],
+          DataTableInit: {
+            DataTable: {
+              FieldDefs: [{ Index: 0, FieldName: 'csAttachmentsId',
+                            FieldType: 'number', OriginalFieldType: 'System.Int64' }],
+              Rows: [[{ Item: wiersz.csAttachmentsId }]]
+            }
+          },
+          Refresh: false
+        },
+        length: 1
+      }
+    });
+    if (!odp.ok) return odp;
+    const info = odp.dane && odp.dane.OperationInvokeResult
+      && odp.dane.OperationInvokeResult.RemoteFileInfoList
+      && odp.dane.OperationInvokeResult.RemoteFileInfoList[0];
+    if (!info || !info.FileIdent) return { ok: false, blad: 'odpowiedź bez FileIdent' };
+    return { ok: true, info: info };
+  }
+
+  // Sam plik. Nazwę bierzemy z odpowiedzi akcji, nie z siatki — serwer oddaje
+  // ją już oczyszczoną i to ona pasuje do adresu.
+  async function erpPobierzPlik(info) {
+    const cpg = erpPodsluch.koperta.LoginInfo && erpPodsluch.koperta.LoginInfo.CPG;
+    const sid = erpPodsluch.koperta.OperationInvokeInput.SID;
+    const url = location.origin + '/api/attachment/get/' + cpg + '/OpenFileIdent/'
+      + btoa(info.FileIdent) + '/' + encodeURIComponent(info.FileName) + '?SID=' + sid;
+    const r = await fetch(url, { credentials: 'include' });
+    if (!r.ok) return { ok: false, blad: 'HTTP ' + r.status };
+    const buf = await r.arrayBuffer();
+    const bajty = new Uint8Array(buf);
+    // Sprawdzamy sygnaturę, a nie sam kod HTTP: ten ERP potrafi oddać 200
+    // z czymkolwiek, a apka i tak odrzuci nie-PDF.
+    if (new TextDecoder().decode(bajty.slice(0, 5)).indexOf('%PDF') !== 0) {
+      return { ok: false, blad: 'to nie jest PDF' };
+    }
+    let bin = '';
+    for (let i = 0; i < bajty.length; i += 8192) {
+      bin += String.fromCharCode.apply(null, bajty.subarray(i, i + 8192));
+    }
+    return { ok: true, base64: btoa(bin), bajtow: bajty.length };
+  }
+
+  function apkaZadanie(metoda, sciezka, dane) {
+    return new Promise(resolve => {
+      const origin = generatorOrigin();
+      if (!origin || typeof GM_xmlhttpRequest !== 'function') {
+        return resolve({ status: 0, body: {} });
+      }
+      GM_xmlhttpRequest({
+        method: metoda,
+        url: origin + sciezka,
+        headers: dane ? { 'Content-Type': 'application/json' } : {},
+        data: dane ? JSON.stringify(dane) : undefined,
+        timeout: 60000,
+        onload: res => {
+          let body = {};
+          try { body = JSON.parse(res.responseText); } catch (e) { /* nieistotne */ }
+          resolve({ status: res.status, body: body });
+        },
+        onerror: () => resolve({ status: 0, body: {} }),
+        ontimeout: () => resolve({ status: 0, body: {} })
+      });
+    });
+  }
+
+  // Całość, od SKU do wysłanego pliku.
+  //
+  // NIC TU NIE JEST KRYTYCZNE. Każde niepowodzenie kończy się wpisem w konsoli
+  // i zwróceniem powodu — przebieg leci dalej, a użytkownik co najwyżej wklei
+  // PDF ręcznie, czyli tak jak dotąd. Ta sama zasada, co przy awarii katalogu:
+  // brak jednego elementu degraduje wynik, nie kasuje pracy.
+  async function wyslijSpecyfikacjeDoApki(sku) {
+    if (!SPEC_PDF.ENABLE || !sku) return { ok: false, powod: 'wyłączone' };
+    try {
+      if (!erpPodsluch.koperta) return { ok: false, powod: 'brak danych sesji ERP' };
+
+      const lista = await erpCzytajZalaczniki(sku);
+      if (!lista.ok) return { ok: false, powod: lista.blad };
+
+      const wiersz = erpWybierzSpecyfikacje(lista.wiersze);
+      if (!wiersz) return { ok: false, powod: 'ten produkt nie ma specyfikacji' };
+
+      // Pre-check: gdy apka ma już ten sam załącznik w tej samej wersji, nie ma
+      // po co przesyłać megabajta. Klucz to PARA (załącznik, wersja) — sam numer
+      // wersji nie wystarcza, bo liczy się on w obrębie załącznika i dwie różne
+      // specyfikacje potrafią mieć obie „wersję 1".
+      const juz = await apkaZadanie('GET', SPEC_PDF.ENDPOINT + '?sku=' + encodeURIComponent(sku));
+      if (juz.status === 200 && juz.body && juz.body.exists
+          && String(juz.body.attachmentId) === String(wiersz.csAttachmentsId)
+          && String(juz.body.versionId) === String(wiersz.VersionId)) {
+        console.log('[Specyfikacja] Apka ma już aktualną wersję — nie wysyłam.');
+        return { ok: true, pominiete: true };
+      }
+
+      const info = await erpInfoOPliku(wiersz);
+      if (!info.ok) return { ok: false, powod: info.blad };
+
+      const plik = await erpPobierzPlik(info.info);
+      if (!plik.ok) return { ok: false, powod: plik.blad };
+
+      const odp = await apkaZadanie('POST', SPEC_PDF.ENDPOINT, {
+        sku: sku,
+        pdfBase64: plik.base64,
+        meta: {
+          attachmentId: String(wiersz.csAttachmentsId),
+          versionId: String(wiersz.VersionId),
+          filename: info.info.FileName,
+          erpAddedAt: wiersz.AddDate || null
+        }
+      });
+      if (odp.status === 413) {
+        return { ok: false, powod: 'plik za duży dla apki (' + plik.bajtow + ' B)' };
+      }
+      if (odp.status !== 200 || !odp.body || !odp.body.ok) {
+        return { ok: false, powod: 'apka odrzuciła wysyłkę (HTTP ' + odp.status + ')' };
+      }
+      console.log('[Specyfikacja] Wysłana do apki:', info.info.FileName,
+        plik.bajtow + ' B', odp.body.unchanged ? '(bez zmian)' : '');
+      return { ok: true, nazwa: info.info.FileName, bajtow: plik.bajtow };
+    } catch (e) {
+      return { ok: false, powod: 'wyjątek: ' + (e && e.message || e) };
+    }
+  }
+
   function openGenerator(anchorSku, skusText, hints) {
     const cross = (skusText || '')
       .split(/[\s,;]+/)
@@ -2067,6 +2439,14 @@
       }
 
       if (EXPORT_CROSS_SELL_CSV) downloadCrossSellCSV(analysis);
+
+      // Specyfikacja do apki. Świadomie PRZED otwarciem generatora, żeby
+      // użytkownik zastał ją już na miejscu. Niepowodzenie nie przerywa
+      // przebiegu — najwyżej wklei PDF ręcznie, czyli tak jak dotąd.
+      ui.phase('Pobieram specyfikację produktu...');
+      button.textContent = '📄 Pobieram specyfikację...';
+      const spec = await wyslijSpecyfikacjeDoApki(mainSku);
+      if (!spec.ok) console.warn('[Specyfikacja] Nie wysłano: ' + spec.powod);
 
       // Do kolejki trafia też przebieg bez kandydatów: sam fakt, że sygnał był
       // zbyt słaby, jest wynikiem — bez zapisu ktoś powtórzy tę samą robotę.
@@ -4131,6 +4511,10 @@
     // wygasła sesja), tutaj użytkownik jest właśnie zalogowany.
     flushHistoryQueue();
   } else {
+    // Podsluch API ERP instalujemy od razu: do czasu, az uzytkownik kliknie
+    // przycisk, strona zdazy wyslac wlasne zadania i mamy z czego przejac dane
+    // sesji. Jest bierny — niczego nie wysyla.
+    erpZainstalujPodsluch();
     setInterval(() => {
       insertButtonIfNeeded();
       insertEsavpolButtonIfNeeded();
