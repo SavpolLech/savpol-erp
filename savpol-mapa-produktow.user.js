@@ -1,13 +1,16 @@
 // ==UserScript==
 // @name         Savpol ERP -> Mapa produktów (waga per grupa klientów)
 // @namespace    savpol-erp-tools
-// @version      1.1.0
+// @version      1.2.0
 // @description  Przechodzi przefiltrowaną listę dokumentów sprzedaży, otwiera każdą fakturę, zbiera SKU/ilości/netto i buduje listę produktów posortowaną po wadze (częstotliwość x obrót), z medianą i P90 sprzedaży. Wynik do schowka jednym klikiem.
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-mapa-produktow.user.js
 // @downloadURL  https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-mapa-produktow.user.js
 // @match        https://erp.savpol.pl/*
-// @grant        none
+// @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @connect      esavpol.pl
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -50,10 +53,74 @@
     revenue: 1
   };
 
+  // Kolumna z ceną jednostkową, z której liczy się mediana i P90.
+  // „Cena" (CUnitPrice) to cena przed rabatem — tak było w zamówieniu.
+  // Jeśli kiedyś potrzebna będzie cena faktycznie zapłacona, jest obok jako
+  // „Cena po rabacie" (CUnitPriceADis); na sprawdzanych fakturach rabaty były
+  // zerowe, więc obie kolumny dawały to samo.
+  const PRICE_FIELD = 'CUnitPrice';
+
   // Próg wagi dla schowka. Panel pokazuje WSZYSTKO (żeby było widać, co
   // wypadło i jak blisko progu), ale do arkusza idzie tylko to, co przekroczyło
   // próg — arkusz ma być listą zakupową grupy, nie pełnym spisem magazynu.
   const COPY_MIN_WEIGHT = 15;
+
+  // ---------- Warunki przewozu (esavpol.pl) ----------
+  // ERP nie trzyma informacji o tym, czy towar jedzie w chłodni — to wie sklep.
+  // Na karcie produktu ikona siedzi w #c-item-icon-and-title, przed <h1>.
+  //
+  // UWAGA na kształt tego HTML-a: ikona chłodni jest PLIKIEM
+  // (src="/dist/temp-chilled.svg"), ale ikona „temperatura pokojowa" jest
+  // WKLEJONA jako data:image/svg+xml — nie ma więc nazwy pliku, po której dałoby
+  // się ją poznać. Dlatego głównym sygnałem jest alt/title (opisowy i taki sam
+  // w obu wariantach), a nazwa pliku ikony służy jako potwierdzenie.
+  // Rozpoznawanie po klasie CSS byłoby najgorsze z trzech — klasy w sklepie
+  // się zmieniają.
+  const COLD_CHAIN = {
+    ENABLE: true,
+
+    // Domyślnie do arkusza idą TYLKO produkty bez chłodni — przełącznik
+    // w panelu pozwala skopiować wszystko razem z kolumną warunków.
+    ONLY_NON_COLD_DEFAULT: true,
+
+    ORIGIN: 'https://esavpol.pl',
+    SEARCH_URL: sku => 'https://esavpol.pl/produkty?searchtext=' + encodeURIComponent(sku),
+    PRODUCT_LINK_RE: /^\/[a-z0-9ąćęłńóśźż-]+-\d{6,}$/i,
+
+    // Warianty przewozu. Dopasowanie idzie po alt/title ikony (`alt`) albo po
+    // nazwie pliku ikony (`file`) — wystarczy jedno trafienie. Wzorce alt są
+    // bez polskich znaków tam, gdzie to możliwe („schlodz" nie złapie
+    // „schłodzone"), więc oba warianty pisowni są wypisane osobno.
+    // Kolejność ma znaczenie: pierwszy trafiony wariant wygrywa.
+    VARIANTS: [
+      {
+        key: 'frozen', label: 'mroźnia', cold: true,
+        alt: ['mroż', 'mroz', 'zamroż', 'zamroz', 'frozen'],
+        file: ['temp-frozen', 'temp-freeze']
+      },
+      {
+        key: 'chilled', label: 'chłodnia', cold: true,
+        alt: ['schłodz', 'schlodz', 'chłodz', 'chlodz', 'chilled'],
+        file: ['temp-chilled', 'temp-cool']
+      },
+      {
+        key: 'ambient', label: 'normalnie', cold: false,
+        alt: ['pokojow', 'ambient', 'sucho', 'suchym'],
+        file: ['temp-ambient', 'temp-room', 'temp-dry']
+      }
+    ],
+
+    // Warunki przewozu produktu nie zmieniają się z tygodnia na tydzień, więc
+    // raz sprawdzone SKU siedzi w cache — kolejny przebieg na tej samej grupie
+    // klientów nie odpytuje sklepu od zera.
+    CACHE_KEY: 'savpol_cold_chain_v1',
+    CACHE_TTL_DAYS: 60,
+
+    // Sklep dostaje 2 żądania na produkt (szukajka + karta). Przerwa między
+    // produktami, żeby kilkaset SKU nie wyglądało jak atak.
+    THROTTLE_MS: 200,
+    TIMEOUT_MS: 15000
+  };
 
   // Pauzy. ERP renderuje siatki asynchronicznie; bez zapasu po otwarciu
   // zakładki czytaliśmy pustą lub połowicznie wyrenderowaną siatkę.
@@ -213,7 +280,8 @@
         name: descCell.getAttribute('title') || '',
         unit: title('Unit'),
         qty: parsePl(title('QuantityUnits')),
-        net: parsePl(title('CNAmount'))
+        net: parsePl(title('CNAmount')),
+        price: parsePl(title(PRICE_FIELD))
       };
     }).filter(Boolean);
   }
@@ -397,7 +465,7 @@
       let e = bySku.get(p.sku);
       if (!e) {
         e = { sku: p.sku, name: p.name, units: new Set(), docs: new Set(),
-          qty: 0, net: 0, lines: 0, nets: [] };
+          qty: 0, net: 0, lines: 0, prices: [] };
         bySku.set(p.sku, e);
       }
       // Nazwa może się różnić między fakturami (zmiana kartoteki w czasie) —
@@ -408,10 +476,12 @@
       e.qty += p.qty;
       e.net += p.net;
       e.lines++;
-      // Próbka do mediany i P90: jedna obserwacja na WYSTĄPIENIE produktu na
-      // fakturze, nieważona ilością. Odpowiada na „ile zwykle schodzi tego
-      // produktu na jedno zamówienie", a nie „ile kilogramów łącznie".
-      e.nets.push(p.net);
+      // Próbka do mediany i P90: CENA JEDNOSTKOWA z jednego wystąpienia
+      // produktu na fakturze, jedna obserwacja na pozycję, nieważona ilością.
+      // Odpowiada na „po ile zwykle ten produkt schodzi", a nie „ile łącznie
+      // za niego zapłacono" — wartość pozycji zależy od wielkości zamówienia
+      // i mediana z niej nie mówi nic o cenie.
+      e.prices.push(p.price);
     }
 
     const items = Array.from(bySku.values());
@@ -431,7 +501,7 @@
       );
       i.unit = Array.from(i.units).join('/');
 
-      const sorted = i.nets.slice().sort((a, b) => a - b);
+      const sorted = i.prices.slice().sort((a, b) => a - b);
       i.median = percentile(sorted, 0.5);
       i.p90 = percentile(sorted, 0.9);
     }
@@ -439,6 +509,205 @@
     items.sort((a, b) => b.weight - a.weight);
     items.forEach((i, idx) => { i.rank = idx + 1; });
     return items;
+  }
+
+  // ---------- Warunki przewozu: cache ----------
+
+  function gmGet(key, fallback) {
+    try {
+      if (typeof GM_getValue === 'function') return GM_getValue(key, fallback);
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch (e) { return fallback; }
+  }
+
+  function gmSet(key, value) {
+    try {
+      if (typeof GM_setValue === 'function') GM_setValue(key, value);
+      else localStorage.setItem(key, JSON.stringify(value));
+    } catch (e) { /* brak storage nie może kłaść przebiegu */ }
+  }
+
+  function loadColdCache() {
+    const raw = gmGet(COLD_CHAIN.CACHE_KEY, null);
+    const cache = (raw && typeof raw === 'object') ? raw : {};
+    const maxAge = COLD_CHAIN.CACHE_TTL_DAYS * 86400000;
+    const now = Date.now();
+    // Wpisy przestarzałe znikają przy wczytaniu, więc plik nie puchnie i nie
+    // trzeba nigdzie osobno czyścić.
+    for (const sku of Object.keys(cache)) {
+      if (!cache[sku] || !cache[sku].ts || now - cache[sku].ts > maxAge) delete cache[sku];
+    }
+    return cache;
+  }
+
+  // ---------- Warunki przewozu: sklep ----------
+
+  // GM_xmlhttpRequest, a nie fetch, bo lecimy z erp.savpol.pl na esavpol.pl —
+  // fetch zablokowałby CORS. Wymaga @connect esavpol.pl w nagłówku skryptu.
+  function fetchShopText(url) {
+    return new Promise(resolve => {
+      if (typeof GM_xmlhttpRequest !== 'function') {
+        resolve({ ok: false, error: 'brak GM_xmlhttpRequest' });
+        return;
+      }
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: url,
+        timeout: COLD_CHAIN.TIMEOUT_MS,
+        onload: r => resolve({ ok: r.status >= 200 && r.status < 400, status: r.status, text: r.responseText || '' }),
+        onerror: () => resolve({ ok: false, error: 'błąd sieci' }),
+        ontimeout: () => resolve({ ok: false, error: 'timeout' })
+      });
+    });
+  }
+
+  // Adres karty produktu z wyników wyszukiwania. Link poznajemy po kształcie
+  // (slug + co najmniej 6 cyfr), a z kandydatów wybieramy ten, który zawiera
+  // dokładnie nasze SKU — inaczej 0004714 trafiłoby w 00047140.
+  function findProductPath(html, sku) {
+    const linkRe = /href="([^"]+)"/ig;
+    const paths = new Set();
+    let m;
+    while ((m = linkRe.exec(html)) !== null) {
+      const href = m[1].replace(COLD_CHAIN.ORIGIN, '');
+      if (COLD_CHAIN.PRODUCT_LINK_RE.test(href)) paths.add(href);
+    }
+    const list = Array.from(paths);
+    const exact = list.find(h => new RegExp('(^|[^0-9])' + sku + '([^0-9]|$)').test(h));
+    return { path: exact || list[0] || null, exact: !!exact, candidates: list.length };
+  }
+
+  // Warunki przewozu z HTML karty produktu.
+  function readTransportFromHtml(html) {
+    // Zakres zawężamy do kontenera z ikoną i tytułem, żeby nie złapać ikony
+    // z sekcji „podobne produkty", gdyby taka doszła. Kontener bywa OGROMNY,
+    // bo ikona „temperatura pokojowa" jest wklejona jako data:image/svg+xml
+    // (kilka kB samej ścieżki), więc zakres domykamy na </h1>, a nie na
+    // sztywnej liczbie znaków — inaczej alt wypadałby poza wycinek.
+    const idx = html.indexOf('c-item-icon-and-title');
+    let scope = html;
+    let scoped = false;
+    if (idx >= 0) {
+      const tail = html.slice(idx);
+      const end = tail.indexOf('</h1>');
+      scope = end >= 0 ? tail.slice(0, end) : tail.slice(0, 400000);
+      scoped = true;
+    }
+
+    // Atrybuty każdego <img> w zakresie. Kolejność atrybutów w tagu jest
+    // dowolna, więc czytamy je osobno, a nie jednym wzorcem na cały tag.
+    const imgs = (scope.match(/<img\b[^>]*>/ig) || []).map(tag => ({
+      alt: (tag.match(/\balt="([^"]*)"/i) || [, ''])[1],
+      title: (tag.match(/\btitle="([^"]*)"/i) || [, ''])[1],
+      // Z data-URI bierzemy tylko początek — reszta to kilka kB ścieżek SVG.
+      src: (tag.match(/\bsrc="([^"]*)"/i) || [, ''])[1].slice(0, 200)
+    }));
+
+    if (!imgs.length) {
+      // Każdy wariant ma jakąś ikonę, także „temperatura pokojowa". Brak
+      // obrazka znaczy więc „nie odczytałem strony", a nie „wożone normalnie" —
+      // dlatego to NIE jest traktowane jako brak chłodni.
+      return { kind: '(brak ikony)', label: 'nie odczytano', cold: false, known: false, scoped: scoped };
+    }
+
+    for (const img of imgs) {
+      const alt = (img.alt + ' ' + img.title).toLowerCase();
+      const src = img.src.toLowerCase();
+      for (const v of COLD_CHAIN.VARIANTS) {
+        const hitAlt = v.alt.some(k => alt.includes(k));
+        const hitFile = v.file.some(k => src.includes(k));
+        if (hitAlt || hitFile) {
+          return {
+            kind: v.key, label: v.label, cold: v.cold, known: true, scoped: scoped,
+            evidence: (hitAlt ? 'alt="' + (img.alt || img.title) + '"' : 'plik ikony ' + img.src)
+          };
+        }
+      }
+    }
+
+    // Ikona jest, ale nieznana. NIE zgadujemy: produkt dostaje etykietę do
+    // ręcznego sprawdzenia i nie jest odsiewany, bo wyrzucenie dobrego produktu
+    // jest gorsze od zostawienia jednego do weryfikacji.
+    const firstAlt = imgs.map(i => i.alt || i.title).filter(Boolean)[0] || '(bez alt)';
+    return {
+      kind: 'nieznany', label: 'nieznane: ' + firstAlt, cold: false, known: false,
+      scoped: scoped, evidence: 'alt="' + firstAlt + '"'
+    };
+  }
+
+  async function resolveTransport(sku, cache) {
+    if (cache[sku]) return cache[sku];
+
+    const search = await fetchShopText(COLD_CHAIN.SEARCH_URL(sku));
+    if (!search.ok) {
+      return { label: 'brak danych', cold: false, known: false, error: search.error || ('HTTP ' + search.status) };
+    }
+    const hit = findProductPath(search.text, sku);
+    if (!hit.path) {
+      // Zero kandydatów może znaczyć „nie ma w sklepie" ALBO „wyniki dorysowuje
+      // JavaScript". Rozróżnia to raport na końcu przebiegu — jeśli ANI JEDEN
+      // produkt nie ma linku, to drugie.
+      return { label: 'nie ma w sklepie', cold: false, known: false, error: 'brak linku w wynikach' };
+    }
+
+    const page = await fetchShopText(COLD_CHAIN.ORIGIN + hit.path);
+    if (!page.ok) {
+      return { label: 'brak danych', cold: false, known: false, error: page.error || ('HTTP ' + page.status) };
+    }
+
+    const t = readTransportFromHtml(page.text);
+    const entry = {
+      label: t.label, cold: t.cold, known: t.known, kind: t.kind,
+      url: COLD_CHAIN.ORIGIN + hit.path, exactSku: hit.exact, ts: Date.now()
+    };
+    cache[sku] = entry;
+    return entry;
+  }
+
+  // Sprawdzamy TYLKO produkty nad progiem wagi. Reszta i tak nie trafia do
+  // arkusza, a każdy produkt to dwa żądania do sklepu — przy kilkuset SKU
+  // różnica jest między minutą a kwadransem.
+  async function annotateTransport(items, ui) {
+    const cache = loadColdCache();
+    const todo = copyItems(items);
+    const started = Date.now();
+    let done = 0;
+
+    ui.phase('Sprawdzam warunki przewozu w sklepie...');
+    for (const item of todo) {
+      throwIfAborted();
+      const fromCache = !!cache[item.sku];
+      const t = await resolveTransport(item.sku, cache);
+      item.transport = t.label;
+      item.cold = !!t.cold;
+      item.transportKnown = t.known !== false;
+      item.transportUrl = t.url || null;
+      done++;
+
+      const elapsed = Date.now() - started;
+      ui.bar(done / todo.length);
+      ui.counts(done + ' z ' + todo.length + ' produktów',
+        done < todo.length ? formatEta((elapsed / done) * (todo.length - done)) + ' do końca' : formatElapsed(elapsed));
+      ui.detail(item.sku + ' — ' + item.transport);
+
+      if (!fromCache) await sleep(COLD_CHAIN.THROTTLE_MS);
+    }
+
+    gmSet(COLD_CHAIN.CACHE_KEY, cache);
+
+    const failed = todo.filter(i => !i.transportKnown);
+    if (failed.length === todo.length && todo.length > 0) {
+      console.error(LOG, 'Nie udało się ustalić warunków przewozu dla ŻADNEGO produktu. ' +
+        'Najczęstsze przyczyny: brak zgody @connect esavpol.pl w Tampermonkey, ' +
+        'wylogowanie ze sklepu albo wyniki wyszukiwania renderowane JavaScriptem ' +
+        '(wtedy w surowym HTML nie ma linków i trzeba to robić inaczej).');
+    }
+    if (failed.length) {
+      console.warn(LOG, 'Bez rozpoznanych warunków przewozu: ' +
+        failed.map(i => i.sku + ' (' + i.transport + ')').join(', '));
+    }
+    return { checked: todo.length, failed: failed.length };
   }
 
   // ---------- Wynik do arkusza ----------
@@ -452,20 +721,34 @@
   const CLIPBOARD_COLUMNS = [
     ['SKU', i => "'" + i.sku],
     ['Nazwa', i => i.name],
-    ['Mediana', i => formatPl(i.median, 2)],
-    ['P90', i => formatPl(i.p90, 2)]
+    ['Mediana ceny', i => formatPl(i.median, 2)],
+    ['P90 ceny', i => formatPl(i.p90, 2)]
   ];
 
+  // Przy kopiowaniu WSZYSTKIEGO dochodzi kolumna z warunkami przewozu — bez
+  // niej nie dałoby się w arkuszu odróżnić chłodni od reszty. W trybie
+  // domyślnym (bez chłodni) kolumna jest zbędna, bo wszystkie wiersze mają
+  // tę samą wartość, więc wklej zostaje czterokolumnowy.
+  const TRANSPORT_COLUMN = ['Przewóz', i => i.transport || ''];
+
+  // Kandydaci do arkusza: sam próg wagi. Ten sam zestaw idzie do sprawdzania
+  // w sklepie, więc chłodnia nie jest tu jeszcze brana pod uwagę.
   function copyItems(items) {
     return items.filter(i => i.weight > COPY_MIN_WEIGHT);
   }
 
-  function buildTsv(items) {
-    const lines = [CLIPBOARD_COLUMNS.map(c => c[0]).join('\t')];
-    for (const i of copyItems(items)) {
-      lines.push(CLIPBOARD_COLUMNS.map(c => String(c[1](i))).join('\t'));
-    }
-    return lines.join('\n');
+  function clipboardRows(items, onlyNonCold) {
+    return copyItems(items).filter(i => !onlyNonCold || !i.cold);
+  }
+
+  // Bez wiersza nagłówka: wklej ma trafiać od razu w dane, bo arkusz, do
+  // którego to idzie, ma już własne nagłówki. Nazwy kolumn zostają w
+  // CLIPBOARD_COLUMNS jako dokumentacja kolejności.
+  function buildTsv(items, onlyNonCold) {
+    const cols = onlyNonCold ? CLIPBOARD_COLUMNS : CLIPBOARD_COLUMNS.concat([TRANSPORT_COLUMN]);
+    return clipboardRows(items, onlyNonCold)
+      .map(i => cols.map(c => String(c[1](i))).join('\t'))
+      .join('\n');
   }
 
   // Zapis do schowka odpala się z kliknięcia użytkownika, dlatego
@@ -554,6 +837,14 @@
       // ładowania) — wtedy pasek działa w trybie „nie wiem ile jeszcze".
       total(n) { totalCount = n && n > 0 ? n : null; },
       phase(text) { el('phase').textContent = text; },
+      // Sterowanie paskiem wprost — używa go etap sprawdzania sklepu, który ma
+      // własny licznik (produkty), inny niż etap zbierania faktur.
+      bar(frac) { el('bar').style.width = Math.max(0, Math.min(100, frac * 100)) + '%'; },
+      counts(left, right) {
+        el('count').textContent = left || '';
+        el('time').textContent = right || '';
+      },
+      detail(text) { el('detail').textContent = text || ''; },
       progress(done, detail) {
         const elapsed = Date.now() - started;
         if (totalCount) {
@@ -590,20 +881,31 @@
     panel = null;
   }
 
+  function transportCell(i) {
+    if (!i.transport) return '';
+    if (i.cold) return '<span style="color:#7cc4ff">' + i.transport + '</span>';
+    if (i.transportKnown === false) return '<span style="color:#ffab00">' + i.transport + '</span>';
+    return '<span style="opacity:.55">' + i.transport + '</span>';
+  }
+
   function showResults(ui, items, meta) {
-    const tsv = buildTsv(items);
     const totalNet = items.reduce((s, i) => s + i.net, 0);
+    const hasTransport = items.some(i => i.transport);
 
     ui.finish(meta.partial
       ? 'Zatrzymane w trakcie — wynik częściowy'
       : 'Gotowe', !meta.partial);
 
+    const candidates = copyItems(items);
+    const coldCount = candidates.filter(i => i.cold).length;
+    const unknownCount = candidates.filter(i => i.transport && i.transportKnown === false).length;
+
     ui.el('detail').textContent = items.length + ' produktów z ' + meta.invoices +
       ' faktur, obrót netto ' + formatPl(totalNet, 2) + ' PLN. ' +
-      'Do schowka idzie ' + copyItems(items).length + ' z wagą > ' + COPY_MIN_WEIGHT + '.' +
+      'Nad progiem wagi ' + COPY_MIN_WEIGHT + ': ' + candidates.length + '.' +
+      (hasTransport ? ' W chłodni/mroźni: ' + coldCount +
+        (unknownCount ? ', nierozpoznanych: ' + unknownCount : '') + '.' : '') +
       (meta.partial ? ' Przebieg nie objął całej listy — potraktuj to jako próbkę.' : '');
-
-    const copied = copyItems(items);
 
     // Wiersze pod progiem są wyszarzone, a nie ukryte: widać wtedy, co siedzi
     // tuż pod granicą, i można świadomie ruszyć COPY_MIN_WEIGHT zamiast się
@@ -616,24 +918,29 @@
       '<td style="padding:2px 4px;text-align:right;font-weight:600">' + formatPl(i.weight, 1) + '</td>' +
       '<td style="padding:2px 4px;text-align:right">' + formatPl(i.median, 2) + '</td>' +
       '<td style="padding:2px 4px;text-align:right">' + formatPl(i.p90, 2) + '</td>' +
+      (hasTransport ? '<td style="padding:2px 4px;white-space:nowrap">' + transportCell(i) + '</td>' : '') +
       '<td style="padding:2px 4px;text-align:right;opacity:.7">' + i.invoices + '</td>' +
       '</tr>').join('');
 
     const rb = ui.el('resultbox');
     rb.style.display = 'flex';
     rb.innerHTML = [
+      hasTransport ? '<label style="display:flex;gap:6px;align-items:center;margin-bottom:8px;' +
+        'font-size:12px;cursor:pointer"><input data-role="onlynoncold" type="checkbox"' +
+        (COLD_CHAIN.ONLY_NON_COLD_DEFAULT ? ' checked' : '') + '>' +
+        '<span>tylko bez chłodni i mroźni</span></label>' : '',
       '<button data-role="copy" type="button" style="width:100%;cursor:pointer;font:inherit;',
       '    font-size:12px;padding:7px 10px;border:0;border-radius:4px;background:#36b37e;',
-      '    color:#04231a;font-weight:600">📋 Kopiuj do arkusza (', copied.length,
-      ' z wagą &gt; ', COPY_MIN_WEIGHT, ')</button>',
+      '    color:#04231a;font-weight:600"></button>',
       '<div style="margin-top:8px;overflow:auto;min-height:0">',
       '  <table style="border-collapse:collapse;font-size:11px;width:100%">',
       '    <thead><tr style="text-align:left;opacity:.6">',
       '      <th style="padding:2px 4px"></th><th style="padding:2px 4px">SKU</th>',
       '      <th style="padding:2px 4px">Nazwa</th>',
       '      <th style="padding:2px 4px;text-align:right">Waga</th>',
-      '      <th style="padding:2px 4px;text-align:right">Med.</th>',
-      '      <th style="padding:2px 4px;text-align:right">P90</th>',
+      '      <th style="padding:2px 4px;text-align:right">Med. cena</th>',
+      '      <th style="padding:2px 4px;text-align:right">P90 cena</th>',
+      hasTransport ? '<th style="padding:2px 4px">Przewóz</th>' : '',
       '      <th style="padding:2px 4px;text-align:right">Fkt</th>',
       '    </tr></thead><tbody>', rows, '</tbody></table>',
       items.length > 40 ? '<div style="opacity:.5;padding:4px">...pozostałe ' +
@@ -642,15 +949,27 @@
     ].join('');
 
     const copyBtn = rb.querySelector('[data-role="copy"]');
+    const toggle = rb.querySelector('[data-role="onlynoncold"]');
+    // Bez danych ze sklepu przełącznika nie ma, a wtedy filtr chłodni musi być
+    // WYŁĄCZONY — inaczej brak informacji cicho wyciąłby część listy.
+    const onlyNonCold = () => (toggle ? toggle.checked : false);
+
+    function refreshCopyLabel() {
+      copyBtn.textContent = '📋 Kopiuj do arkusza (' +
+        clipboardRows(items, onlyNonCold()).length + ' wierszy)';
+    }
+    refreshCopyLabel();
+    if (toggle) toggle.addEventListener('change', refreshCopyLabel);
+
     copyBtn.addEventListener('click', async () => {
-      const ok = await copyToClipboard(tsv);
-      const label = copyBtn.textContent;
+      const ok = await copyToClipboard(buildTsv(items, onlyNonCold()));
       copyBtn.textContent = ok ? '✔ Skopiowane — wklej do arkusza' : '✘ Nie udało się skopiować';
-      setTimeout(() => { copyBtn.textContent = label; }, 2500);
+      setTimeout(refreshCopyLabel, 2500);
     });
 
     console.log(LOG, 'Wynik:', items);
-    console.log(LOG, 'TSV do arkusza:\n' + tsv);
+    console.log(LOG, 'TSV (tylko bez chłodni):');
+    console.log(buildTsv(items, true));
   }
 
   async function run() {
@@ -660,6 +979,24 @@
     try {
       const res = await collectAll(ui);
       const items = aggregate(res.positions, res.invoices);
+
+      // Warunki przewozu dopiero TERAZ, gdy znane są wagi: sprawdzamy wyłącznie
+      // produkty nad progiem, więc sklep dostaje kilkadziesiąt żądań, a nie
+      // kilkaset. Przerwanie w tym etapie zostawia wynik z faktur nienaruszony —
+      // po prostu bez flag chłodni.
+      if (COLD_CHAIN.ENABLE && items.length) {
+        try {
+          await annotateTransport(items, ui);
+        } catch (err) {
+          if (err && err.aborted) {
+            console.warn(LOG, 'Sprawdzanie warunków przewozu przerwane — ' +
+              'pokazuję wynik bez pełnych flag chłodni.');
+          } else {
+            console.error(LOG, 'Sprawdzanie warunków przewozu nie udało się:', err);
+          }
+        }
+      }
+
       if (!items.length) {
         ui.finish('Nic nie zebrałem', false);
         ui.el('detail').textContent = 'Żadna faktura nie dała pozycji. Sprawdź, czy lista ' +
