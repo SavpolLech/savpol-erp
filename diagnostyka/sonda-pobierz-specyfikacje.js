@@ -1,5 +1,5 @@
 // Sonda: czy skrypt pobierze specyfikację PDF sam, przez API? — wklej w konsolę.
-// WERSJA: 2026-09-03.5
+// WERSJA: 2026-09-03.6
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -30,7 +30,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-03.5';
+  const WERSJA = '2026-09-03.6';
 
   const ENDPOINT = '/api/CommS_WCF_JSON.svc/OperatrionInvoke';
   const TYP_SPECYFIKACJI = '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0';
@@ -189,6 +189,22 @@
     const produkt = kontekst.csItems && naObiekty(kontekst.csItems.DataTableInit.DataTable)[0];
     if (produkt) log('produkt w kontekście: ' + produkt.Item + ' (csItemsId=' + produkt.csItemsId + ')');
 
+    // Wiersz produktu bierzemy z ostatniego żądania strony, a ono nie musi
+    // dotyczyć karty, którą masz przed oczami — może pochodzić z listy albo
+    // z karty pomocniczej (końcówka -M). Adres strony zawiera SKU otwartej
+    // karty, więc porównanie jest darmowe, a bez niego „zero załączników"
+    // znaczy dwie różne rzeczy naraz.
+    log('adres strony: ' + location.href);
+    const zUrl = /\/pl\/([^/]+)\/csitemsonebro/i.exec(location.href);
+    if (zUrl && produkt) {
+      const wUrl = decodeURIComponent(zUrl[1]);
+      if (wUrl !== produkt.Item) {
+        log('UWAGA: karta pokazuje ' + wUrl + ', a kontekst dotyczy ' + produkt.Item + '.');
+        log('  Pytam o ten z kontekstu. Jeśli to nie ten, o który Ci chodzi:');
+        log('  odśwież kartę właściwego produktu i uruchom sondę od nowa.');
+      }
+    }
+
     naglowek('2. Odczyt listy załączników');
     // NIE WYSYŁAMY CAŁEGO ZEBRANEGO KONTEKSTU. Próba „damy serwerowi wszystko,
     // to na pewno nie zabraknie" skończyła się po jego stronie wyjątkiem
@@ -256,6 +272,14 @@
     const siatka = znajdzSiatke(dane, 'csAttachments') || znajdzSiatke(dane, null);
     const wiersze = naObiekty(siatka);
     log('wierszy załączników: ' + wiersze.length);
+    if (!wiersze.length) {
+      log('');
+      log('ZERO WIERSZY — to jeszcze nie znaczy, że mechanizm nie działa.');
+      log('Odczyt przeszedł bez błędu, więc albo ten produkt naprawdę nie ma');
+      log('załączników, albo pytamy o inny produkt niż ten na ekranie.');
+      log('Powtórz na produkcie, o którym wiadomo, że ma specyfikację —');
+      log('np. 0011347 (ma Atest i Specyfikację).');
+    }
     wiersze.forEach(w => log('  typ=' + (w.AttachmentTypeTranslatedDesc || w.csAttachmentsTypesG)
       + ' | plik=' + w.LocalFileName + ' | wersja=' + w.VersionId + ' | dodano=' + w.AddDate));
 
