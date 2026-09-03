@@ -62,26 +62,69 @@
   window.savpolTestHasla = function () {
     const origSend = XMLHttpRequest.prototype.send;
     const origOpen = XMLHttpRequest.prototype.open;
+    const origFetch = window.fetch;
     let zrobione = false;
+
+    function odepnij() {
+      XMLHttpRequest.prototype.send = origSend;
+      XMLHttpRequest.prototype.open = origOpen;
+      window.fetch = origFetch;
+    }
+
+    function zlap(body, url) {
+      if (zrobione || typeof body !== 'string') return;
+      if (String(url || '').indexOf(ENDPOINT) < 0) return;
+      zrobione = true;
+      odepnij();
+      console.log('[test] złapałem żądanie, badam…');
+      setTimeout(() => zbadaj(body), 0);
+    }
 
     XMLHttpRequest.prototype.open = function (m, u) {
       this.__url = u;
       return origOpen.apply(this, arguments);
     };
     XMLHttpRequest.prototype.send = function (body) {
-      if (!zrobione && typeof body === 'string' && String(this.__url || '').indexOf(ENDPOINT) >= 0) {
-        zrobione = true;
-        XMLHttpRequest.prototype.send = origSend;
-        XMLHttpRequest.prototype.open = origOpen;
-        setTimeout(() => zbadaj(body), 0);
-      }
+      try { zlap(body, this.__url); } catch (e) { console.warn('[test] hook xhr:', e); }
       return origSend.apply(this, arguments);
     };
+    // Dokładamy fetch: ERP używa XHR, ale to kosztuje trzy linijki, a gdyby
+    // dostawca przeszedł na fetch, test milczałby bez wyjaśnienia.
+    window.fetch = function (input, init) {
+      try {
+        const u = typeof input === 'string' ? input : (input && input.url);
+        zlap(init && init.body, u);
+      } catch (e) { /* nieistotne */ }
+      return origFetch.apply(this, arguments);
+    };
+
+    // Cisza jest najgorszym wynikiem — po 30 s mówimy wprost, że nie było
+    // czego złapać, zamiast zostawiać użytkownika z pustą konsolą.
+    setTimeout(() => {
+      if (!zrobione) {
+        odepnij();
+        console.warn('[test] przez 30 s nie poszło ŻADNE żądanie do ' + ENDPOINT
+          + '. Odpal savpolTestHasla() jeszcze raz i kliknij w inną zakładkę karty '
+          + 'produktu (samo najechanie myszą nie wystarczy).');
+      }
+    }, 30000);
 
     console.log('[test] czekam na żądanie ERP — poklikaj po zakładkach karty produktu');
   };
 
   async function zbadaj(wzorzec) {
+    try {
+      await zbadajWlasciwe(wzorzec);
+    } catch (e) {
+      // Bez tego wyjątek w środku async funkcji odrzucał promise po cichu:
+      // konsola milczała, schowek zostawał pusty i nie było wiadomo dlaczego.
+      const opis = 'Test przerwany błędem: ' + (e && e.stack || e);
+      console.error('[test] ' + opis);
+      doSchowka(opis);
+    }
+  }
+
+  async function zbadajWlasciwe(wzorzec) {
     const linie = [];
     const naglowek = (t) => { linie.push(''); linie.push('=== ' + t + ' ==='); };
 
@@ -142,6 +185,16 @@
   }
 
   function doSchowka(txt) {
+    // WYNIK ZAWSZE LĄDUJE W ZMIENNEJ, zanim spróbujemy schowka. Kopiowanie
+    // z callbacku bywa zablokowane (copy() z DevTools jest widoczne tylko
+    // przy wywołaniu prosto z konsoli, a clipboard API wymaga focusu na
+    // stronie — jeśli kursor jest w DevTools, odmawia). Wtedy zostaje
+    // savpolTestKopiuj() wpisane ręcznie i wynik nie przepada.
+    window.savpolTestWynik = txt;
+    window.savpolTestKopiuj = function () { doSchowka(txt); return '(' + txt.length + ' znaków)'; };
+    console.log('[test] wynik gotowy (' + txt.length + ' znaków). Gdyby schowek '
+      + 'zawiódł: copy(savpolTestWynik)');
+
     try {
       if (typeof copy === 'function') { copy(txt); console.log('[test] skopiowano, ' + txt.length + ' znaków'); return; }
     } catch (e) { /* lecimy dalej */ }
