@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.50.0
+// @version      2.51.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2037,20 +2037,51 @@
       length: 4
     };
 
-    const odp = await erpWywolaj({
-      OperationName: 'RefreshDataSetSQL_Synchronous',
-      Params: { DictIdent: 'csItemsOneBro', LoginProviderObject: null },
-      DelegateIdent: erpGuid(),
-      RefreshInputObject: {
-        ParentUniqName: rodzic, ParentIdent: 'csItemsOneBro',
-        DataTableInitList: tablice
+    // SERWER SAM MÓWI, CZEGO MU BRAKUJE — korzystamy z tego zamiast zgadywać.
+    //
+    // Odmowa ma postać „Brakujący: csitemsfilter (IsMasterData: False)", więc
+    // gdy taki zestaw mamy w zebranym kontekście, dokładamy go i ponawiamy.
+    // Bez tego każdy brakujący element kosztowałby osobny przebieg u człowieka,
+    // a serwer wypuszcza je pojedynczo.
+    //
+    // Świadomie NIE wysyłamy od razu wszystkiego, co mamy: taka próba kończyła
+    // się wyjątkiem po stronie serwera. Nadmiar szkodzi tu tak samo jak brak,
+    // więc dokładamy wyłącznie to, co zostało wymienione z nazwy.
+    const dolozone = [];
+    for (let proba = 0; proba < 4; proba++) {
+      const odp = await erpWywolaj({
+        OperationName: 'RefreshDataSetSQL_Synchronous',
+        Params: { DictIdent: 'csItemsOneBro', LoginProviderObject: null },
+        DelegateIdent: erpGuid(),
+        RefreshInputObject: {
+          ParentUniqName: rodzic, ParentIdent: 'csItemsOneBro',
+          DataTableInitList: tablice
+        }
+      });
+
+      if (odp.ok) {
+        const siatka = erpSiatkaPoKolumnie(odp.dane, 'csAttachmentsId');
+        if (!siatka) return { ok: false, blad: 'bez szablonu: w odpowiedzi nie ma siatki załączników' };
+        console.log('[Specyfikacja] Własne żądanie zadziałało'
+          + (dolozone.length ? ' po dołożeniu: ' + dolozone.join(', ') : '') + '.');
+        return { ok: true, wiersze: erpNaObiekty(siatka) };
       }
-    });
-    if (!odp.ok) return odp;
-    const siatka = erpSiatkaPoKolumnie(odp.dane, 'csAttachmentsId');
-    if (!siatka) return { ok: false, blad: 'bez szablonu: w odpowiedzi nie ma siatki załączników' };
-    console.log('[Specyfikacja] Ścieżka zapasowa (własne żądanie) zadziałała.');
-    return { ok: true, wiersze: erpNaObiekty(siatka) };
+
+      const brak = /Brakuj\S*:\s*([a-z0-9_]+)/i.exec(String(odp.blad || ''));
+      if (!brak) return odp;
+
+      // Serwer podaje nazwy małymi literami, kontekst trzyma je w oryginale.
+      const szukana = brak[1].toLowerCase();
+      const klucz = Object.keys(erpPodsluch.zestawy)
+        .find(k => k.toLowerCase() === szukana);
+      if (!klucz) {
+        return { ok: false, blad: 'brakuje zestawu „' + brak[1] + '", którego nie widziałem' };
+      }
+      tablice[String(tablice.length)] = erpPodsluch.zestawy[klucz];
+      tablice.length += 1;
+      dolozone.push(klucz);
+    }
+    return { ok: false, blad: 'serwer wciąż zgłasza braki po dołożeniu: ' + dolozone.join(', ') };
   }
 
   // Lista załączników produktu.
