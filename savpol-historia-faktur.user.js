@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.0.3
+// @version      3.1.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2534,6 +2534,15 @@
     FIRMA_ID: 213217693,
     PORTAL_ID: 1234896834,      // esavpol.pl
     JEZYK_ID: 95,               // polski
+    // WOLNO PISAĆ WYŁĄCZNIE DO TYCH DWÓCH.
+    //
+    // Produkt ma zwykle więcej rodzajów opisu — „Skład produktu",
+    // „Przechowywanie przed otwarciem", „Przechowywanie po otwarciu",
+    // „Opis skrócony produktu" — a bywa, że jeszcze inne; ich liczba różni się
+    // między produktami. Te pola prowadzi człowiek i skrypt ich NIE RUSZA.
+    // Lista jest zamknięta celowo: przy braku wersjonowania w ERP nadpisanie
+    // składu albo warunków przechowywania to skasowanie danych, których nikt
+    // nie odtworzy, a błąd byłby cichy.
     TYPY: {
       nazwa: '2519e05a-c86c-41c9-79d4-79023b9ef2e0',
       opis: '95381861-9314-41ae-d36c-deca87152a68'
@@ -2622,6 +2631,220 @@
         + ' — przy zapisie trzeba je najpierw założyć.');
     }
     return lista;
+  }
+
+  // ---------- Zapis opisów ----------
+
+  // Kopia zapasowa PRZED nadpisaniem, zrzucana na dysk jako plik.
+  //
+  // ERP nie ma wersjonowania: w odpowiedziach nie ma ani `RowVersion`, ani
+  // znacznika czasu, a zapis działa na zasadzie „ostatni wygrywa". Nadpisanej
+  // treści nie da się odzyskać z systemu — jedyna droga powrotu to nasza własna
+  // kopia. Dlatego jest ona warunkiem zapisu, a nie jego udogodnieniem: gdy
+  // pobranie kopii się nie uda, nie piszemy.
+  function zrzucKopieOpisow(sku, wiersze) {
+    const linie = [];
+    linie.push('Kopia opisów B2B przed zapisem');
+    linie.push('Produkt: ' + sku);
+    linie.push('Data: ' + new Date().toISOString());
+    linie.push('');
+    wiersze.forEach(w => {
+      linie.push('===== ' + (w.B2BDescriptionTypeTranslatedDesc || '?')
+        + '  [id=' + w.csItemsDesc4B2BPortalsId
+        + ']  [typ=' + w.csB2BDescriptionTypesG + '] =====');
+      linie.push(String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || ''));
+      linie.push('');
+    });
+    const txt = linie.join('\n');
+    const blob = new Blob(['﻿' + txt], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'opisy_przed_zapisem_' + sku + '_'
+      + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+    return txt;
+  }
+
+  // Założenie pustego wiersza opisu danego rodzaju (nagranie A, krok 1).
+  // GUID wiersza nadaje KLIENT i ten sam trafia do __SelectedRecords__.
+  async function erpZalozWierszOpisu(itemId, typGuid) {
+    const g = erpGuid();
+    const pola = {
+      csItemsDesc4B2BPortalsG: g,
+      csCompaniesId: OPISY.FIRMA_ID,
+      csB2BPortalsId: OPISY.PORTAL_ID,
+      csItemsId: itemId,
+      csB2BDescriptionTypesG: typGuid,
+      csSupLangId: OPISY.JEZYK_ID,
+      isExternalEditor: 1
+    };
+    const odp = await erpWywolaj({
+      OperationName: 'ActionExecute',
+      Params: {
+        DictIdent: 'csItemsOneBro',
+        ActionIdent: 'csItemsDesc4B2BPortalsInsert',
+        DataSetTypeIdent: 'csItemsDesc4B2BPortals',
+        DataSetSQLIdent: 'csItemsDesc4B2BPortalsEdit',
+        __SelectedRecords__: '<csSelectedRows><row><csItemsDesc4B2BPortalsG>'
+          + g + '</csItemsDesc4B2BPortalsG></row></csSelectedRows>',
+        __PageRecords__: '<csPageRecords><row></row></csPageRecords>',
+        __SortList__: '<SortList><row><FieldName>PortalTranslatedDesc</FieldName>'
+          + '<DirectSort>1</DirectSort></row></SortList>',
+        HasParams: '1', ActionExecuteType: 0, LoginProviderObject: null
+      },
+      DelegateIdent: erpGuid(),
+      RefreshInputObject: null,
+      DataTableInitList: {
+        '0': {
+          DataSetSQLIdent: 'ActionParams_csItemsDesc4B2BPortalsEdit',
+          SortList: [],
+          DataTableInit: {
+            DataTable: {
+              FieldDefs: Object.keys(pola).map((n, i) => ({
+                Index: i, FieldName: n,
+                FieldType: typeof pola[n] === 'number' ? 'number' : 'System.String',
+                OriginalFieldType: typeof pola[n] === 'number' ? 'System.Int64' : 'System.String'
+              })),
+              Rows: [Object.keys(pola).map(n => ({ Item: pola[n] }))]
+            }
+          },
+          Refresh: false
+        },
+        length: 1
+      }
+    });
+    return odp.ok ? { ok: true } : odp;
+  }
+
+  // Wpisanie treści (nagranie A krok 2, nagranie B krok 2) — jeden wiersz
+  // o siedmiu polach.
+  async function erpZapiszTrescOpisu(itemId, typGuid, wierszId, tresc) {
+    const pola = {
+      csCompaniesId: OPISY.FIRMA_ID,
+      csB2BPortalsId: OPISY.PORTAL_ID,
+      csItemsId: itemId,
+      csB2BDescriptionTypesG: typGuid,
+      csItemsDesc4B2BPortalsId: wierszId,
+      csSupLangId: OPISY.JEZYK_ID,
+      ItemDesc1: tresc
+    };
+    const odp = await erpWywolaj({
+      OperationName: 'ActionExecute',
+      Params: {
+        DictIdent: 'csItemsOneBro',
+        ActionIdent: 'csItemsDesc4B2BPortalsChangeDesc',
+        DataSetTypeIdent: 'csItemsDesc4B2BPortalsDescriptions',
+        DataSetSQLIdent: 'csItemsDesc4B2BPortalsChangeDesc',
+        __SelectedRecords__: '<csSelectedRows><row></row></csSelectedRows>',
+        __PageRecords__: '<csPageRecords><row></row></csPageRecords>',
+        HasParams: '1', ActionExecuteType: 0, LoginProviderObject: null
+      },
+      DelegateIdent: erpGuid(),
+      RefreshInputObject: null,
+      DataTableInitList: {
+        '0': {
+          DataSetSQLIdent: 'ActionParams_csItemsDesc4B2BPortalsChangeDesc',
+          SortList: [],
+          DataTableInit: {
+            DataTable: {
+              FieldDefs: Object.keys(pola).map((n, i) => ({
+                Index: i, FieldName: n,
+                FieldType: typeof pola[n] === 'number' ? 'number' : 'System.String',
+                OriginalFieldType: typeof pola[n] === 'number' ? 'System.Int64' : 'System.String'
+              })),
+              Rows: [Object.keys(pola).map(n => ({ Item: pola[n] }))]
+            }
+          },
+          Refresh: false
+        },
+        length: 1
+      }
+    });
+    return odp.ok ? { ok: true } : odp;
+  }
+
+  // Cały zapis: sprawdź, przygotuj kopię, zapisz, sprawdź ponownie.
+  //
+  // `nowe` to obiekt w rodzaju { nazwa: '…', opis: '<p>…</p>' } — klucze
+  // wyłącznie z OPISY.TYPY. Cokolwiek innego jest odrzucane, nie ignorowane:
+  // literówka w nazwie pola nie może kończyć się cichym niezapisaniem.
+  async function zapiszOpisy(sku, nowe, opcje) {
+    const naSucho = !(opcje && opcje.zapisz === true);
+    const klucze = Object.keys(nowe || {});
+    if (!klucze.length) return { ok: false, blad: 'nie podałeś, co zapisać' };
+
+    const obce = klucze.filter(k => !OPISY.TYPY[k]);
+    if (obce.length) {
+      return { ok: false, blad: 'nie znam pól: ' + obce.join(', ')
+        + '. Wolno tylko: ' + Object.keys(OPISY.TYPY).join(', ') };
+    }
+    const puste = klucze.filter(k => !String(nowe[k] || '').trim());
+    if (puste.length) {
+      return { ok: false, blad: 'puste treści dla: ' + puste.join(', ')
+        + ' — zapis pustką skasowałby to, co jest' };
+    }
+
+    const lista = await erpCzytajOpisy(sku);
+    if (!lista.ok) return { ok: false, blad: lista.blad };
+
+    console.log('[Opisy] ' + sku + ' — kopia zapasowa przed zapisem trafia do pobranych plików.');
+    zrzucKopieOpisow(sku, lista.wiersze);
+
+    const plan = klucze.map(k => {
+      const typ = OPISY.TYPY[k];
+      const istniejacy = opisPoTypie(lista.wiersze, typ);
+      const stara = istniejacy
+        ? String(istniejacy.ItemDesc1_PL || istniejacy.ItemTranslatedDesc1 || '') : '';
+      return {
+        klucz: k, typ: typ,
+        wierszId: istniejacy ? istniejacy.csItemsDesc4B2BPortalsId : null,
+        bylo: stara.length, bedzie: String(nowe[k]).length,
+        czynnosc: istniejacy ? (stara ? 'nadpisuję' : 'wypełniam pusty') : 'zakładam i wypełniam'
+      };
+    });
+
+    console.log('[Opisy] ' + sku + (naSucho ? ' — NA SUCHO, nic nie zapisuję:' : ' — zapisuję:'));
+    plan.forEach(p => console.log('   • ' + p.klucz + ': ' + p.czynnosc
+      + '  (' + p.bylo + ' → ' + p.bedzie + ' znaków)'));
+    if (naSucho) {
+      console.log('   Żeby zapisać naprawdę: savpolZapiszOpisy(sku, tresci, { zapisz: true })');
+      return { ok: true, naSucho: true, plan: plan };
+    }
+
+    for (const p of plan) {
+      if (!p.wierszId) {
+        const zal = await erpZalozWierszOpisu(lista.itemId, p.typ);
+        if (!zal.ok) return { ok: false, blad: 'nie udało się założyć wiersza „' + p.klucz + '": ' + zal.blad };
+        // Identyfikator nadaje serwer, więc czytamy listę ponownie.
+        const znow = await erpCzytajOpisy(sku);
+        if (!znow.ok) return { ok: false, blad: 'założyłem wiersz, ale nie umiem go odczytać: ' + znow.blad };
+        const swiezy = opisPoTypie(znow.wiersze, p.typ);
+        if (!swiezy) return { ok: false, blad: 'założony wiersz „' + p.klucz + '" nie pojawił się na liście' };
+        p.wierszId = swiezy.csItemsDesc4B2BPortalsId;
+      }
+      const zap = await erpZapiszTrescOpisu(lista.itemId, p.typ, p.wierszId, String(nowe[p.klucz]));
+      if (!zap.ok) return { ok: false, blad: 'nie udało się zapisać „' + p.klucz + '": ' + zap.blad };
+      console.log('   ✓ ' + p.klucz + ' zapisane');
+    }
+
+    // Kontrola po zapisie: czytamy z ERP to, co miało tam wylądować.
+    const po = await erpCzytajOpisy(sku);
+    if (!po.ok) return { ok: true, ostrzezenie: 'zapisane, ale nie udało się sprawdzić: ' + po.blad };
+    const niezgodne = plan.filter(p => {
+      const w = opisPoTypie(po.wiersze, p.typ);
+      const t = w ? String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '') : '';
+      return t !== String(nowe[p.klucz]);
+    }).map(p => p.klucz);
+
+    if (niezgodne.length) {
+      console.warn('[Opisy] ZAPISANE, ALE PO ODCZYCIE RÓŻNI SIĘ: ' + niezgodne.join(', ')
+        + '. Sprawdź w ERP; kopia sprzed zapisu jest w pobranych plikach.');
+      return { ok: false, blad: 'po zapisie treść nie zgadza się dla: ' + niezgodne.join(', ') };
+    }
+    console.log('[Opisy] ' + sku + ' — zapisane i potwierdzone odczytem.');
+    return { ok: true, plan: plan };
   }
 
   // Wybór specyfikacji — dwa kroki, tak jak robi to człowiek:
@@ -5161,6 +5384,12 @@
     unsafeWindow.savpolOpisy = function (sku) {
       if (!sku) { console.warn('[Opisy] Podaj SKU, np. savpolOpisy("0009905")'); return; }
       return pokazOpisy(String(sku));
+    };
+
+    // Zapis opisów. Bez { zapisz: true } robi wyłącznie przymiarkę.
+    unsafeWindow.savpolZapiszOpisy = function (sku, tresci, opcje) {
+      if (!sku) { console.warn('[Opisy] Podaj SKU.'); return; }
+      return zapiszOpisy(String(sku), tresci || {}, opcje);
     };
 
     unsafeWindow.savpolOstatniZrzut = function () {
