@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.49.0
+// @version      2.50.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2229,8 +2229,22 @@
       if (odp.status !== 200 || !odp.body || !odp.body.ok) {
         return { ok: false, powod: 'apka odrzuciła wysyłkę (HTTP ' + odp.status + ')' };
       }
+      // SPRAWDZAMY, CZY BAJTY PRZEŻYŁY. Kod 200 mówi tylko tyle, że serwer
+      // przyjął żądanie — nie że plik da się potem odczytać. Droga wiedzie
+      // przez base64, GitHub API i z powrotem, a PDF psuje się po cichu:
+      // otworzy się albo i nie, ale nikt tego nie zauważy przy zapisie.
+      // Rozmiar jest tanim i wystarczającym świadkiem.
+      const kontrola = await apkaZadanie('GET', SPEC_PDF.ENDPOINT + '?sku=' + encodeURIComponent(sku));
+      const zapisane = kontrola.status === 200 && kontrola.body && kontrola.body.sizeBytes;
+      if (zapisane && Number(zapisane) !== plik.bajtow) {
+        console.error('[Specyfikacja] ROZMIAR SIĘ NIE ZGADZA: wysłano '
+          + plik.bajtow + ' B, apka ma ' + zapisane + ' B. Plik może być uszkodzony.');
+        return { ok: false, powod: 'plik doszedł uszkodzony (' + zapisane + ' zamiast ' + plik.bajtow + ' B)' };
+      }
+
       console.log('[Specyfikacja] Wysłana do apki:', info.info.FileName,
-        plik.bajtow + ' B', odp.body.unchanged ? '(bez zmian)' : '');
+        plik.bajtow + ' B', odp.body.unchanged ? '(bez zmian)' : '',
+        zapisane ? '— rozmiar potwierdzony' : '— apka nie podała rozmiaru');
       return { ok: true, nazwa: info.info.FileName, bajtow: plik.bajtow };
     } catch (e) {
       return { ok: false, powod: 'wyjątek: ' + (e && e.message || e) };
