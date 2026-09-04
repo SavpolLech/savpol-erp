@@ -28,7 +28,9 @@
   const BUTTON_TEXT = '📦 Eksportuj WZ';
   const PANEL_ID = 'savpol-wz-export-panel';
 
-  const MAX_DOCS = 1000;                 // górny limit dokumentów w jednym przebiegu
+  // TYMCZASOWO obcięte na czas testów (setki WZ dziennie) — podnieś do 1000,
+  // gdy wynik na małej próbce się potwierdzi.
+  const MAX_DOCS = 5;                    // górny limit dokumentów w jednym przebiegu
   const MAX_PAGES = 100;                 // zabezpieczenie przed nieskończoną pętlą paginacji
   const MAX_CONSECUTIVE_FAILURES = 3;    // tyle nieudanych otwarć z rzędu kończy zbieranie
 
