@@ -1,5 +1,5 @@
 // Sonda: jakie kolumny/selektory ma lista i karta dokumentu WZ — wklej w konsolę.
-// WERSJA: 2026-09-04.1
+// WERSJA: 2026-09-04.2
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
@@ -9,8 +9,15 @@
 // jak wygląda wiersz, jak wygląda pager. Zgadywanie na podstawie faktur może
 // nie trafić — WZ to inny typ dokumentu, inne kolumny.
 //
-// SONDA NICZEGO NIE ZAPISUJE I NICZEGO NIE KLIKA. Tylko czyta to, co już jest
-// na ekranie.
+// DOPISANE w .2: brakowało csItemsId i csItemsUnitsId (identyfikatory główne
+// produktu/jednostki) — nie widać ich jako osobnych kolumn na karcie pozycji.
+// savpolWzSondaSurowyWiersz() zrzuca CAŁY <tr> pierwszej pozycji (nie tylko
+// kolumny, które już umiemy czytać), żeby sprawdzić, czy te ID siedzą gdzieś
+// w atrybutach wiersza/komórek mimo że nie są wyrenderowane jako widoczna
+// kolumna, i szuka przycisku "wybór kolumn" (field chooser) w siatce.
+//
+// SONDA NICZEGO NIE ZAPISUJE I NICZEGO NIE KLIKA (poza field-chooserem, jeśli
+// go znajdzie i wywołasz to osobno — na razie tylko GO WYSZUKUJE).
 //
 // Jak używać:
 //   1. Będąc na liście WZ (adres z „wydania-zewnetrzne/csdocsheaders4goodsissue"),
@@ -19,14 +26,15 @@
 //   2. Otwórz DWUKLIKIEM jeden dokument WZ z listy (żeby otworzyła się karta
 //      z pozycjami), potem wywołaj:
 //         savpolWzSondaKarta()
-//   3. savpolWzSondaKopiuj()  → wynik (obu kroków razem) do schowka.
+//         savpolWzSondaSurowyWiersz()
+//   3. savpolWzSondaKopiuj()  → wynik (wszystkich kroków razem) do schowka.
 //
 // savpolWzSondaStan() pokazuje, co już zebrano, bez czekania.
 
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-04.1';
+  const WERSJA = '2026-09-04.2';
   console.log('[sonda-wz-dom] wersja ' + WERSJA + '. URL: ' + location.href);
 
   let linie = [];
@@ -155,6 +163,59 @@
     log('--- Zakładki (jeśli są) ---');
     const tabs = Array.from(document.querySelectorAll('li.k-state-active .k-link[title]'));
     log(tabs.map(t => t.getAttribute('title')).join(' | ') || '(brak)');
+    return savpolWzSondaKopiuj();
+  };
+
+  // ---------- Krok 3: surowy wiersz pozycji + szukanie field-choosera ----------
+  // csItemsId / csItemsUnitsId nie są widoczne jako osobna kolumna w tym, co
+  // już czytamy — sprawdzamy więc CAŁY <tr> (wszystkie atrybuty, nie tylko
+  // data-datafield) i szukamy typowych elementów "wybór kolumn" w gridzie.
+
+  function positionsGrid() {
+    return visibleGrids().find(t => t.querySelector('td[data-datafield="ItemDesc"]')
+      && t.querySelector('td[data-datafield="QuantityUnits"]')) || null;
+  }
+
+  window.savpolWzSondaSurowyWiersz = function () {
+    naglowek('SUROWY WIERSZ POZYCJI — ' + new Date().toISOString() + ' — ' + location.href);
+    const grid = positionsGrid();
+    if (!grid) {
+      log('Nie znaleziono widocznej siatki pozycji (ItemDesc + QuantityUnits). Otwórz kartę WZ.');
+      return savpolWzSondaKopiuj();
+    }
+    const row = grid.querySelector('tr.cs-grid-data-row');
+    if (!row) {
+      log('Siatka pozycji jest widoczna, ale brak wiersza z klasą cs-grid-data-row.');
+      return savpolWzSondaKopiuj();
+    }
+    log('--- Atrybuty <tr> pierwszego wiersza pozycji ---');
+    Array.from(row.attributes).forEach(a => log('  ' + a.name + ' = "' + a.value + '"'));
+
+    log('--- Wszystkie <td> w tym wierszu, także bez data-datafield ---');
+    Array.from(row.querySelectorAll('td')).forEach((c, i) => {
+      const attrs = Array.from(c.attributes).map(a => a.name + '="' + a.value + '"').join(' ');
+      log('  td#' + i + ' [' + attrs + '] text="' + (c.textContent || '').trim().slice(0, 60) + '"');
+    });
+
+    log('--- Cały <tr> (skrócony do 2000 znaków), do ręcznego przeszukania po "Items" / "Units" ---');
+    log(row.outerHTML.replace(/\s+/g, ' ').slice(0, 2000));
+
+    // Field chooser to typowy element w tego typu gridach (Kendo/DevExpress-podobne):
+    // ikona "kolumny"/"ustawienia" przy nagłówku siatki, albo prawoklik na
+    // nagłówku. Szukamy po nazwach klas/id, jakie się w tym ERP powtarzają.
+    log('--- Szukanie przycisku "wybór kolumn" w okolicy siatki ---');
+    const container = grid.closest('.cs-grid, [id*="Grid"], [class*="Grid"]') || grid.parentElement;
+    const candidates = Array.from((container || document).querySelectorAll(
+      '[class*="Chooser"], [class*="chooser"], [class*="ColumnSettings"], ' +
+      '[title*="kolumn"], [title*="Kolumn"], [class*="csGridSettings"], [class*="FieldList"]'
+    ));
+    if (candidates.length) {
+      candidates.forEach(el => log('  znaleziono: <' + el.tagName.toLowerCase() + '> class="' +
+        el.className + '" title="' + (el.getAttribute('title') || '') + '"'));
+    } else {
+      log('  nic nie znaleziono w okolicy siatki pozycji.');
+    }
+
     return savpolWzSondaKopiuj();
   };
 })();
