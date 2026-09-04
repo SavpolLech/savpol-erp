@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.52.0
+// @version      2.53.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -4640,6 +4640,21 @@
     // przycisk, strona zdazy wyslac wlasne zadania i mamy z czego przejac dane
     // sesji. Jest bierny — niczego nie wysyla.
     erpZainstalujPodsluch();
+
+    // Podgląd dla człowieka: czy skrypt ma już wzorzec zapytania o załączniki.
+    // Bez tego jedyną drogą do odpowiedzi było puszczenie całego przebiegu
+    // i czekanie kilka minut na komunikat na końcu — czyli zużycie realnej
+    // pracy na sprawdzenie stanu.
+    unsafeWindow.savpolSpecStan = function () {
+      const maWzorzec = !!erpPodsluch.szablonZalacznikow;
+      const s = 'Specyfikacje: ' + (maWzorzec
+        ? 'GOTOWE — wzorzec zapamiętany, skrypt pobierze specyfikacje sam.'
+        : 'BRAK WZORCA — ' + RADA_ZALACZNIKI)
+        + '\n  dane sesji ERP: ' + (erpPodsluch.koperta ? 'mam' : 'brak')
+        + '\n  zapamiętane kartoteki: ' + (Object.keys(erpPodsluch.produkty).length || 0);
+      console.log(s);
+      return s;
+    };
     setInterval(() => {
       insertButtonIfNeeded();
       insertEsavpolButtonIfNeeded();
