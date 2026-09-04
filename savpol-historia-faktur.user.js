@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.2.3
+// @version      3.2.4
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1990,11 +1990,34 @@
     XHR.prototype.__savpolPodsluch = true;
   }
 
+  // base64 z POSZANOWANIEM POLSKICH LITER.
+  //
+  // `btoa` przyjmuje wyłącznie znaki z zakresu Latin1 i na „ż" po prostu rzuca
+  // wyjątkiem — co wyszło dopiero przy pierwszym zapisie nazwy produktu
+  // („Dżem…"). Wcześniej nie bolało, bo wysyłaliśmy wyłącznie identyfikatory
+  // i nazwy bez ogonków. Kodujemy więc najpierw do UTF-8, tak jak robi to
+  // sama strona.
+  function base64Utf8(s) {
+    const bajty = new TextEncoder().encode(s);
+    let bin = '';
+    for (let i = 0; i < bajty.length; i += 8192) {
+      bin += String.fromCharCode.apply(null, bajty.subarray(i, i + 8192));
+    }
+    return btoa(bin);
+  }
+
   // Żądania: base64 ZIP-a BEZ kompresji, więc JSON leży w środku otwartym
   // tekstem — wystarczy odciąć nagłówki.
+  //
+  // Bajty czytamy jako UTF-8, a nie znak po znaku. Odczyt „po bajcie" robił
+  // z „Polepszacz" → „PolepszaczÂ…" i taka zniekształcona treść wracała potem
+  // do ERP w podmienianym wzorcu. Nie zdążyło to niczego popsuć, bo dotąd
+  // odsyłaliśmy wyłącznie liczby, ale przy zapisie opisów byłoby to groźne.
   function erpRozpakujZadanie(b64) {
-    let s;
-    try { s = atob(b64); } catch (e) { return null; }
+    let sur;
+    try { sur = atob(b64); } catch (e) { return null; }
+    const bajty = Uint8Array.from(sur, c => c.charCodeAt(0));
+    const s = new TextDecoder('utf-8').decode(bajty);
     const a = s.indexOf('{'), b = s.lastIndexOf('}');
     return (a < 0 || b <= a) ? null : s.slice(a, b + 1);
   }
@@ -2078,7 +2101,7 @@
       x.onerror = () => resolve({ ok: false, blad: 'błąd sieci' });
       x.send(JSON.stringify({
         DictIdent: 'csItemsOneBro',
-        Input: btoa(JSON.stringify(paczka)),
+        Input: base64Utf8(JSON.stringify(paczka)),
         Compress: false
       }));
     });
