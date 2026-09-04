@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.53.0
+// @version      2.54.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -132,6 +132,15 @@
   const SPEC_PDF = {
     ENABLE: true,
     ENDPOINT: '/api/spec-pdf',
+    // Skladanie zadania o zalaczniki od zera: wylaczone.
+    //
+    // Trzy przebiegi, trzy inne bledy, ostatni to wywrotka SQL po stronie
+    // serwera. Ten ERP trzyma stan widoku u siebie i nie da sie go odtworzyc
+    // z zewnatrz. Zostawiam kod, bo dokumentuje, czego probowalismy i dlaczego
+    // to nie dziala, ale domyslnie nie zawracamy tym glowy uzytkownikowi:
+    // zamiast kolejnego komunikatu o wewnetrznym bledzie ERP dostaje jedno
+    // zdanie o tym, co ma zrobic.
+    PROBUJ_BEZ_WZORCA: false,
     // „Specyfikacja i wartosc energetyczna produktu" — produkt miewa tez inne
     // zalaczniki (Atest), wiec filtr po typie jest konieczny.
     TYP_GUID: '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0'
@@ -1830,6 +1839,16 @@
   //
   // Kontrakt i ustalenia: docs/integracja-pdf-specyfikacja.md.
 
+  // Jedyne, co użytkownik musi zrobić, żeby pobieranie ruszyło.
+  //
+  // Wzorzec podpatrzony u strony działa bezbłędnie, tylko trzeba, żeby strona
+  // raz go wysłała. Jedno kliknięcie na sesję jest tańsze niż dalsze próby
+  // odtwarzania stanu widoku z zewnątrz — te skończyły się na błędzie SQL.
+  const RADA_ZALACZNIKI =
+    'Otwórz raz dowolny produkt (EDYCJA) i wejdź w zakładkę ZAŁĄCZNIKI — '
+    + 'skrypt zapamięta wzorzec zapytania na całą sesję i będzie pobierał '
+    + 'specyfikacje sam.';
+
   // Podsłuch API ERP.
   //
   // Skrypt nie umie się do ERP zalogować i nie ma po co: strona robi to za
@@ -2084,19 +2103,7 @@
     return { ok: false, blad: 'serwer wciąż zgłasza braki po dołożeniu: ' + dolozone.join(', ') };
   }
 
-  // Podpowiedź dla człowieka, gdy droga zapasowa zawiedzie.
-  //
-  // Ścieżka „składam żądanie sam" okazała się ślepa: trzy przebiegi, trzy różne
-  // błędy, a ostatni to już wywrotka SQL po stronie serwera. Ten ERP trzyma stan
-  // widoku u siebie i nie da się go wiernie odtworzyć z zewnątrz.
-  //
-  // Wzorzec podpatrzony u strony działa bezbłędnie, tylko trzeba, żeby strona
-  // raz go wysłała. Kosztuje to jedno kliknięcie na sesję — mniej niż kolejne
-  // podejścia do drogi, która nie prowadzi do celu.
-  const RADA_ZALACZNIKI =
-    'Otwórz raz dowolny produkt (EDYCJA) i wejdź w zakładkę ZAŁĄCZNIKI — '
-    + 'skrypt zapamięta wzorzec zapytania na całą sesję i będzie pobierał '
-    + 'specyfikacje sam.';
+
 
   // Lista załączników produktu.
   //
@@ -2106,7 +2113,11 @@
   // dołożeniu kompletu zestawów — wyjątkiem po stronie serwera.
   async function erpCzytajZalaczniki(sku) {
     const szablon = erpPodsluch.szablonZalacznikow;
-    if (!szablon) return erpCzytajZalacznikiBezSzablonu(sku);
+    if (!szablon) {
+      return SPEC_PDF.PROBUJ_BEZ_WZORCA
+        ? erpCzytajZalacznikiBezSzablonu(sku)
+        : { ok: false, blad: RADA_ZALACZNIKI, brakWzorca: true };
+    }
 
     const operacja = JSON.parse(JSON.stringify(szablon.OperationInvokeInput));
     operacja.DelegateIdent = erpGuid();
