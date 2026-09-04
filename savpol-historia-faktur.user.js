@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.1.0
+// @version      3.2.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -4892,6 +4892,149 @@
     return value;
   }
 
+  // ---------- Panel zapisu opisów (do testów) ----------
+  //
+  // Konsola wystarczyła do sprawdzenia, że zapis w ogóle działa, ale do
+  // przeklejania treści z generatora jest niewygodna: HTML opisu ma ponad
+  // 20 000 znaków, a w wywołaniu funkcji trzeba by go jeszcze escape'ować.
+  // Tutaj wystarczy wkleić.
+  const PANEL_OPISOW_ID = 'savpol-panel-opisow';
+
+  function stworzPanelOpisow() {
+    const stary = document.getElementById(PANEL_OPISOW_ID);
+    if (stary) stary.remove();
+
+    const box = document.createElement('div');
+    box.id = PANEL_OPISOW_ID;
+    box.style.cssText = [
+      'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483000',
+      'width:520px', 'max-height:90vh', 'overflow:auto',
+      'padding:14px 16px', 'box-sizing:border-box',
+      'background:#1f2933', 'color:#f5f7fa', 'border-radius:8px',
+      'box-shadow:0 6px 24px rgba(0,0,0,.35)',
+      'font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif'
+    ].join(';');
+
+    const pole = 'width:100%;box-sizing:border-box;font:12px ui-monospace,Consolas,monospace;' +
+      'padding:6px 8px;border:1px solid rgba(255,255,255,.2);border-radius:4px;' +
+      'background:rgba(0,0,0,.25);color:#f5f7fa;resize:vertical';
+    const guzik = 'cursor:pointer;font:inherit;font-size:12px;padding:6px 10px;border:0;' +
+      'border-radius:4px;font-weight:600';
+
+    box.innerHTML = [
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
+      '  <strong style="flex:1;font-size:13px">Zapis opisów do ERP</strong>',
+      '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
+      '</div>',
+      '<div style="font-size:12px;opacity:.75;margin-bottom:8px">',
+      '  Zapisuje wyłącznie <b>Nazwę produktu</b> i <b>Opis produktu</b>.',
+      '  Skład, przechowywanie i opis skrócony zostają nietknięte.</div>',
+      '<div style="margin-bottom:8px">',
+      '  <div style="font-size:12px;margin-bottom:3px">SKU produktu</div>',
+      '  <input data-role="sku" spellcheck="false" style="' + pole + '" placeholder="np. 0009905">',
+      '</div>',
+      '<div style="margin-bottom:8px">',
+      '  <div style="font-size:12px;margin-bottom:3px">Nazwa produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
+      '  <textarea data-role="nazwa" rows="2" spellcheck="false" style="' + pole + '"></textarea>',
+      '</div>',
+      '<div style="margin-bottom:8px">',
+      '  <div style="font-size:12px;margin-bottom:3px">Opis produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
+      '  <textarea data-role="opis" rows="7" spellcheck="false" style="' + pole + '"></textarea>',
+      '</div>',
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">',
+      '  <button data-role="sucho" style="' + guzik + ';background:#3e4c59;color:#f5f7fa">Sprawdź, nie zapisuj</button>',
+      '  <button data-role="zapisz" style="' + guzik + ';background:#b44d12;color:#fff">Zapisz do ERP</button>',
+      '  <span data-role="stan" style="font-size:12px;opacity:.8"></span>',
+      '</div>',
+      '<div data-role="wynik" style="font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;' +
+      'background:rgba(0,0,0,.25);border-radius:4px;padding:8px;max-height:220px;overflow:auto"></div>'
+    ].join('\n');
+
+    document.body.appendChild(box);
+
+    const el = r => box.querySelector('[data-role="' + r + '"]');
+    const pisz = t => { el('wynik').textContent = t; };
+
+    function zebrane() {
+      const tresci = {};
+      const n = el('nazwa').value.trim();
+      const o = el('opis').value;
+      if (n) tresci.nazwa = n;
+      if (String(o).trim()) tresci.opis = o;
+      return tresci;
+    }
+
+    async function uruchom(naprawde) {
+      const sku = el('sku').value.trim();
+      if (!sku) { pisz('Podaj SKU.'); return; }
+      const tresci = zebrane();
+      if (!Object.keys(tresci).length) {
+        pisz('Oba pola są puste — nie ma czego zapisać.');
+        return;
+      }
+      // Świadomie NIE pytamy o potwierdzenie przy przymiarce, ale przy
+      // prawdziwym zapisie pytamy zawsze: to jedyny moment, w którym da się
+      // jeszcze zawrócić, bo ERP nie ma cofania.
+      if (naprawde) {
+        const co = Object.keys(tresci)
+          .map(k => k === 'nazwa' ? 'Nazwę produktu' : 'Opis produktu').join(' i ');
+        if (!confirm('Nadpisać w ERP ' + co + ' dla produktu ' + sku + '?\n\n'
+          + 'ERP nie ma cofania. Kopia obecnych opisów zostanie pobrana na dysk.')) {
+          pisz('Anulowane.');
+          return;
+        }
+      }
+      el('sucho').disabled = true;
+      el('zapisz').disabled = true;
+      el('stan').textContent = naprawde ? 'Zapisuję…' : 'Sprawdzam…';
+      pisz('Pracuję. Skrypt sam wejdzie w kartę produktu — nie klikaj w ERP.');
+      try {
+        const w = await zapiszOpisy(sku, tresci, { zapisz: naprawde });
+        if (!w.ok) {
+          pisz('NIE UDAŁO SIĘ:\n' + w.blad);
+        } else if (w.naSucho) {
+          pisz('Przymiarka — nic nie zapisano:\n\n'
+            + w.plan.map(p => '• ' + (p.klucz === 'nazwa' ? 'Nazwa produktu' : 'Opis produktu')
+              + ': ' + p.czynnosc + '  (' + p.bylo + ' → ' + p.bedzie + ' znaków)').join('\n')
+            + '\n\nJeśli to się zgadza, kliknij „Zapisz do ERP".');
+        } else {
+          pisz('ZAPISANE i potwierdzone odczytem z ERP:\n\n'
+            + w.plan.map(p => '• ' + (p.klucz === 'nazwa' ? 'Nazwa produktu' : 'Opis produktu')
+              + ': ' + p.bedzie + ' znaków').join('\n')
+            + (w.ostrzezenie ? '\n\nUwaga: ' + w.ostrzezenie : ''));
+        }
+      } catch (e) {
+        pisz('Błąd: ' + (e && e.message));
+      } finally {
+        el('sucho').disabled = false;
+        el('zapisz').disabled = false;
+        el('stan').textContent = '';
+      }
+    }
+
+    el('close').addEventListener('click', () => box.remove());
+    el('sucho').addEventListener('click', () => uruchom(false));
+    el('zapisz').addEventListener('click', () => uruchom(true));
+    el('sku').focus();
+    return box;
+  }
+
+  function insertOpisyButtonIfNeeded() {
+    if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
+    const toolbar = getVisibleToolbar();
+    if (!toolbar) return;
+    if (toolbar.querySelector('#savpol-btn-opisy')) return;
+
+    const b = document.createElement('div');
+    b.id = 'savpol-btn-opisy';
+    b.className = 'csButton _csControl csButtonAction csAutogenerateButton UnderlinedButton icon-left';
+    b.style.cursor = 'pointer';
+    b.innerHTML = '<div class="caption" title="Wklej nazwę i opis produktu, '
+      + 'zapisz je do ERP">📝 Zapisz opisy</div>';
+    b.addEventListener('click', () => stworzPanelOpisow());
+    toolbar.appendChild(b);
+  }
+
   function createEanPanel() {
     const old = document.getElementById(EAN_TOOL.PANEL_ID);
     if (old) old.remove();
@@ -5413,6 +5556,7 @@
       insertButtonIfNeeded();
       insertEsavpolButtonIfNeeded();
       insertEanButtonIfNeeded();
+      insertOpisyButtonIfNeeded();
     }, 1000);
   }
 
