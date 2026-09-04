@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.48.0
+// @version      2.49.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1841,7 +1841,8 @@
   const erpPodsluch = {
     koperta: null,          // ostatnia koperta z ParentUniqName (dane sesji)
     szablonZalacznikow: null, // żądanie strony o listę załączników
-    produkty: {}            // wiersze csItems pod swoimi SKU
+    produkty: {},           // wiersze csItems pod swoimi SKU
+    zestawy: {}             // stan zestawów pomocniczych (słowniki itp.)
   };
 
   function erpZapamietaj(koperta) {
@@ -1859,6 +1860,7 @@
       if (!w || typeof w !== 'object') return;
       const id = String(w.DataSetSQLIdent || '');
       if (id === 'csAttachments' && w.Refresh === true) maZalaczniki = true;
+      if (w.DataTableInit && id) erpPodsluch.zestawy[id] = w;
       if (id !== 'csItems' || !w.DataTableInit) return;
 
       // Jeden produkt bywa kilkoma kartotekami (0004288 i 0004288-M), a szukanie
@@ -1994,6 +1996,63 @@
     });
   }
 
+  // Ścieżka zapasowa: składamy żądanie sami.
+  //
+  // Potrzebna, bo przebieg pracuje w widoku KATALOGU i nigdy nie otwiera
+  // zakładki Załączniki — nie ma więc czego podpatrzeć. Bez tego pobieranie
+  // specyfikacji nie ruszyłoby ani razu w normalnej pracy.
+  //
+  // Odrzuciłem kiedyś tę drogę, bo wracała pusta. Powodem było jednak złe
+  // czytanie ODPOWIEDZI, wspólne dla obu ścieżek — czyli dowód był fałszywy.
+  // Po naprawie warto ją sprawdzić, zanim zaczniemy klikać po zakładkach:
+  // sterowanie widokiem to w tym ERP najczęstsze źródło awarii.
+  async function erpCzytajZalacznikiBezSzablonu(sku) {
+    const wej = erpPodsluch.koperta.OperationInvokeInput;
+    const rodzic = wej.RefreshInputObject && wej.RefreshInputObject.ParentUniqName;
+    const produkt = erpPodsluch.produkty[sku];
+    const slownik = erpPodsluch.zestawy.csSupLangMasterData;
+    if (!produkt) return { ok: false, blad: 'nie widziałem danych produktu ' + sku };
+    if (!slownik) return { ok: false, blad: 'nie widziałem słownika języków' };
+
+    // Dokładnie ten zestaw, który wysyła strona: dwie siatki do odczytu i dwa
+    // zestawy stanu. Dołożenie „wszystkiego na wszelki wypadek" kończyło się
+    // wyjątkiem po stronie serwera — nadmiar szkodzi tu tak samo jak brak.
+    const tablice = {
+      '0': {
+        DataSetSQLIdent: 'csAttachments', SortList: [], DataTableInit: null,
+        Refresh: true, PageSizeFromClient: 100, PageActual: 0,
+        SelectStmType: 2, QueryUID: erpGuid(), KeepPage: false
+      },
+      '1': {
+        DataSetSQLIdent: 'csAttachmentsVersions',
+        SortList: [
+          { Alias: null, CaptionGuid: null, DefaultDirectSort: 2, DirectSort: 0, FieldName: 'ValidTo' },
+          { Alias: null, CaptionGuid: null, DefaultDirectSort: 2, DirectSort: 0, FieldName: 'VersionId' }
+        ],
+        DataTableInit: null, Refresh: true, PageSizeFromClient: 21, PageActual: 0,
+        SelectStmType: 2, QueryUID: erpGuid(), KeepPage: false
+      },
+      '2': slownik,
+      '3': produkt,
+      length: 4
+    };
+
+    const odp = await erpWywolaj({
+      OperationName: 'RefreshDataSetSQL_Synchronous',
+      Params: { DictIdent: 'csItemsOneBro', LoginProviderObject: null },
+      DelegateIdent: erpGuid(),
+      RefreshInputObject: {
+        ParentUniqName: rodzic, ParentIdent: 'csItemsOneBro',
+        DataTableInitList: tablice
+      }
+    });
+    if (!odp.ok) return odp;
+    const siatka = erpSiatkaPoKolumnie(odp.dane, 'csAttachmentsId');
+    if (!siatka) return { ok: false, blad: 'bez szablonu: w odpowiedzi nie ma siatki załączników' };
+    console.log('[Specyfikacja] Ścieżka zapasowa (własne żądanie) zadziałała.');
+    return { ok: true, wiersze: erpNaObiekty(siatka) };
+  }
+
   // Lista załączników produktu.
   //
   // Odtwarzamy żądanie, które strona wysyła sama przy wejściu na zakładkę
@@ -2002,7 +2061,7 @@
   // dołożeniu kompletu zestawów — wyjątkiem po stronie serwera.
   async function erpCzytajZalaczniki(sku) {
     const szablon = erpPodsluch.szablonZalacznikow;
-    if (!szablon) return { ok: false, blad: 'nie widziałem żądania o załączniki' };
+    if (!szablon) return erpCzytajZalacznikiBezSzablonu(sku);
 
     const operacja = JSON.parse(JSON.stringify(szablon.OperationInvokeInput));
     operacja.DelegateIdent = erpGuid();
