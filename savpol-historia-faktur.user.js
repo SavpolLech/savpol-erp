@@ -1908,6 +1908,8 @@
     koperta: null,          // ostatnia koperta z ParentUniqName (dane sesji)
     szablonZalacznikow: null, // żądanie strony o listę załączników
     szablonSku: '',         // KTÓREGO produktu dotyczy ten wzorzec
+    szablonOpisow: null,    // żądanie strony o listę opisów dla portali B2B
+    szablonOpisowSku: '',
     produkty: {},           // wiersze csItems pod swoimi SKU
     zestawy: {}             // stan zestawów pomocniczych (słowniki itp.)
   };
@@ -1922,12 +1924,14 @@
     if (!lista) return;
 
     let maZalaczniki = false;
+    let maOpisy = false;
     let skuWzorca = '';
     Object.keys(lista).forEach(k => {
       const w = lista[k];
       if (!w || typeof w !== 'object') return;
       const id = String(w.DataSetSQLIdent || '');
       if (id === 'csAttachments' && w.Refresh === true) maZalaczniki = true;
+      if (id === 'csItemsDesc4B2BPortals' && w.Refresh === true) maOpisy = true;
       if (w.DataTableInit && id) erpPodsluch.zestawy[id] = w;
       if (id !== 'csItems' || !w.DataTableInit) return;
 
@@ -1954,6 +1958,10 @@
     if (maZalaczniki) {
       erpPodsluch.szablonZalacznikow = koperta;
       erpPodsluch.szablonSku = skuWzorca;
+    }
+    if (maOpisy) {
+      erpPodsluch.szablonOpisow = koperta;
+      erpPodsluch.szablonOpisowSku = skuWzorca;
     }
   }
 
@@ -2215,11 +2223,11 @@
     return null;
   }
 
-  // Zakładka „Załączniki" WEWNĄTRZ otwartej karty produktu.
-  function erpZakladkaZalacznikow(panel) {
+  // Zakładka WEWNĄTRZ otwartej karty produktu, szukana po fragmencie napisu.
+  function erpZakladkaKarty(panel, fragment) {
     if (!panel) return null;
     return Array.from(panel.querySelectorAll('li.k-item[aria-controls]'))
-      .find(li => fold(li.textContent || '').indexOf('zalacznik') >= 0) || null;
+      .find(li => fold(li.textContent || '').indexOf(fragment) >= 0) || null;
   }
 
   // Skrypt sam robi to, co dotąd robił człowiek: znajduje produkt w katalogu,
@@ -2230,7 +2238,10 @@
   // podmiana działa tylko wtedy, gdy wcześniej widzieliśmy kartotekę tego SKU.
   // Przy zwykłej pracy (wyszukanie innego produktu w katalogu) nie widzieliśmy
   // jej wcale — i to była właśnie przyczyna wysyłania cudzej specyfikacji.
-  async function erpOtworzZalacznikiDlaSku(sku) {
+  // opis      — jak nazwać to w komunikatach („Załączniki", „Opisy")
+  // fragment  — czego szukać w napisie zakładki (bez ogonków, małymi literami)
+  // gotowe()  — kiedy uznać, że wzorzec się złapał
+  async function erpOtworzZakladkeDlaSku(sku, opis, fragment, gotowe) {
     if (!isCatalogTabActive() && !(await switchToCatalogTab())) {
       return { ok: false, blad: 'nie ma zakładki katalogu, więc nie wejdę w kartę produktu' };
     }
@@ -2258,21 +2269,20 @@
     let wynik;
     try {
       const panel = document.getElementById(newId);
-      const zakl = await waitFor(() => erpZakladkaZalacznikow(panel), 40, 250);
+      const zakl = await waitFor(() => erpZakladkaKarty(panel, fragment), 40, 250);
       if (!zakl) {
         // Nazwy zakładek w tym ERP bywają inne, niż się spodziewam. Wypisujemy
         // je, żeby jedna nieudana próba wystarczyła do poprawki.
-        console.warn('[Specyfikacja] W karcie nie widzę zakładki „Załączniki". '
+        console.warn('[ERP] W karcie nie widzę zakładki „' + opis + '". '
           + 'Są za to: ' + Array.from(panel.querySelectorAll('li.k-item[aria-controls]'))
             .map(li => (li.textContent || '').trim()).join(' | '));
-        wynik = { ok: false, blad: 'w karcie produktu nie ma zakładki „Załączniki"' };
+        wynik = { ok: false, blad: 'w karcie produktu nie ma zakładki „' + opis + '"' };
       } else {
         (zakl.querySelector('span.k-link') || zakl).click();
-        const gotowe = await waitFor(
-          () => (erpPodsluch.szablonSku === String(sku) ? true : null), 40, 250);
-        wynik = gotowe
+        const zlapane = await waitFor(() => (gotowe() ? true : null), 40, 250);
+        wynik = zlapane
           ? { ok: true }
-          : { ok: false, blad: 'kliknąłem w Załączniki, ale nie zobaczyłem zapytania o ' + sku };
+          : { ok: false, blad: 'kliknąłem w „' + opis + '", ale nie zobaczyłem zapytania o ' + sku };
       }
     } finally {
       closeTabById(newId);
@@ -2294,7 +2304,8 @@
     if (!erpPodsluch.szablonZalacznikow
         || (erpPodsluch.szablonSku !== String(sku) && !erpPodsluch.produkty[sku])) {
       console.log('[Specyfikacja] Otwieram kartę ' + sku + ', żeby wziąć jego załączniki.');
-      const auto = await erpOtworzZalacznikiDlaSku(sku);
+      const auto = await erpOtworzZakladkeDlaSku(sku, 'Załączniki', 'zalacznik',
+        () => erpPodsluch.szablonSku === String(sku));
       if (!auto.ok) {
         return { ok: false, blad: auto.blad, brakWzorca: !erpPodsluch.szablonZalacznikow };
       }
@@ -2363,6 +2374,92 @@
       wiersze: wiersze,
       wersje: wersje ? erpNaObiekty(wersje) : []
     };
+  }
+
+  // ---------- Opisy produktu dla portalu B2B ----------
+  //
+  // Kontrakty odczytane z nagrań A i B (patrz docs/integracja-zapis-opisow.md).
+  // Na razie TYLKO ODCZYT. Zapis jest osobnym krokiem i osobnym ryzykiem:
+  // ERP nie ma żadnej kontroli wersji, więc zapis to „ostatni wygrywa" —
+  // nadpisanie cudzej pracy nie zostawia po sobie śladu.
+  const OPISY = {
+    FIRMA_ID: 213217693,
+    PORTAL_ID: 1234896834,      // esavpol.pl
+    JEZYK_ID: 95,               // polski
+    TYPY: {
+      nazwa: '2519e05a-c86c-41c9-79d4-79023b9ef2e0',
+      opis: '95381861-9314-41ae-d36c-deca87152a68'
+    }
+  };
+
+  // Lista opisów produktu. Ta sama mechanika, co przy załącznikach: odtwarzamy
+  // żądanie, które strona wysyła sama, i sprawdzamy, czy pyta o WŁAŚCIWY produkt.
+  async function erpCzytajOpisy(sku) {
+    if (!erpPodsluch.koperta) return { ok: false, blad: 'brak danych sesji ERP' };
+
+    if (!erpPodsluch.szablonOpisow || erpPodsluch.szablonOpisowSku !== String(sku)) {
+      console.log('[Opisy] Otwieram kartę ' + sku + ', żeby wziąć jego opisy.');
+      const auto = await erpOtworzZakladkeDlaSku(sku, 'Opisy', 'opis',
+        () => erpPodsluch.szablonOpisowSku === String(sku));
+      if (!auto.ok) return { ok: false, blad: auto.blad };
+    }
+
+    const operacja = JSON.parse(JSON.stringify(erpPodsluch.szablonOpisow.OperationInvokeInput));
+    operacja.DelegateIdent = erpGuid();
+    const lista = operacja.RefreshInputObject && operacja.RefreshInputObject.DataTableInitList;
+    if (lista) Object.keys(lista).forEach(k => {
+      const w = lista[k];
+      if (w && typeof w === 'object' && w.QueryUID) w.QueryUID = erpGuid();
+    });
+
+    const czyj = erpWzorzecDotyczy(operacja, sku);
+    if (!czyj) return { ok: false, blad: 'we wzorcu nie widzę, o który produkt pyta' };
+    if (!czyj.zgodny) {
+      return { ok: false, blad: 'wzorzec dotyczy produktu ' + czyj.czyj + ', nie ' + sku };
+    }
+
+    const odp = await erpWywolaj(operacja);
+    if (!odp.ok) return odp;
+    const siatka = erpSiatkaPoKolumnie(odp.dane, 'csItemsDesc4B2BPortalsId');
+    if (!siatka) return { ok: false, blad: 'w odpowiedzi nie ma siatki opisów' };
+
+    const wiersze = erpNaObiekty(siatka)
+      .filter(w => String(w.csB2BPortalsId || '') === String(OPISY.PORTAL_ID));
+    return { ok: true, wiersze: wiersze, itemId: czyj.itemId };
+  }
+
+  function opisPoTypie(wiersze, typGuid) {
+    return wiersze.find(w =>
+      String(w.csB2BDescriptionTypesG || '').toLowerCase() === typGuid) || null;
+  }
+
+  // Podgląd na żądanie: co ERP ma dziś dla tego produktu.
+  //
+  // To jest przymiarka przed zapisem. Zanim skrypt zacznie cokolwiek nadpisywać,
+  // chcemy zobaczyć na kilku produktach, że czytamy WŁAŚCIWE wiersze — bo przy
+  // braku wersjonowania po stronie ERP pomyłka w zapisie jest nieodwracalna.
+  async function pokazOpisy(sku) {
+    const lista = await erpCzytajOpisy(sku);
+    if (!lista.ok) {
+      console.warn('[Opisy] ' + sku + ': ' + lista.blad);
+      return lista;
+    }
+    console.log('[Opisy] ' + sku + ' (csItemsId=' + lista.itemId + ') — wierszy: '
+      + lista.wiersze.length);
+    lista.wiersze.forEach(w => {
+      const tresc = String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '');
+      console.log('  • ' + (w.B2BDescriptionTypeTranslatedDesc || '?')
+        + '  [id=' + w.csItemsDesc4B2BPortalsId + ']'
+        + '  znaków: ' + tresc.length
+        + (tresc ? '\n      ' + tresc.slice(0, 160).replace(/\s+/g, ' ') + '…' : '  (pusty)'));
+    });
+    const brakujace = Object.keys(OPISY.TYPY)
+      .filter(k => !opisPoTypie(lista.wiersze, OPISY.TYPY[k]));
+    if (brakujace.length) {
+      console.log('  Brakuje wierszy: ' + brakujace.join(', ')
+        + ' — przy zapisie trzeba je najpierw założyć.');
+    }
+    return lista;
   }
 
   // Wybór specyfikacji — dwa kroki, tak jak robi to człowiek:
@@ -4897,6 +4994,13 @@
     // Bez tego jedyną drogą do odpowiedzi było puszczenie całego przebiegu
     // i czekanie kilka minut na komunikat na końcu — czyli zużycie realnej
     // pracy na sprawdzenie stanu.
+    // Przymiarka do zapisu opisów: pokazuje, co ERP ma dziś dla produktu.
+    // NIC NIE ZAPISUJE.
+    unsafeWindow.savpolOpisy = function (sku) {
+      if (!sku) { console.warn('[Opisy] Podaj SKU, np. savpolOpisy("0009905")'); return; }
+      return pokazOpisy(String(sku));
+    };
+
     unsafeWindow.savpolSpecStan = function () {
       const maWzorzec = !!erpPodsluch.szablonZalacznikow;
       const s = 'Specyfikacje: ' + (maWzorzec
