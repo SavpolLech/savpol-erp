@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.54.0
+// @version      2.55.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1893,6 +1893,14 @@
         erpPodsluch.produkty[wiersz.Item] = kopia;
       });
     });
+    // POTWIERDZENIE W KONSOLI. Podsłuch jest bierny, więc bez tej linii
+    // kliknięcie w zakładkę Załączniki nie dawało użytkownikowi żadnego
+    // sygnału — nie miał jak stwierdzić, czy odniosło skutek, poza puszczeniem
+    // całego przebiegu. Meldujemy raz, przy pierwszym przechwyceniu.
+    if (maZalaczniki && !erpPodsluch.szablonZalacznikow) {
+      console.log('%c[Specyfikacja] Wzorzec zapamiętany — mogę pobierać '
+        + 'specyfikacje do końca tej sesji.', 'font-weight:bold');
+    }
     if (maZalaczniki) erpPodsluch.szablonZalacznikow = koperta;
   }
 
