@@ -140,6 +140,24 @@ Trzeba wziąć `ActiveRecord` dokładnie taki, jaki ma strona, zmienić w nim
 wyłącznie dwie kolumny i odesłać. To ta sama zasada, co przy załącznikach —
 z tą różnicą, że tam pomyłka dawała pustą listę, a tu popsułaby kartotekę.
 
+## Potwierdzone zapisem na żywym ERP (4 września 2026)
+
+Pierwszy prawdziwy zapis przeszedł: „Nazwa produktu", 63 znaki, treść
+odczytana z powrotem z ERP zgodziła się co do znaku.
+
+Po drodze wyszły dwie rzeczy, obie o kodowaniu:
+
+- **`btoa` nie przyjmuje polskich liter.** Wywala się wyjątkiem na pierwszym
+  `ż`. Nie bolało, dopóki wysyłaliśmy same identyfikatory. Trzeba kodować do
+  UTF-8 przed base64.
+- **Odczyt wzorca musi dekodować UTF-8**, a nie brać bajt po bajcie. Inaczej
+  przechwycona treść wraca do ERP zniekształcona, cicho.
+
+Zakres zapisu jest **zamknięty do dwóch rodzajów**: „Nazwa produktu" i „Opis
+produktu". Skład, przechowywanie przed i po otwarciu oraz opis skrócony
+prowadzi człowiek — skrypt ich nie tyka, a próba podania innego pola kończy
+się błędem, nie pominięciem.
+
 ## Brak kontroli równoległych zmian
 
 W odpowiedziach **nie ma `RowVersion`, `ETag` ani znacznika wersji**. Zapis
