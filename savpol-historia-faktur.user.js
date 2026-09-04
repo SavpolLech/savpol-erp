@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.57.0
+// @version      2.58.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1860,6 +1860,7 @@
   const erpPodsluch = {
     koperta: null,          // ostatnia koperta z ParentUniqName (dane sesji)
     szablonZalacznikow: null, // żądanie strony o listę załączników
+    szablonSku: '',         // KTÓREGO produktu dotyczy ten wzorzec
     produkty: {},           // wiersze csItems pod swoimi SKU
     zestawy: {}             // stan zestawów pomocniczych (słowniki itp.)
   };
@@ -1874,6 +1875,7 @@
     if (!lista) return;
 
     let maZalaczniki = false;
+    let skuWzorca = '';
     Object.keys(lista).forEach(k => {
       const w = lista[k];
       if (!w || typeof w !== 'object') return;
@@ -1888,6 +1890,7 @@
       const dt = w.DataTableInit.DataTable;
       erpNaObiekty(dt).forEach((wiersz, idx) => {
         if (!wiersz.Item) return;
+        if (!skuWzorca) skuWzorca = String(wiersz.Item);
         const kopia = JSON.parse(JSON.stringify(w));
         kopia.DataTableInit.DataTable.Rows = [dt.Rows[idx]];
         erpPodsluch.produkty[wiersz.Item] = kopia;
@@ -1901,7 +1904,10 @@
       console.log('%c[Specyfikacja] Wzorzec zapamiętany — mogę pobierać '
         + 'specyfikacje do końca tej sesji.', 'font-weight:bold');
     }
-    if (maZalaczniki) erpPodsluch.szablonZalacznikow = koperta;
+    if (maZalaczniki) {
+      erpPodsluch.szablonZalacznikow = koperta;
+      erpPodsluch.szablonSku = skuWzorca;
+    }
   }
 
   function erpZainstalujPodsluch() {
@@ -2139,6 +2145,97 @@
     return true;
   }
 
+  // Czy tak przygotowane żądanie NAPRAWDĘ pyta o ten produkt.
+  //
+  // Bez tej kontroli błąd był cichy i groźny: gdy podmiana się nie udała,
+  // wysyłaliśmy wzorzec taki, jaki był, czyli pytanie o POPRZEDNI produkt —
+  // i apka dostawała cudzą specyfikację, wyglądającą całkiem poprawnie.
+  // Lepiej nie wysłać nic i powiedzieć o tym, niż wysłać nie to.
+  function erpWzorzecDotyczy(operacja, sku) {
+    const lista = operacja.RefreshInputObject && operacja.RefreshInputObject.DataTableInitList;
+    if (!lista) return null;
+    for (const k of Object.keys(lista)) {
+      const w = lista[k];
+      if (!w || typeof w !== 'object') continue;
+      if (String(w.DataSetSQLIdent || '') !== 'csItems') continue;
+      const dt = w.DataTableInit && w.DataTableInit.DataTable;
+      const wiersz = dt ? erpNaObiekty(dt)[0] : null;
+      if (!wiersz) continue;
+      return String(wiersz.Item || '') === String(sku)
+        ? { zgodny: true, itemId: wiersz.csItemsId }
+        : { zgodny: false, czyj: String(wiersz.Item || '?') };
+    }
+    return null;
+  }
+
+  // Zakładka „Załączniki" WEWNĄTRZ otwartej karty produktu.
+  function erpZakladkaZalacznikow(panel) {
+    if (!panel) return null;
+    return Array.from(panel.querySelectorAll('li.k-item[aria-controls]'))
+      .find(li => fold(li.textContent || '').indexOf('zalacznik') >= 0) || null;
+  }
+
+  // Skrypt sam robi to, co dotąd robił człowiek: znajduje produkt w katalogu,
+  // wchodzi w EDYCJĘ, klika ZAŁĄCZNIKI — i tym samym każe stronie wysłać
+  // wzorcowe żądanie o TEN produkt. Podsłuch je łapie po drodze.
+  //
+  // Dlaczego tak, a nie przez podmianę identyfikatorów w cudzym wzorcu:
+  // podmiana działa tylko wtedy, gdy wcześniej widzieliśmy kartotekę tego SKU.
+  // Przy zwykłej pracy (wyszukanie innego produktu w katalogu) nie widzieliśmy
+  // jej wcale — i to była właśnie przyczyna wysyłania cudzej specyfikacji.
+  async function erpOtworzZalacznikiDlaSku(sku) {
+    if (!isCatalogTabActive() && !(await switchToCatalogTab())) {
+      return { ok: false, blad: 'nie ma zakładki katalogu, więc nie wejdę w kartę produktu' };
+    }
+    await searchCatalog(sku);
+    const grid = getVisibleCatalogGrid();
+    const row = grid && Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row'))
+      .find(r => {
+        const c = r.querySelector('td[data-datafield="Item"]');
+        return c && c.getAttribute('title') === sku;
+      });
+    if (!row) return { ok: false, blad: 'nie znalazłem ' + sku + ' w katalogu' };
+
+    await closeStrayHistoryTabs(null);
+    await clearCatalogSelection();
+    const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
+    if (descCell) descCell.click();
+    await sleep(200);
+
+    const before = tabIdSet();
+    if (!openEditCard()) return { ok: false, blad: 'nie ma przycisku „Edycja"' };
+    const newId = await waitFor(
+      () => Array.from(tabIdSet()).find(id => !before.has(id)) || null, 40, 200);
+    if (!newId) return { ok: false, blad: 'karta produktu nie otworzyła się' };
+
+    let wynik;
+    try {
+      const panel = document.getElementById(newId);
+      const zakl = await waitFor(() => erpZakladkaZalacznikow(panel), 40, 250);
+      if (!zakl) {
+        // Nazwy zakładek w tym ERP bywają inne, niż się spodziewam. Wypisujemy
+        // je, żeby jedna nieudana próba wystarczyła do poprawki.
+        console.warn('[Specyfikacja] W karcie nie widzę zakładki „Załączniki". '
+          + 'Są za to: ' + Array.from(panel.querySelectorAll('li.k-item[aria-controls]'))
+            .map(li => (li.textContent || '').trim()).join(' | '));
+        wynik = { ok: false, blad: 'w karcie produktu nie ma zakładki „Załączniki"' };
+      } else {
+        (zakl.querySelector('span.k-link') || zakl).click();
+        const gotowe = await waitFor(
+          () => (erpPodsluch.szablonSku === String(sku) ? true : null), 40, 250);
+        wynik = gotowe
+          ? { ok: true }
+          : { ok: false, blad: 'kliknąłem w Załączniki, ale nie zobaczyłem zapytania o ' + sku };
+      }
+    } finally {
+      closeTabById(newId);
+      await sleep(400);
+      if (!isCatalogTabActive()) await switchToCatalogTab();
+      await waitFor(() => findVisibleCatalogSearchInput() !== null, 20, 200);
+    }
+    return wynik;
+  }
+
   // Lista załączników produktu.
   //
   // Odtwarzamy żądanie, które strona wysyła sama przy wejściu na zakładkę
@@ -2146,6 +2243,16 @@
   // takiego zapytania od zera kończyło się serią odmów („Brakujący: …"), a po
   // dołożeniu kompletu zestawów — wyjątkiem po stronie serwera.
   async function erpCzytajZalaczniki(sku) {
+    // Wzorzec cudzy i nie ma z czego go przestawić — idziemy po własny.
+    if (!erpPodsluch.szablonZalacznikow
+        || (erpPodsluch.szablonSku !== String(sku) && !erpPodsluch.produkty[sku])) {
+      console.log('[Specyfikacja] Otwieram kartę ' + sku + ', żeby wziąć jego załączniki.');
+      const auto = await erpOtworzZalacznikiDlaSku(sku);
+      if (!auto.ok) {
+        return { ok: false, blad: auto.blad, brakWzorca: !erpPodsluch.szablonZalacznikow };
+      }
+    }
+
     const szablon = erpPodsluch.szablonZalacznikow;
     if (!szablon) {
       return SPEC_PDF.PROBUJ_BEZ_WZORCA
@@ -2173,6 +2280,14 @@
       }
     });
 
+    // Kontrola PRZED wysłaniem: pytamy o ten produkt, czy o poprzedni?
+    const czyj = erpWzorzecDotyczy(operacja, sku);
+    if (!czyj) return { ok: false, blad: 'we wzorcu nie widzę, o który produkt pyta' };
+    if (!czyj.zgodny) {
+      return { ok: false, blad: 'wzorzec dotyczy produktu ' + czyj.czyj + ', nie ' + sku
+        + ' — nie wysyłam, żeby nie podstawić cudzej specyfikacji' };
+    }
+
     const odp = await erpWywolaj(operacja);
     if (!odp.ok) return odp;
     const siatka = erpSiatkaPoKolumnie(odp.dane, 'csAttachmentsId');
@@ -2184,9 +2299,21 @@
     // wyłącznie transport. Gdyby pobieranie urwało się w pół pliku, obie strony
     // zgodnie potwierdziłyby tę samą obciętą wartość.
     const wersje = erpSiatkaPoKolumnie(odp.dane, 'SizeInBytes');
+
+    // Drugi, niezależny świadek tożsamości: załącznik wisi przy kartotece przez
+    // SourceId. Gdyby serwer mimo wszystko oddał cudzą listę, tu to wyjdzie.
+    let wiersze = erpNaObiekty(siatka);
+    if (czyj.itemId != null && wiersze.some(w => w.SourceId != null)) {
+      const moje = wiersze.filter(w => String(w.SourceId) === String(czyj.itemId));
+      if (!moje.length && wiersze.length) {
+        return { ok: false, blad: 'serwer oddał załączniki innej kartoteki — nie wysyłam' };
+      }
+      wiersze = moje;
+    }
+
     return {
       ok: true,
-      wiersze: erpNaObiekty(siatka),
+      wiersze: wiersze,
       wersje: wersje ? erpNaObiekty(wersje) : []
     };
   }
@@ -4726,8 +4853,9 @@
     unsafeWindow.savpolSpecStan = function () {
       const maWzorzec = !!erpPodsluch.szablonZalacznikow;
       const s = 'Specyfikacje: ' + (maWzorzec
-        ? 'GOTOWE — wzorzec zapamiętany, skrypt pobierze specyfikacje sam.'
-        : 'BRAK WZORCA — ' + RADA_ZALACZNIKI)
+        ? 'GOTOWE — wzorzec zapamiętany (produkt ' + (erpPodsluch.szablonSku || '?')
+          + '); dla innych produktów skrypt otworzy kartę sam.'
+        : 'Wzorca jeszcze nie mam — skrypt weźmie go sam przy pierwszym przebiegu.')
         + '\n  dane sesji ERP: ' + (erpPodsluch.koperta ? 'mam' : 'brak')
         + '\n  zapamiętane kartoteki: ' + (Object.keys(erpPodsluch.produkty).length || 0);
       console.log(s);
