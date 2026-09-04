@@ -73,6 +73,25 @@
     MIN_INVOICES: 30,
     LOW_CONFIDENCE_BELOW: 50,
 
+    // Wczesne zatrzymanie zbierania faktur. Zamiast ciągnąć zawsze do
+    // MAX_INVOICES, po każdych CHECK_EVERY nowych fakturach liczymy top-4
+    // na tym, co już mamy, i porównujemy z poprzednim sprawdzeniem — gdy
+    // wynik jest identyczny STABLE_CHECKS razy z rzędu, kolejne faktury i tak
+    // by go nie zmieniły, więc kończymy. To realizuje pomysł "niech skrypt
+    // sam oceni, czy ma już dość danych" bez zgadywania jednego sztywnego
+    // limitu dla wszystkich anchorów: mocny sygnał (lider 40%+) stabilizuje
+    // się szybko, słaby (rozproszony koszyk) i tak dociągnie do MAX_INVOICES.
+    //
+    // MIN_INVOICES_BEFORE_CHECK = 40, bo poniżej tego (K=30 → 44% trafień
+    // z pełnej próby) ranking i tak jeszcze pływa — sprawdzanie stabilności
+    // wcześniej złapałoby przypadkową zbieżność dwóch kolejnych losowych prób.
+    EARLY_STOP: {
+      ENABLE: true,
+      MIN_INVOICES_BEFORE_CHECK: 40,
+      CHECK_EVERY: 10,
+      STABLE_CHECKS: 2
+    },
+
     // Maksymalna gramatura opakowania (kg lub L) dopuszczalna w sprzedaży
     // wysyłkowej. Worki 25kg to czyste B2B; 10kg (np. cukier puder) jeszcze ujdzie.
     MAX_PACK_KG: 10,
@@ -949,13 +968,15 @@
   // Przerwanie jest MIĘKKIE: łapiemy je tutaj i zwracamy faktury zebrane do tej
   // pory, żeby kilka minut scrapowania nie przepadło. Wynik z niepełnej próby
   // jest oznaczany jako częściowy na każdym wyjściu (nakładka, konsola, nazwa CSV).
-  async function collectAllInvoices(maxCount, onProgress, sink) {
+  async function collectAllInvoices(maxCount, onProgress, sink, anchorSku) {
     const results = sink || [];
     let consecutiveFailures = 0;
     let warnedMissingNames = false;
     const processedDocs = new Set();
     let invoicesProcessed = 0;
     let pageNum = 1;
+    let lastStableTop4 = null;
+    let stableCheckCount = 0;
 
     while (invoicesProcessed < maxCount && pageNum <= MAX_PAGES) {
       throwIfAborted();
@@ -1054,6 +1075,32 @@
         if (onProgress) onProgress(`${docNumber}: ${invoiceRows.length} pozycji`, { done: invoicesProcessed, total: maxCount });
         results.push(...invoiceRows);
 
+        // Wczesne zatrzymanie — patrz uzasadnienie przy CROSS_SELL.EARLY_STOP.
+        // Pomijane bez anchorSku (np. wywołania spoza głównego przebiegu),
+        // żeby nie zmieniać zachowania w miejscach, które go nie przekazują.
+        if (anchorSku && CROSS_SELL.EARLY_STOP.ENABLE &&
+            invoicesProcessed >= CROSS_SELL.EARLY_STOP.MIN_INVOICES_BEFORE_CHECK &&
+            invoicesProcessed % CROSS_SELL.EARLY_STOP.CHECK_EVERY === 0) {
+          const top4 = analyzeCrossSell(results, anchorSku).candidates
+            .map(c => c.sku).sort().join(',');
+          // Pusty top-4 nigdy nie liczy się jako "stabilny" — brak sygnału
+          // dziś nie znaczy, że kolejne faktury go nie odsłonią, więc dla
+          // słabego sygnału i tak dociągamy do maxCount.
+          if (top4 && top4 === lastStableTop4) {
+            stableCheckCount++;
+            if (stableCheckCount >= CROSS_SELL.EARLY_STOP.STABLE_CHECKS) {
+              const msg = `Ranking ustabilizował się po ${invoicesProcessed} fakturach — kończę wcześniej.`;
+              console.log('[Savpol Historia Faktur] ' + msg);
+              diag('EARLY_STOP', msg + ' Top-4: ' + top4);
+              if (onProgress) onProgress(msg, { done: invoicesProcessed, total: invoicesProcessed });
+              return results;
+            }
+          } else {
+            stableCheckCount = 0;
+          }
+          lastStableTop4 = top4;
+        }
+
         const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
         if (closeBtn) closeBtn.click();
 
@@ -1087,14 +1134,14 @@
   }
 
   // Opakowanie łapiące przerwanie — zwraca { rows, aborted }.
-  async function collectAllInvoicesInterruptible(maxCount, onProgress) {
+  async function collectAllInvoicesInterruptible(maxCount, onProgress, anchorSku) {
     const collected = [];
     // Ile wierszy faktur w ogóle zobaczyliśmy na listach. Rozstrzyga różnicę
     // między „produkt nie ma sprzedaży" (0 wierszy — poprawny wynik) a „nie
     // umiem odczytać pozycji" (wiersze były, nic z nich nie wyszło — awaria).
     const faSeen = getFaRows().length;
     try {
-      const rows = await collectAllInvoices(maxCount, onProgress, collected);
+      const rows = await collectAllInvoices(maxCount, onProgress, collected, anchorSku);
       return { rows, aborted: false, faSeen: Math.max(faSeen, getFaRows().length) };
     } catch (err) {
       if (err && err.isAbort) {

@@ -1,5 +1,5 @@
 // Podgląd żądań zapisu w ERP — do wklejenia w konsolę przeglądarki.
-// WERSJA: 2026-09-04.1
+// WERSJA: 2026-09-04.2
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -37,10 +37,10 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-04.1';
+  const WERSJA = '2026-09-04.2';
 
   const MUTUJACE = ['POST', 'PUT', 'PATCH', 'DELETE'];
-  const LIMIT_SUROWY = 20000;  // dotyczy już tylko payloadów, których nie umiemy zrozumieć
+  const LIMIT_SUROWY = 4000;   // tylko dla payloadow, ktorych nie umiemy zrozumiec
   const LIMIT_POLA = 4000;     // pojedyncza wartość w wierszu siatki
   const zapisy = [];
   let start = null;
@@ -67,22 +67,31 @@
   // ERP pakuje raz tak, raz tak: żądania widoku idą jako ZIP „stored" (JSON
   // leży w środku otwartym tekstem), ale ŻĄDANIE ZAPISU potrafi być spakowane
   // deflate. Nie zgadujemy — czytamy metodę z nagłówka ZIP-a.
+  // Za JSON-em w ZIP-ie „stored" idzie jeszcze centralny katalog archiwum
+  // (kończy się bajtami „PK…"). Bez odcięcia go JSON.parse pada — i to właśnie
+  // przez to pierwsze poprawione nagranie wyszło jako „nie zrozumiałem".
+  function wytnijJson(s) {
+    if (s == null) return null;
+    const od = s.indexOf('{');
+    const doo = s.lastIndexOf('}');
+    return (od < 0 || doo <= od) ? null : s.slice(od, doo + 1);
+  }
+
   async function rozpakujB64(b64) {
     const bajty = naBajty(b64);
     if (!bajty || !bajty.length) return null;
 
     if (bajty[0] !== 0x50 || bajty[1] !== 0x4b) {
-      const jako = new TextDecoder().decode(bajty);
-      return jako.trim().charAt(0) === '{' ? jako : null;
+      return wytnijJson(new TextDecoder().decode(bajty));
     }
     const metoda = bajty[8] | (bajty[9] << 8);
     const od = 30 + (bajty[26] | (bajty[27] << 8)) + (bajty[28] | (bajty[29] << 8));
     const dane = bajty.slice(od);
-    if (metoda === 0) return new TextDecoder().decode(dane);
+    if (metoda === 0) return wytnijJson(new TextDecoder().decode(dane));
     if (typeof DecompressionStream !== 'function') return null;
     try {
       const st = new Blob([dane]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-      return await new Response(st).text();
+      return wytnijJson(await new Response(st).text());
     } catch (e) {
       return null;
     }
@@ -121,13 +130,38 @@
     if (n > 5) linie.push(wciecie + '   …[jeszcze ' + (n - 5) + ' wierszy]');
   }
 
+  // Odpowiedź ma inny kształt niż żądanie: siatki leżą w RefreshObjectReturnList,
+  // a ich DataSetSQLIdent bywa pusty — rozpoznajemy je po nazwach kolumn.
+  function streszczOdpowiedz(d) {
+    const wynik = d.OperationInvokeResult || d.Result;
+    if (!wynik) return null;
+    const linie = [];
+    if (d.Error || wynik.Error) linie.push('BŁĄD: ' + wartosc(d.Error || wynik.Error));
+    ['RemoteFileInfoList', 'ReturnValue', 'ActionResult'].forEach(k => {
+      if (wynik[k] != null) linie.push(k + ': ' + wartosc(wynik[k]));
+    });
+    const zwroty = wynik.RefreshObjectReturnList;
+    if (zwroty && typeof zwroty === 'object') {
+      Object.keys(zwroty).filter(k => k !== 'length').forEach(k => {
+        const z = zwroty[k];
+        const dt = z && z.DataTable;
+        if (!dt || !dt.FieldDefs) return;
+        const n = dt.Rows ? dt.Rows.length : 0;
+        linie.push('siatka [' + (z.DataSetSQLIdent || 'bez identu') + '] wierszy=' + n
+          + '  kolumny: ' + dt.FieldDefs.map(f => f.FieldName).join(', ').slice(0, 600));
+      });
+    }
+    return linie.length ? linie.join('\n') : '(odpowiedź bez treści, której szukam)';
+  }
+
   // Zamiast 55 000 znaków, z czego 54 000 to puste struktury — kilka ekranów
   // tego, co naprawdę niesie treść.
   function streszcz(json) {
     let d;
     try { d = JSON.parse(json); } catch (e) { return null; }
-    const op = d && d.OperationInvokeInput;
-    if (!op) return null;
+    if (!d) return null;
+    if (!d.OperationInvokeInput) return streszczOdpowiedz(d);
+    const op = d.OperationInvokeInput;
 
     const linie = [];
     const p = op.Params || {};
@@ -291,16 +325,26 @@
     linie.push('URL: ' + location.href);
     linie.push('Żądań: ' + zapisy.length);
     linie.push('');
+    // Każdy rekord osobno. Wcześniej jedno potknięcie w środku ucinało zrzut
+    // po cichu — w pliku było 4 żądania z 11 i nic o tym nie mówiło.
+    let potkniecia = 0;
     for (let i = 0; i < zapisy.length; i++) {
       const r = zapisy[i];
       linie.push('===== #' + i + '  [' + r.t + ']  ' + r.method + ' (' + r.zrodlo + ') → ' + r.status + ' =====');
       linie.push('URL: ' + r.url);
-      linie.push('--- żądanie ---');
-      linie.push(await przetworz(r.body, 'Input'));
-      linie.push('--- odpowiedź ---');
-      linie.push(await przetworz(r.odpowiedz, 'JSONResult'));
+      try {
+        linie.push('--- żądanie ---');
+        linie.push(await przetworz(r.body, 'Input'));
+        linie.push('--- odpowiedź ---');
+        linie.push(await przetworz(r.odpowiedz, 'JSONResult'));
+      } catch (e) {
+        potkniecia++;
+        linie.push('!!! nie udało się przetworzyć tego żądania: ' + (e && e.message));
+      }
       linie.push('');
     }
+    linie.push('— koniec zrzutu, żądań: ' + zapisy.length
+      + (potkniecia ? ', nieprzetworzonych: ' + potkniecia : ''));
     return linie.join('\n');
   };
 
