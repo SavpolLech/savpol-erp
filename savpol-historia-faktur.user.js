@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.0.1
+// @version      3.0.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2229,11 +2229,30 @@
   // `li.k-item[aria-controls]` i na karcie produktu nie znalazło ANI JEDNEGO
   // elementu — a więc nie chodziło o złą nazwę zakładki, tylko o zły selektor.
   // Ten ERP miesza widżety Kendo z własnymi, więc nie zakładamy jednego kształtu.
+  // Potwierdzone sondą `diagnostyka/sonda-zakladki-karty.js` na żywej karcie:
+  // zakładki KARTY to `li.csTabListItemHeaderContainer` z atrybutem `title`.
+  // To zupełnie inny widżet niż zakładki GÓRNE (te są Kendo, `li.k-item`) —
+  // stąd wcześniejsze „nie widzę żadnej zakładki".
   const SELEKTORY_ZAKLADEK = [
+    'li.csTabListItemHeaderContainer',
     'li.k-item', 'li[role="tab"]', '[role="tab"]',
-    '.k-tabstrip-items > li', '.k-tabstrip-items > *',
-    '.csTabItem', '.csPageTab', '.csTabStrip li', '.csTabStrip > *'
+    '.k-tabstrip-items > li', '.csTabItem'
   ];
+
+  // Zakładki karty produktu, jakie ERP pokazuje (stan na 4 września 2026):
+  //   Dane podstawowe · Dane dodatkowe            ← pasek górny
+  //   Zapasy · Zdjęcia · Załączniki · Grupy · Atrybuty · Opisy w B2B ·
+  //   Powiązane · Jednostki · Referencje · Kontrahenci · Opisy · Opisy dod. ·
+  //   Do użycia w magazynach · SEO · Limity cen produktów · Stany MWS ·
+  //   Towary w drodze                             ← pasek boczny
+  //
+  // Uwaga: „Opisy" i „Opisy dod." to CO INNEGO niż „Opisy w B2B". Nas
+  // interesuje wyłącznie ta ostatnia — to ona trzyma opisy dla esavpol.pl.
+  const ZAKLADKI = {
+    ZALACZNIKI: 'Załączniki',
+    OPISY_B2B: 'Opisy w B2B',
+    SEO: 'SEO'
+  };
 
   function kandydaciNaZakladki(panel) {
     const zbior = new Set();
@@ -2245,14 +2264,35 @@
     return Array.from(zbior);
   }
 
-  function erpZakladkaKarty(panel, fragment) {
+  // Rozstrzyga ATRYBUT `title`, nie tekst.
+  //
+  // Po tekście „opis" pasuje też „Opisy", „Opisy dod." i pół karty — a każda
+  // z tych zakładek pokazuje co innego. Dopasowanie po fragmencie było tu
+  // dokładnie tym rodzajem wygody, który kończy się cichym wzięciem nie tego,
+  // o co chodziło. Po nazwie dokładnej albo wcale.
+  function erpZakladkaKarty(panel, nazwa) {
     if (!panel) return null;
-    // Najkrótszy pasujący napis wygrywa: „Opisy" bije „Opisy i tłumaczenia",
-    // a przede wszystkim bije kontener, który zawiera w sobie wszystkie
-    // zakładki naraz (a więc też szukany fragment).
-    return kandydaciNaZakladki(panel)
-      .filter(el => fold(el.textContent || '').indexOf(fragment) >= 0)
-      .sort((a, b) => (a.textContent || '').length - (b.textContent || '').length)[0] || null;
+    const szukana = fold(nazwa);
+    const kandydaci = kandydaciNaZakladki(panel)
+      .filter(el => !/cs-display-none/.test(String(el.className || '')));
+
+    const poTytule = kandydaci.find(el => fold(el.getAttribute('title') || '') === szukana);
+    if (poTytule) return poTytule;
+
+    // Zapas na wypadek, gdyby ERP przestał dawać `title`: dokładny własny
+    // tekst elementu, nadal bez dopasowania po fragmencie.
+    return kandydaci.find(el => fold(wlasnyTekstEl(el)) === szukana) || null;
+  }
+
+  // Tekst NALEŻĄCY do elementu, bez tekstu dzieci — kontener obejmujący cały
+  // pasek zakładek też zawiera szukaną nazwę, a nie o niego nam chodzi.
+  function wlasnyTekstEl(el) {
+    return Array.from(el.childNodes)
+      .filter(n => n.nodeType === 3)
+      .map(n => n.textContent.trim())
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   // Wynik diagnostyczny ma trafić do schowka sam — zasada projektu mówi, że
@@ -2287,9 +2327,9 @@
 
   // Zrzut budowy karty, gdy zakładki nie widać. Idzie do schowka, zgodnie
   // z zasadą projektu — użytkownik nie przepisuje niczego z konsoli ręcznie.
-  function opiszKarte(panel, sku, fragment) {
+  function opiszKarte(panel, sku, nazwa) {
     const linie = [];
-    linie.push('Savpol ERP — budowa karty produktu (szukam zakładki „' + fragment + '")');
+    linie.push('Savpol ERP — budowa karty produktu (szukam zakładki „' + nazwa + '")');
     linie.push('Produkt: ' + sku);
     linie.push('URL: ' + location.href);
     linie.push('Data: ' + new Date().toISOString());
@@ -2311,9 +2351,9 @@
       try { n = document.querySelectorAll(sel).length; } catch (e) { n = -1; }
       linie.push('  ' + sel + ' → ' + n);
     });
-    linie.push('  napisy z całego dokumentu zawierające „' + fragment + '": '
+    linie.push('  napisy z całego dokumentu zawierające „' + nazwa + '": '
       + Array.from(document.querySelectorAll(SELEKTORY_ZAKLADEK.join(',')))
-        .filter(el => fold(el.textContent || '').indexOf(fragment) >= 0)
+        .filter(el => fold(el.textContent || '').indexOf(fold(nazwa)) >= 0)
         .slice(0, 20)
         .map(el => '<' + el.tagName.toLowerCase() + '>' + (el.textContent || '').trim().slice(0, 40))
         .join(' | '));
@@ -2343,10 +2383,9 @@
   // podmiana działa tylko wtedy, gdy wcześniej widzieliśmy kartotekę tego SKU.
   // Przy zwykłej pracy (wyszukanie innego produktu w katalogu) nie widzieliśmy
   // jej wcale — i to była właśnie przyczyna wysyłania cudzej specyfikacji.
-  // opis      — jak nazwać to w komunikatach („Załączniki", „Opisy")
-  // fragment  — czego szukać w napisie zakładki (bez ogonków, małymi literami)
+  // nazwa     — DOKŁADNY tytuł zakładki karty, patrz ZAKLADKI
   // gotowe()  — kiedy uznać, że wzorzec się złapał
-  async function erpOtworzZakladkeDlaSku(sku, opis, fragment, gotowe) {
+  async function erpOtworzZakladkeDlaSku(sku, nazwa, gotowe) {
     if (!isCatalogTabActive() && !(await switchToCatalogTab())) {
       return { ok: false, blad: 'nie ma zakładki katalogu, więc nie wejdę w kartę produktu' };
     }
@@ -2377,21 +2416,21 @@
       // Najpierw czekamy, aż karta w ogóle wyrenderuje jakiekolwiek zakładki —
       // dopiero wtedy szukanie konkretnej ma sens.
       await waitFor(() => (kandydaciNaZakladki(panel).length ? true : null), 60, 250);
-      const zakl = await waitFor(() => erpZakladkaKarty(panel, fragment), 40, 250);
+      const zakl = await waitFor(() => erpZakladkaKarty(panel, nazwa), 40, 250);
       if (!zakl) {
-        const zrzut = opiszKarte(panel, sku, fragment);
+        const zrzut = opiszKarte(panel, sku, nazwa);
         ostatniZrzut = zrzut;
         skopiujDoSchowka(zrzut);
-        console.warn('[ERP] Nie widzę w karcie zakładki „' + opis + '". '
+        console.warn('[ERP] Nie widzę w karcie zakładki „' + nazwa + '". '
           + 'Zrzut budowy karty jest w schowku (' + zrzut.length + ' znaków) — '
           + 'wklej go do rozmowy, poprawię szukanie.');
-        wynik = { ok: false, blad: 'w karcie produktu nie ma zakładki „' + opis + '"' };
+        wynik = { ok: false, blad: 'w karcie produktu nie ma zakładki „' + nazwa + '"' };
       } else {
         (zakl.querySelector('span.k-link') || zakl).click();
         const zlapane = await waitFor(() => (gotowe() ? true : null), 40, 250);
         wynik = zlapane
           ? { ok: true }
-          : { ok: false, blad: 'kliknąłem w „' + opis + '", ale nie zobaczyłem zapytania o ' + sku };
+          : { ok: false, blad: 'kliknąłem w „' + nazwa + '", ale nie zobaczyłem zapytania o ' + sku };
       }
     } finally {
       closeTabById(newId);
@@ -2413,7 +2452,7 @@
     if (!erpPodsluch.szablonZalacznikow
         || (erpPodsluch.szablonSku !== String(sku) && !erpPodsluch.produkty[sku])) {
       console.log('[Specyfikacja] Otwieram kartę ' + sku + ', żeby wziąć jego załączniki.');
-      const auto = await erpOtworzZakladkeDlaSku(sku, 'Załączniki', 'zalacznik',
+      const auto = await erpOtworzZakladkeDlaSku(sku, ZAKLADKI.ZALACZNIKI,
         () => erpPodsluch.szablonSku === String(sku));
       if (!auto.ok) {
         return { ok: false, blad: auto.blad, brakWzorca: !erpPodsluch.szablonZalacznikow };
@@ -2508,7 +2547,7 @@
 
     if (!erpPodsluch.szablonOpisow || erpPodsluch.szablonOpisowSku !== String(sku)) {
       console.log('[Opisy] Otwieram kartę ' + sku + ', żeby wziąć jego opisy.');
-      const auto = await erpOtworzZakladkeDlaSku(sku, 'Opisy', 'opis',
+      const auto = await erpOtworzZakladkeDlaSku(sku, ZAKLADKI.OPISY_B2B,
         () => erpPodsluch.szablonOpisowSku === String(sku));
       if (!auto.ok) return { ok: false, blad: auto.blad };
     }
