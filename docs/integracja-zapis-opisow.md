@@ -85,6 +85,61 @@ Cały ładunek to **jeden wiersz o siedmiu polach**:
 Między produktami zmieniają się tylko `csItemsId` i `csItemsDesc4B2BPortalsId`.
 Reszta to stałe firmy, portalu i języka.
 
+## Trzy nagrane przebiegi (4 września 2026)
+
+Nagrane snippetem `diagnostyka/podglad-zapisu-erp.js` na produkcie `0009905`
+(`csItemsId = 218531445`), po jednej czynności na przebieg.
+
+### A — dodanie opisu, którego jeszcze nie ma: DWA żądania
+
+Sam `ChangeDesc` nie wystarcza, bo nie ma czego zmieniać. Najpierw powstaje
+pusty wiersz, dopiero potem wpisuje się w niego treść:
+
+1. `ActionIdent: csItemsDesc4B2BPortalsInsert`, `DataSetTypeIdent: csItemsDesc4B2BPortals`,
+   `DataSetSQLIdent: csItemsDesc4B2BPortalsEdit`, zestaw
+   `ActionParams_csItemsDesc4B2BPortalsEdit`. Wiersz niesie `csCompaniesId`,
+   `csB2BPortalsId`, `csItemsId`, `csB2BDescriptionTypesG`, `csSupLangId`,
+   `isExternalEditor = 1` oraz **`csItemsDesc4B2BPortalsG` wymyślony przez
+   klienta** — ten sam GUID leci w `__SelectedRecords__`. Pola `ItemDesc1_*`
+   są `null`: akcja zakłada wiersz, nie zapisuje treści.
+2. `ActionIdent: csItemsDesc4B2BPortalsChangeDesc` — jak niżej, z
+   `csItemsDesc4B2BPortalsId` **nadanym przez serwer** przy kroku 1.
+
+### B — zmiana istniejącego opisu
+
+Też dwa żądania, ale pierwsze to tylko otwarcie edytora:
+`csItemsDesc4B2BPortalsUpdate` niesie wiersz ze **starą** treścią
+(`ItemDesc1_PL`, `ItemTranslatedDesc1`). Zapis robi dopiero
+`csItemsDesc4B2BPortalsChangeDesc`.
+
+Rodzaje opisu (`csB2BDescriptionTypesG`):
+
+| GUID | Rodzaj |
+|---|---|
+| `2519e05a-c86c-41c9-79d4-79023b9ef2e0` | Nazwa produktu |
+| `95381861-9314-41ae-d36c-deca87152a68` | Opis produktu |
+
+Stałe portalu esavpol.pl: `csB2BPortalsId = 1234896834`,
+`csCompaniesId = 213217693`, `csSupLangId = 95` (polski).
+
+W treści `ItemDesc1` przechodzi pełny HTML ze `<style>` — nagrany opis miał
+ponad 20 000 znaków i nie był w żaden sposób oczyszczany.
+
+### C — SEO: to NIE jest opis, to pola karty produktu
+
+`SEOTitle_PL` i `SEODescription_PL` siedzą wprost w `csItems`, a zapisuje je
+`ActionIdent: csItemsUpdate` (`DataSetTypeIdent: csItems`) z zestawem
+`ActiveRecord`, wskazując rekord przez `csItemsG` w `__SelectedRecords__`.
+
+**To jest przebieg niebezpieczny.** Żądanie odsyła **cały rekord produktu** —
+około 130 pól: ceny, jednostki, grupy B2B, producenta, EAN, VAT, wagę,
+wymiary, opiekuna. Serwer dostaje je wszystkie i wszystkie zapisze.
+
+Wniosek dla implementacji: przy SEO **nie wolno budować wiersza samodzielnie**.
+Trzeba wziąć `ActiveRecord` dokładnie taki, jaki ma strona, zmienić w nim
+wyłącznie dwie kolumny i odesłać. To ta sama zasada, co przy załącznikach —
+z tą różnicą, że tam pomyłka dawała pustą listę, a tu popsułaby kartotekę.
+
 ## Brak kontroli równoległych zmian
 
 W odpowiedziach **nie ma `RowVersion`, `ETag` ani znacznika wersji**. Zapis
