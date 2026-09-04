@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.0.0
+// @version      3.0.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2224,10 +2224,115 @@
   }
 
   // Zakładka WEWNĄTRZ otwartej karty produktu, szukana po fragmencie napisu.
+  //
+  // Selektor jest celowo szeroki. Pierwsze podejście brało wyłącznie
+  // `li.k-item[aria-controls]` i na karcie produktu nie znalazło ANI JEDNEGO
+  // elementu — a więc nie chodziło o złą nazwę zakładki, tylko o zły selektor.
+  // Ten ERP miesza widżety Kendo z własnymi, więc nie zakładamy jednego kształtu.
+  const SELEKTORY_ZAKLADEK = [
+    'li.k-item', 'li[role="tab"]', '[role="tab"]',
+    '.k-tabstrip-items > li', '.k-tabstrip-items > *',
+    '.csTabItem', '.csPageTab', '.csTabStrip li', '.csTabStrip > *'
+  ];
+
+  function kandydaciNaZakladki(panel) {
+    const zbior = new Set();
+    SELEKTORY_ZAKLADEK.forEach(sel => {
+      let znalezione = [];
+      try { znalezione = Array.from(panel.querySelectorAll(sel)); } catch (e) { /* zły selektor */ }
+      znalezione.forEach(el => zbior.add(el));
+    });
+    return Array.from(zbior);
+  }
+
   function erpZakladkaKarty(panel, fragment) {
     if (!panel) return null;
-    return Array.from(panel.querySelectorAll('li.k-item[aria-controls]'))
-      .find(li => fold(li.textContent || '').indexOf(fragment) >= 0) || null;
+    // Najkrótszy pasujący napis wygrywa: „Opisy" bije „Opisy i tłumaczenia",
+    // a przede wszystkim bije kontener, który zawiera w sobie wszystkie
+    // zakładki naraz (a więc też szukany fragment).
+    return kandydaciNaZakladki(panel)
+      .filter(el => fold(el.textContent || '').indexOf(fragment) >= 0)
+      .sort((a, b) => (a.textContent || '').length - (b.textContent || '').length)[0] || null;
+  }
+
+  // Wynik diagnostyczny ma trafić do schowka sam — zasada projektu mówi, że
+  // użytkownik niczego nie zaznacza w konsoli ręcznie. `copy()` istnieje tylko
+  // w konsoli DevTools, a my jesteśmy w userscripcie, więc idziemy przez API
+  // schowka, a gdy ono odmówi (brak focusu) — przez ukryty textarea.
+  function skopiujDoSchowka(txt) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).catch(() => schowekAwaryjnie(txt));
+      return;
+    }
+    schowekAwaryjnie(txt);
+  }
+
+  function schowekAwaryjnie(txt) {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(ta);
+    if (!ok) {
+      console.warn('[ERP] Nie udało się skopiować do schowka. Zrzut jest pod '
+        + 'savpolOstatniZrzut() — wywołaj i skopiuj z konsoli.');
+    }
+  }
+
+  let ostatniZrzut = '';
+
+  // Zrzut budowy karty, gdy zakładki nie widać. Idzie do schowka, zgodnie
+  // z zasadą projektu — użytkownik nie przepisuje niczego z konsoli ręcznie.
+  function opiszKarte(panel, sku, fragment) {
+    const linie = [];
+    linie.push('Savpol ERP — budowa karty produktu (szukam zakładki „' + fragment + '")');
+    linie.push('Produkt: ' + sku);
+    linie.push('URL: ' + location.href);
+    linie.push('Data: ' + new Date().toISOString());
+    linie.push('Panel: id=' + (panel && panel.id) + ' klasy=' + (panel && panel.className));
+    linie.push('');
+    linie.push('--- ile czego znajduję ---');
+    SELEKTORY_ZAKLADEK.forEach(sel => {
+      let n = 0;
+      try { n = panel.querySelectorAll(sel).length; } catch (e) { n = -1; }
+      linie.push('  ' + sel + ' → ' + n);
+    });
+    // Dla porównania to samo w całym dokumencie: jeśli tu jest gęsto, a w
+    // panelu pusto, to znaczy, że zakładki karty żyją POZA panelem i szukam
+    // w złym miejscu, a nie że ich nie ma.
+    linie.push('');
+    linie.push('--- dla porównania, cały dokument ---');
+    SELEKTORY_ZAKLADEK.forEach(sel => {
+      let n = 0;
+      try { n = document.querySelectorAll(sel).length; } catch (e) { n = -1; }
+      linie.push('  ' + sel + ' → ' + n);
+    });
+    linie.push('  napisy z całego dokumentu zawierające „' + fragment + '": '
+      + Array.from(document.querySelectorAll(SELEKTORY_ZAKLADEK.join(',')))
+        .filter(el => fold(el.textContent || '').indexOf(fragment) >= 0)
+        .slice(0, 20)
+        .map(el => '<' + el.tagName.toLowerCase() + '>' + (el.textContent || '').trim().slice(0, 40))
+        .join(' | '));
+    linie.push('');
+    linie.push('--- napisy kandydatów (do 60) ---');
+    kandydaciNaZakladki(panel).slice(0, 60).forEach(el => {
+      linie.push('  <' + el.tagName.toLowerCase() + ' class="' + el.className + '">  '
+        + (el.textContent || '').trim().slice(0, 80));
+    });
+    linie.push('');
+    linie.push('--- dzieci panelu, dwa poziomy w głąb ---');
+    Array.from(panel.children).slice(0, 30).forEach(el => {
+      linie.push('  <' + el.tagName.toLowerCase() + ' class="' + el.className + '">');
+      Array.from(el.children).slice(0, 12).forEach(w => {
+        linie.push('      <' + w.tagName.toLowerCase() + ' class="' + w.className + '">  '
+          + (w.textContent || '').trim().slice(0, 60));
+      });
+    });
+    return linie.join('\n');
   }
 
   // Skrypt sam robi to, co dotąd robił człowiek: znajduje produkt w katalogu,
@@ -2269,13 +2374,17 @@
     let wynik;
     try {
       const panel = document.getElementById(newId);
+      // Najpierw czekamy, aż karta w ogóle wyrenderuje jakiekolwiek zakładki —
+      // dopiero wtedy szukanie konkretnej ma sens.
+      await waitFor(() => (kandydaciNaZakladki(panel).length ? true : null), 60, 250);
       const zakl = await waitFor(() => erpZakladkaKarty(panel, fragment), 40, 250);
       if (!zakl) {
-        // Nazwy zakładek w tym ERP bywają inne, niż się spodziewam. Wypisujemy
-        // je, żeby jedna nieudana próba wystarczyła do poprawki.
-        console.warn('[ERP] W karcie nie widzę zakładki „' + opis + '". '
-          + 'Są za to: ' + Array.from(panel.querySelectorAll('li.k-item[aria-controls]'))
-            .map(li => (li.textContent || '').trim()).join(' | '));
+        const zrzut = opiszKarte(panel, sku, fragment);
+        ostatniZrzut = zrzut;
+        skopiujDoSchowka(zrzut);
+        console.warn('[ERP] Nie widzę w karcie zakładki „' + opis + '". '
+          + 'Zrzut budowy karty jest w schowku (' + zrzut.length + ' znaków) — '
+          + 'wklej go do rozmowy, poprawię szukanie.');
         wynik = { ok: false, blad: 'w karcie produktu nie ma zakładki „' + opis + '"' };
       } else {
         (zakl.querySelector('span.k-link') || zakl).click();
@@ -4999,6 +5108,12 @@
     unsafeWindow.savpolOpisy = function (sku) {
       if (!sku) { console.warn('[Opisy] Podaj SKU, np. savpolOpisy("0009905")'); return; }
       return pokazOpisy(String(sku));
+    };
+
+    unsafeWindow.savpolOstatniZrzut = function () {
+      if (!ostatniZrzut) { console.log('[ERP] Nie ma jeszcze żadnego zrzutu.'); return ''; }
+      console.log(ostatniZrzut);
+      return ostatniZrzut;
     };
 
     unsafeWindow.savpolSpecStan = function () {
