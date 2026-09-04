@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.2.0
+// @version      3.2.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2385,7 +2385,55 @@
   // jej wcale — i to była właśnie przyczyna wysyłania cudzej specyfikacji.
   // nazwa     — DOKŁADNY tytuł zakładki karty, patrz ZAKLADKI
   // gotowe()  — kiedy uznać, że wzorzec się złapał
+  // Karta tego produktu może już być otwarta — bo użytkownik sam ją otworzył.
+  // ERP nie otwiera jej wtedy po raz drugi, więc czekanie na NOWĄ zakładkę
+  // kończyło się „karta produktu nie otworzyła się", choć karta była na
+  // wierzchu. Szukamy jej po numerze produktu w nazwie zakładki.
+  function znajdzOtwartaKarte(sku) {
+    const li = Array.from(document.querySelectorAll('li.k-item[aria-controls]'))
+      .find(el => /csItemsOneBro_\d+/i.test(el.id || '')
+        && (el.textContent || '').indexOf(sku) >= 0);
+    if (!li) return null;
+    const id = li.getAttribute('aria-controls');
+    const panel = id ? document.getElementById(id) : null;
+    return panel ? { li: li, panel: panel, id: id } : null;
+  }
+
+  // Klik w zakładkę otwartej już karty i czekanie, aż podsłuch złapie wzorzec.
+  async function klikniZakladkeKarty(panel, sku, nazwa, gotowe) {
+    if (!panel) return { ok: false, blad: 'nie widzę zawartości karty produktu' };
+
+    // Najpierw czekamy, aż karta w ogóle wyrenderuje jakiekolwiek zakładki —
+    // dopiero wtedy szukanie konkretnej ma sens.
+    await waitFor(() => (kandydaciNaZakladki(panel).length ? true : null), 60, 250);
+    const zakl = await waitFor(() => erpZakladkaKarty(panel, nazwa), 40, 250);
+    if (!zakl) {
+      const zrzut = opiszKarte(panel, sku, nazwa);
+      ostatniZrzut = zrzut;
+      skopiujDoSchowka(zrzut);
+      console.warn('[ERP] Nie widzę w karcie zakładki „' + nazwa + '". '
+        + 'Zrzut budowy karty jest w schowku (' + zrzut.length + ' znaków) — '
+        + 'wklej go do rozmowy, poprawię szukanie.');
+      return { ok: false, blad: 'w karcie produktu nie ma zakładki „' + nazwa + '"' };
+    }
+    (zakl.querySelector('span.k-link') || zakl).click();
+    const zlapane = await waitFor(() => (gotowe() ? true : null), 40, 250);
+    return zlapane
+      ? { ok: true }
+      : { ok: false, blad: 'kliknąłem w „' + nazwa + '", ale nie zobaczyłem zapytania o ' + sku };
+  }
+
   async function erpOtworzZakladkeDlaSku(sku, nazwa, gotowe) {
+    // Najpierw: czy karta już jest otwarta. Jeśli tak, pracujemy na niej
+    // i NIE ZAMYKAMY jej na koniec — nie jest nasza.
+    const juzOtwarta = znajdzOtwartaKarte(sku);
+    if (juzOtwarta) {
+      console.log('[ERP] Karta ' + sku + ' jest już otwarta — korzystam z niej.');
+      (juzOtwarta.li.querySelector('span.k-link') || juzOtwarta.li).click();
+      await sleep(300);
+      return await klikniZakladkeKarty(juzOtwarta.panel, sku, nazwa, gotowe);
+    }
+
     if (!isCatalogTabActive() && !(await switchToCatalogTab())) {
       return { ok: false, blad: 'nie ma zakładki katalogu, więc nie wejdę w kartę produktu' };
     }
@@ -2412,26 +2460,7 @@
 
     let wynik;
     try {
-      const panel = document.getElementById(newId);
-      // Najpierw czekamy, aż karta w ogóle wyrenderuje jakiekolwiek zakładki —
-      // dopiero wtedy szukanie konkretnej ma sens.
-      await waitFor(() => (kandydaciNaZakladki(panel).length ? true : null), 60, 250);
-      const zakl = await waitFor(() => erpZakladkaKarty(panel, nazwa), 40, 250);
-      if (!zakl) {
-        const zrzut = opiszKarte(panel, sku, nazwa);
-        ostatniZrzut = zrzut;
-        skopiujDoSchowka(zrzut);
-        console.warn('[ERP] Nie widzę w karcie zakładki „' + nazwa + '". '
-          + 'Zrzut budowy karty jest w schowku (' + zrzut.length + ' znaków) — '
-          + 'wklej go do rozmowy, poprawię szukanie.');
-        wynik = { ok: false, blad: 'w karcie produktu nie ma zakładki „' + nazwa + '"' };
-      } else {
-        (zakl.querySelector('span.k-link') || zakl).click();
-        const zlapane = await waitFor(() => (gotowe() ? true : null), 40, 250);
-        wynik = zlapane
-          ? { ok: true }
-          : { ok: false, blad: 'kliknąłem w „' + nazwa + '", ale nie zobaczyłem zapytania o ' + sku };
-      }
+      wynik = await klikniZakladkeKarty(document.getElementById(newId), sku, nazwa, gotowe);
     } finally {
       closeTabById(newId);
       await sleep(400);
