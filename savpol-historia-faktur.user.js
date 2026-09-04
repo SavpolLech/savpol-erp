@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.56.0
+// @version      2.57.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2177,7 +2177,18 @@
     if (!odp.ok) return odp;
     const siatka = erpSiatkaPoKolumnie(odp.dane, 'csAttachmentsId');
     if (!siatka) return { ok: false, blad: 'w odpowiedzi nie ma siatki załączników' };
-    return { ok: true, wiersze: erpNaObiekty(siatka) };
+
+    // Przy okazji zbieramy siatkę wersji — jest tam SizeInBytes, czyli rozmiar
+    // pliku podany przez SAM ERP. To niezależny świadek: nasza dotychczasowa
+    // kontrola porównywała nasze bajty z bajtami apki, więc potwierdzała
+    // wyłącznie transport. Gdyby pobieranie urwało się w pół pliku, obie strony
+    // zgodnie potwierdziłyby tę samą obciętą wartość.
+    const wersje = erpSiatkaPoKolumnie(odp.dane, 'SizeInBytes');
+    return {
+      ok: true,
+      wiersze: erpNaObiekty(siatka),
+      wersje: wersje ? erpNaObiekty(wersje) : []
+    };
   }
 
   // Wybór specyfikacji — dwa kroki, tak jak robi to człowiek:
@@ -2309,6 +2320,21 @@
       const plik = await erpPobierzPlik(info.info);
       if (!plik.ok) return { ok: false, powod: plik.blad };
 
+      // Rozmiar deklarowany przez ERP, jeśli akurat go widzimy. Siatka wersji
+      // dotyczy tego załącznika, który był zaznaczony przy robieniu wzorca,
+      // więc dopasowujemy po identyfikatorze i numerze wersji — a gdy nie ma
+      // dopasowania, po prostu nie sprawdzamy. Cichy brak kontroli jest lepszy
+      // niż fałszywy alarm na cudzym pliku.
+      const wersja = (lista.wersje || []).find(w =>
+        String(w.csAttachmentsId) === String(wiersz.csAttachmentsId)
+        && String(w.VersionId) === String(wiersz.VersionId));
+      if (wersja && Number(wersja.SizeInBytes) && Number(wersja.SizeInBytes) !== plik.bajtow) {
+        console.error('[Specyfikacja] POBRANIE NIEPEŁNE: ERP podaje '
+          + wersja.SizeInBytes + ' B, pobrałem ' + plik.bajtow + ' B.');
+        return { ok: false, powod: 'pobrano niepełny plik (' + plik.bajtow
+          + ' z ' + wersja.SizeInBytes + ' B)' };
+      }
+
       const odp = await apkaZadanie('POST', SPEC_PDF.ENDPOINT, {
         sku: sku,
         pdfBase64: plik.base64,
@@ -2340,7 +2366,8 @@
 
       console.log('[Specyfikacja] Wysłana do apki:', info.info.FileName,
         plik.bajtow + ' B', odp.body.unchanged ? '(bez zmian)' : '',
-        zapisane ? '— rozmiar potwierdzony' : '— apka nie podała rozmiaru');
+        zapisane ? '— rozmiar potwierdzony' : '— apka nie podała rozmiaru',
+        wersja && Number(wersja.SizeInBytes) ? '(zgodny z ERP)' : '(ERP nie podał rozmiaru)');
       return { ok: true, nazwa: info.info.FileName, bajtow: plik.bajtow };
     } catch (e) {
       return { ok: false, powod: 'wyjątek: ' + (e && e.message || e) };
