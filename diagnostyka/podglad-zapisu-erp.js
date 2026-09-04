@@ -1,79 +1,186 @@
 // Podgląd żądań zapisu w ERP — do wklejenia w konsolę przeglądarki.
-// WERSJA: 2026-09-03.2
+// WERSJA: 2026-09-04.1
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
 // Po co: zanim skrypt zacznie zapisywać opisy przez API ERP, trzeba wiedzieć,
 // JAK ten zapis wygląda naprawdę — który endpoint, jakie pola, co jest
-// tożsamością rekordu, a co stałą sesji. Klikanie po zakładce Network i ręczne
-// przeklejanie jest wolne i gubi nagłówki.
+// tożsamością rekordu, a co stałą sesji.
 //
 // Jak używać:
 //   1. Otwórz kartę produktu w ERP i wklej ten plik w konsolę.
-//   2. savpolSniffStart()
-//   3. Zrób ZAPIS BEZ ŻADNEJ ZMIANY (samo „Zapisz").
-//   4. Zmień JEDNO pole i zapisz.
-//   5. To samo na INNYM produkcie — bez tego nie odróżnisz identyfikatora
-//      rekordu od przypadkowej liczby, która akurat była stała.
-//   6. savpolSniffCopy()  → komplet ląduje w schowku, wklej do rozmowy.
+//   2. savpolSniffStart('A - dodanie nazwy')   ← nazwa przebiegu, dowolna
+//   3. Zrób W ERP JEDNĄ rzecz, o którą chodzi w tym przebiegu.
+//   4. await savpolSniffCopy()  → komplet ląduje w schowku.
+//   Kolejny przebieg = znowu savpolSniffStart('B - …'). Sam Start czyści
+//   poprzednie nagranie; bez niego skopiujesz stare.
 //
-// UWAGA — TEN ERP WYSYŁA HASŁO PRZY KAŻDYM ŻĄDANIU. W polu `Input` (base64
-// z nieskompresowanego ZIP-a) siedzi `LoginInfo` z `UserName` i `Password`
-// otwartym tekstem. Dlatego snippet ROZPAKOWUJE payload i USUWA z niego dane
-// logowania, zanim cokolwiek trafi do schowka. Przy okazji zrzut staje się
-// czytelny — bez tego jest to ściana base64.
+// UWAGA — TEN ERP WYSYŁA HASŁO PRZY KAŻDYM ŻĄDANIU. W polu `Input` siedzi
+// `LoginInfo` z `UserName` i `Password` otwartym tekstem. Snippet rozpakowuje
+// payload i USUWA dane logowania, zanim cokolwiek trafi do schowka.
 //
 // Mimo to: zrzut nadal zawiera treść dokumentów i identyfikatory sesji.
 // Repo savpol-erp jest PUBLICZNE — nie commituj tu wyniku.
+//
+// ZMIANY 2026-09-04.1 — trzy błędy, przez które przebiegi A/B/C wyszły takie same
+// i niekompletne:
+//   * Żądanie ZAPISU bywa spakowane DEFLATE, a nie „stored". Rozpakowywanie
+//     zakładało tylko „stored", więc akurat najważniejsze żądanie zamieniało
+//     się w krzaki. Teraz czytamy metodę z nagłówka ZIP-a i inflate'ujemy.
+//   * Ciała dłuższe niż 20 000 znaków były ucinane na twardo — ginęła treść
+//     opisu. Teraz payload jest STRESZCZANY (Params + wiersze siatek), więc
+//     mieści się bez ucinania czegokolwiek istotnego.
+//   * Kopiowanie bez wcześniejszego Start oddawało po cichu POPRZEDNIE
+//     nagranie. Zrzut nosi teraz nazwę przebiegu i godzinę, a kopiowanie
+//     nagrania zatrzymanego albo pustego głośno ostrzega.
 
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-03.2';
+  const WERSJA = '2026-09-04.1';
 
   const MUTUJACE = ['POST', 'PUT', 'PATCH', 'DELETE'];
-  const LIMIT_TRESCI = 20000;   // dłuższe ciała ucinamy, żeby schowek nie puchł
+  const LIMIT_SUROWY = 20000;  // dotyczy już tylko payloadów, których nie umiemy zrozumieć
+  const LIMIT_POLA = 4000;     // pojedyncza wartość w wierszu siatki
   const zapisy = [];
   let start = null;
+  let etykieta = '';
+  let kopiowane = false;
 
-  // Wycina dane logowania. Wzorzec jest celowo szeroki (Password, Pwd, Haslo,
-  // token, SID) i działa na tekście, a nie na sparsowanym JSON-ie — payload
-  // bywa uszkodzony albo ucięty, a wtedy JSON.parse pada i hasło by przeszło.
+  // Wycina dane logowania. Wzorzec działa na TEKŚCIE, nie na sparsowanym
+  // JSON-ie — payload bywa uszkodzony albo ucięty, a wtedy JSON.parse pada
+  // i hasło by przeszło.
   const WRAZLIWE = /("(?:Password|Pwd|Haslo|Hasło|Token|AccessToken|ApiKey)"\s*:\s*)"(?:[^"\\]|\\.)*"/gi;
 
   function odchudz(s) {
     return String(s).replace(WRAZLIWE, '$1"[USUNIĘTE]"');
   }
 
-  // Payload ERP to base64 ZIP-a zapisanego BEZ KOMPRESJI (metoda „stored"),
-  // więc JSON leży w środku otwartym tekstem — wystarczy odciąć nagłówki ZIP-a.
-  // Rozpakowujemy do PODGLĄDU, nie do wysyłki, więc nie musimy dbać o CRC.
-  function rozpakuj(txt) {
-    const m = /"Input"\s*:\s*"([A-Za-z0-9+/=]{200,})"/.exec(txt);
-    if (!m) return null;
-    let surowy;
-    try { surowy = atob(m[1]); } catch (e) { return null; }
-    const od = surowy.indexOf('{');
-    const doo = surowy.lastIndexOf('}');
-    if (od < 0 || doo <= od) return null;
-    return surowy.slice(od, doo + 1);
+  // ---------- rozpakowanie ----------
+
+  function naBajty(b64) {
+    let sur;
+    try { sur = atob(b64); } catch (e) { return null; }
+    return Uint8Array.from(sur, c => c.charCodeAt(0));
   }
 
-  function skroc(txt) {
-    if (txt == null) return '';
-    let s = odchudz(txt);
-    const rozp = rozpakuj(s);
-    if (rozp) s = '[payload rozpakowany z base64/ZIP]\n' + odchudz(rozp);
-    return s.length > LIMIT_TRESCI
-      ? s.slice(0, LIMIT_TRESCI) + '\n…[ucięte, całość ' + s.length + ' znaków]'
+  // ERP pakuje raz tak, raz tak: żądania widoku idą jako ZIP „stored" (JSON
+  // leży w środku otwartym tekstem), ale ŻĄDANIE ZAPISU potrafi być spakowane
+  // deflate. Nie zgadujemy — czytamy metodę z nagłówka ZIP-a.
+  async function rozpakujB64(b64) {
+    const bajty = naBajty(b64);
+    if (!bajty || !bajty.length) return null;
+
+    if (bajty[0] !== 0x50 || bajty[1] !== 0x4b) {
+      const jako = new TextDecoder().decode(bajty);
+      return jako.trim().charAt(0) === '{' ? jako : null;
+    }
+    const metoda = bajty[8] | (bajty[9] << 8);
+    const od = 30 + (bajty[26] | (bajty[27] << 8)) + (bajty[28] | (bajty[29] << 8));
+    const dane = bajty.slice(od);
+    if (metoda === 0) return new TextDecoder().decode(dane);
+    if (typeof DecompressionStream !== 'function') return null;
+    try {
+      const st = new Blob([dane]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      return await new Response(st).text();
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function wyjmijPole(txt, pole) {
+    const m = new RegExp('"' + pole + '"\\s*:\\s*"([A-Za-z0-9+/=]{100,})"').exec(String(txt || ''));
+    return m ? await rozpakujB64(m[1]) : null;
+  }
+
+  // ---------- streszczanie ----------
+
+  const SMIECI = ['__private', 'csevents', 'interfaces', 'IsDisposed', 'Hash'];
+
+  function wartosc(v) {
+    const s = JSON.stringify(v);
+    return s == null ? 'null'
+      : (s.length > LIMIT_POLA ? s.slice(0, LIMIT_POLA) + '…[+' + (s.length - LIMIT_POLA) + ']' : s);
+  }
+
+  function wierszeSiatki(w, linie, wciecie) {
+    const dt = w.DataTableInit && w.DataTableInit.DataTable;
+    const n = dt && dt.Rows ? dt.Rows.length : 0;
+    linie.push(wciecie + (w.DataSetSQLIdent || '?') + '  wierszy=' + n
+      + (w.Refresh ? '  Refresh' : ''));
+    if (!n) return;
+    const nazwy = dt.FieldDefs.map(f => f.FieldName);
+    dt.Rows.slice(0, 5).forEach(row => {
+      row.forEach((kom, i) => {
+        const v = kom && typeof kom === 'object' ? kom.Item : kom;
+        if (v === null || v === '') return;   // puste kolumny to szum
+        linie.push(wciecie + '   ' + nazwy[i] + ' = ' + wartosc(v));
+      });
+      linie.push(wciecie + '   ·');
+    });
+    if (n > 5) linie.push(wciecie + '   …[jeszcze ' + (n - 5) + ' wierszy]');
+  }
+
+  // Zamiast 55 000 znaków, z czego 54 000 to puste struktury — kilka ekranów
+  // tego, co naprawdę niesie treść.
+  function streszcz(json) {
+    let d;
+    try { d = JSON.parse(json); } catch (e) { return null; }
+    const op = d && d.OperationInvokeInput;
+    if (!op) return null;
+
+    const linie = [];
+    const p = op.Params || {};
+    linie.push('OperationName: ' + op.OperationName);
+    Object.keys(p).forEach(k => {
+      if (p[k] === null || p[k] === '' || SMIECI.indexOf(k) >= 0) return;
+      linie.push('  ' + k + ': ' + wartosc(p[k]));
+    });
+    const ri = op.RefreshInputObject;
+    if (ri && ri.ParentUniqName) {
+      linie.push('  ParentUniqName: ' + ri.ParentUniqName + '   ParentIdent: ' + ri.ParentIdent);
+    }
+    linie.push('  sesja: SID=' + op.SID + ' SessionId=' + op.SessionId
+      + ' CompaniesId=' + op.CompaniesId
+      + ' CPG=' + ((d.LoginInfo && d.LoginInfo.CPG) || '?'));
+
+    [['DataTableInitList (na wierzchu)', op.DataTableInitList],
+     ['DataTableInitList (w RefreshInputObject)', ri && ri.DataTableInitList]]
+      .forEach(([tytul, lst]) => {
+        if (!lst || typeof lst !== 'object') return;
+        const klucze = Object.keys(lst).filter(k => k !== 'length');
+        if (!klucze.length) return;
+        linie.push('  ' + tytul + ':');
+        klucze.sort((a, b) => Number(a) - Number(b)).forEach(k => {
+          const w = lst[k];
+          if (w && typeof w === 'object') wierszeSiatki(w, linie, '    ');
+        });
+      });
+    return linie.join('\n');
+  }
+
+  async function przetworz(surowy, pole) {
+    if (surowy == null || surowy === '') return '(puste)';
+    const rozp = await wyjmijPole(surowy, pole);
+    if (rozp) {
+      const czysty = odchudz(rozp);
+      const skrot = streszcz(czysty);
+      if (skrot) return skrot;
+      return '[nie zrozumiałem struktury — surowo]\n' + czysty.slice(0, LIMIT_SUROWY);
+    }
+    const s = odchudz(surowy);
+    return s.length > LIMIT_SUROWY
+      ? s.slice(0, LIMIT_SUROWY) + '\n…[ucięte, całość ' + s.length + ' znaków]'
       : s;
   }
+
+  // ---------- nagrywanie ----------
 
   function dodaj(rec) {
     rec.t = ((Date.now() - start) / 1000).toFixed(1) + 's';
     zapisy.push(rec);
-    console.log('[sniff] ' + rec.method + ' ' + rec.url.replace(location.origin, '')
-      + ' → ' + rec.status);
+    console.log('[sniff] ' + zapisy.length + '. ' + rec.method + ' '
+      + rec.url.replace(location.origin, '') + ' → ' + rec.status);
   }
 
   const origFetch = window.fetch;
@@ -82,11 +189,21 @@
   const origSetHeader = XMLHttpRequest.prototype.setRequestHeader;
   let wlaczony = false;
 
-  window.savpolSniffStart = function (wszystkie) {
-    if (wlaczony) { console.log('[sniff] już działa'); return; }
-    wlaczony = true;
-    start = Date.now();
+  window.savpolSniffStart = function (nazwa, wszystkie) {
     zapisy.length = 0;
+    kopiowane = false;
+    start = Date.now();
+    etykieta = String(nazwa || '').trim();
+    if (!etykieta) {
+      console.warn('[sniff] Nazwij przebieg, np. savpolSniffStart("B - edycja opisu") — '
+        + 'bez nazwy łatwo pomylić zrzuty między sobą.');
+      etykieta = '(bez nazwy)';
+    }
+    if (wlaczony) {
+      console.log('[sniff] nagrywam od nowa: ' + etykieta);
+      return;
+    }
+    wlaczony = true;
     const bierzemy = m => wszystkie || MUTUJACE.indexOf((m || 'GET').toUpperCase()) >= 0;
 
     // ERP jest aplikacją Kendo/ASP.NET — zapisy potrafią iść zarówno przez
@@ -107,8 +224,8 @@
           // bez tego ERP dostałby pustkę i widok by się rozjechał.
           res.clone().text().then(txt => dodaj({
             zrodlo: 'fetch', method, url, naglowki,
-            body: skroc(typeof body === 'string' ? body : (body ? '[' + String(body) + ']' : '')),
-            status: res.status, odpowiedz: skroc(txt)
+            body: typeof body === 'string' ? body : (body ? '[' + String(body) + ']' : ''),
+            status: res.status, odpowiedz: txt
           })).catch(() => {});
         }
         return res;
@@ -128,19 +245,23 @@
       if (s && bierzemy(s.method)) {
         this.addEventListener('loadend', () => {
           let odp = '';
-          try { odp = this.responseType === '' || this.responseType === 'text' ? this.responseText : '[' + this.responseType + ']'; } catch (e) { odp = '[nieczytelna]'; }
+          try {
+            odp = this.responseType === '' || this.responseType === 'text'
+              ? this.responseText : '[' + this.responseType + ']';
+          } catch (e) { odp = '[nieczytelna]'; }
           dodaj({
             zrodlo: 'xhr', method: s.method, url: s.url, naglowki: s.naglowki,
-            body: skroc(typeof body === 'string' ? body : (body ? '[' + String(body) + ']' : '')),
-            status: this.status, odpowiedz: skroc(odp)
+            body: typeof body === 'string' ? body : (body ? '[' + String(body) + ']' : ''),
+            status: this.status, odpowiedz: odp
           });
         });
       }
       return origSend.apply(this, arguments);
     };
 
-    console.log('[sniff] nagrywam' + (wszystkie ? ' WSZYSTKO' : ' tylko zapisy (POST/PUT/PATCH/DELETE)')
-      + '. Zrób zapis w ERP, potem: savpolSniffCopy()');
+    console.log('[sniff] nagrywam „' + etykieta + '"'
+      + (wszystkie ? ' — WSZYSTKO' : ' — tylko zapisy (POST/PUT/PATCH/DELETE)')
+      + '. Zrób rzecz w ERP, potem: await savpolSniffCopy()');
   };
 
   window.savpolSniffStop = function () {
@@ -152,40 +273,72 @@
     console.log('[sniff] zatrzymane, nagranych: ' + zapisy.length);
   };
 
-  window.savpolSniffText = function () {
+  window.savpolSniffStan = function () {
+    const s = '[sniff] ' + (wlaczony ? 'NAGRYWAM' : 'zatrzymane')
+      + ' | przebieg: ' + (etykieta || '—')
+      + ' | żądań: ' + zapisy.length
+      + (kopiowane ? ' | to nagranie już kopiowałeś' : '');
+    console.log(s);
+    return s;
+  };
+
+  window.savpolSniffText = async function () {
     const linie = [];
     linie.push('Savpol ERP — nagranie żądań zapisu');
+    linie.push('Przebieg: ' + (etykieta || '(bez nazwy)'));
+    linie.push('Nagrywanie zaczęte: ' + (start ? new Date(start).toLocaleString() : '—'));
+    linie.push('Zrzut zrobiony:     ' + new Date().toLocaleString());
     linie.push('URL: ' + location.href);
-    linie.push('Data: ' + new Date().toISOString());
     linie.push('Żądań: ' + zapisy.length);
     linie.push('');
-    zapisy.forEach((r, i) => {
+    for (let i = 0; i < zapisy.length; i++) {
+      const r = zapisy[i];
       linie.push('===== #' + i + '  [' + r.t + ']  ' + r.method + ' (' + r.zrodlo + ') → ' + r.status + ' =====');
       linie.push('URL: ' + r.url);
-      const nag = Object.keys(r.naglowki);
-      if (nag.length) linie.push('Nagłówki: ' + nag.map(k => k + ': ' + r.naglowki[k]).join(' | '));
-      linie.push('--- ciało żądania ---');
-      linie.push(r.body || '(puste)');
+      linie.push('--- żądanie ---');
+      linie.push(await przetworz(r.body, 'Input'));
       linie.push('--- odpowiedź ---');
-      linie.push(r.odpowiedz || '(pusta)');
+      linie.push(await przetworz(r.odpowiedz, 'JSONResult'));
       linie.push('');
-    });
+    }
     return linie.join('\n');
   };
 
   // Wynik idzie do schowka sam — użytkownik nie zaznacza niczego w konsoli.
   // Kolejność prób jak w CLAUDE.md: copy() z DevTools działa zawsze i nie
   // wymaga focusu strony, reszta to zapas.
-  window.savpolSniffCopy = function () {
-    const txt = window.savpolSniffText();
+  window.savpolSniffCopy = async function () {
+    // Nagranie B i C wyszły identyczne jak A właśnie tu: kopiowanie po cichu
+    // oddawało poprzednią zawartość. Teraz to widać, zanim wkleisz do pliku.
+    if (!zapisy.length) {
+      console.warn('[sniff] NIC NIE NAGRANO. Najpierw savpolSniffStart("nazwa"), '
+        + 'potem zrób rzecz w ERP, dopiero potem kopiuj.');
+      return;
+    }
+    if (!wlaczony) {
+      console.warn('[sniff] Nagrywanie jest ZATRZYMANE — kopiuję to, co zostało '
+        + 'z przebiegu „' + etykieta + '". Jeśli chodziło o nową czynność, '
+        + 'zrób savpolSniffStart("nazwa") i powtórz ją.');
+    }
+    if (kopiowane) {
+      console.warn('[sniff] To nagranie („' + etykieta + '") już raz kopiowałeś. '
+        + 'Jeśli to miał być kolejny przebieg — potrzebny savpolSniffStart.');
+    }
+    const txt = await window.savpolSniffText();
+    kopiowane = true;
     try {
-      if (typeof copy === 'function') { copy(txt); console.log('[sniff] skopiowano, ' + txt.length + ' znaków'); return; }
+      if (typeof copy === 'function') {
+        copy(txt);
+        console.log('[sniff] skopiowano „' + etykieta + '", ' + txt.length + ' znaków');
+        return;
+      }
     } catch (e) { /* lecimy dalej */ }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(txt)
-        .then(() => console.log('[sniff] skopiowano, ' + txt.length + ' znaków'))
-        .catch(() => zapasowoDoSchowka(txt));
-      return;
+      try {
+        await navigator.clipboard.writeText(txt);
+        console.log('[sniff] skopiowano „' + etykieta + '", ' + txt.length + ' znaków');
+        return;
+      } catch (e) { /* zapas niżej */ }
     }
     zapasowoDoSchowka(txt);
   };
@@ -201,8 +354,9 @@
     try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
     document.body.removeChild(ta);
     console.log(ok ? '[sniff] skopiowano, ' + txt.length + ' znaków'
-                   : '[sniff] NIE UDAŁO SIĘ skopiować — użyj: copy(savpolSniffText())');
+                   : '[sniff] NIE UDAŁO SIĘ skopiować — użyj: copy(await savpolSniffText())');
   }
 
-  console.log('[sniff] wersja ' + WERSJA + ' — gotowe. savpolSniffStart() → zapisz w ERP → savpolSniffCopy()');
+  console.log('[sniff] wersja ' + WERSJA + ' — gotowe. '
+    + 'savpolSniffStart("A - dodanie nazwy") → zrób rzecz w ERP → await savpolSniffCopy()');
 })();
