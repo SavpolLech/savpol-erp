@@ -1110,7 +1110,47 @@ nie wyglądała na potwierdzenie kompletności. Sprawdzanie całej puli dałoby 
 widoczność, ale kosztuje 11-26 zapytań zamiast 4-8 — do rozważenia, gdy cache
 zacznie odcinać część lookupów (punkt 3 wyżej).
 
-## Testowanie zmian w regułach## Testowanie zmian w regułach
+## Wczesne zatrzymanie zamiast sztywnego niższego limitu (v2.59.0)
+
+Pytanie właściciela: skoro pomiar z v2.18.0 pokazuje malejący przyrost jakości
+powyżej ~50-80 faktur, czy nie da się po prostu pobierać mniej?
+
+Sztywne obniżenie `MAX_INVOICES` odrzucone. Pomiar uśrednia po ośmiu anchorach,
+ale rzeczywisty koszyk ma różną koncentrację (`0031629`: lider 41% vs `0021269`:
+lider 11%, patrz „Kalibracja"). Dla mocnego sygnału top-4 jest oczywisty już przy
+30-40 fakturach; dla rozproszonego 100 wciąż bywa za mało. Jeden sztywny niższy
+limit poprawiłby czas dla pierwszej grupy kosztem jakości dla drugiej.
+
+Zamiast tego: **wczesne zatrzymanie po stabilizacji rankingu**
+(`CROSS_SELL.EARLY_STOP`). Po każdych 10 fakturach od 40. w górę skrypt liczy
+`analyzeCrossSell()` na tym, co już ma, i porównuje top-4 z poprzednim
+sprawdzeniem. Dwa identyczne sprawdzenia z rzędu → kolejne faktury i tak nie
+zmieniłyby wyniku, więc `collectAllInvoices()` kończy zbieranie od razu, zamiast
+ciągnąć do `MAX_INVOICES` (który zostaje jako 100 — teraz to sufit na wypadek
+słabego sygnału, nie typowy czas przebiegu).
+
+Próg `MIN_INVOICES_BEFORE_CHECK: 40` nie jest przypadkowy — poniżej tego (K=30
+→ 44% trafień z pełnej próby w pomiarze v2.18.0) ranking sam z siebie jeszcze
+pływa, więc sprawdzanie stabilności wcześniej złapałoby przypadkową zbieżność
+dwóch kolejnych losowych prób, nie prawdziwą stabilizację.
+
+**Pusty top-4 nigdy nie liczy się jako stabilny.** Brak kandydatów (sygnał
+poniżej `MIN_COUNT`/`MIN_SHARE`) może się zmienić kolejną fakturą — zatrzymanie
+na pustym wyniku ukradłoby słabym anchorom szansę na dociągnięcie do
+`MIN_INVOICES`/`LOW_CONFIDENCE_BELOW`. Te anchory i tak dociągają do pełnych
+100, jak poprzednio.
+
+Implementacja jest tania: `analyzeCrossSell()` jest czystą funkcją na już
+zebranych wierszach (patrz „Testowanie zmian w regułach"), więc dodatkowe
+przeliczenie co 10 faktur nie dotyka DOM ani sieci.
+
+Nie zmierzone wprost na produkcji — oczekiwany efekt to skrócenie typowego
+przebiegu dla silnych anchorów (np. `0031629`, lider 41%) z ~100 do ~50-60
+faktur, bez zmiany wyniku. Do potwierdzenia po kilku realnych przebiegach:
+`diag('EARLY_STOP', ...)` loguje, po ilu fakturach i na jakim top-4 skrypt się
+zatrzymał — trafi do logu diagnostycznego przy pobraniu.
+
+## Testowanie zmian w regułach
 
 Analiza jest czystą funkcją danych, więc da się ją odpalić lokalnie na zapisanych
 CSV-kach bez ERP — wystarczy wyciąć fragment źródła i podać wiersze
