@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Savpol ERP -> Eksport WZ (nagłówki + pozycje)
 // @namespace    savpol-erp-tools
-// @version      1.0.0
-// @description  Na liście "Wydania zewnętrzne" (z ustawionymi filtrami) otwiera po kolei każdy WZ, czyta pozycje z karty dokumentu, łączy z danymi nagłówka z wiersza listy. Wynik (TSV) do schowka jednym kliknięciem.
+// @version      1.1.0
+// @description  Na liście "Wydania zewnętrzne" (z ustawionymi filtrami) otwiera po kolei każdy WZ, czyta pozycje z karty dokumentu (WYMAGA dodanych kolumn csItemsId/csItemsUnitsId w ustawieniach siatki), łączy z danymi nagłówka z wiersza listy. Wynik (TSV, wybrane pola) do schowka jednym kliknięciem.
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-wz-eksport.user.js
 // @downloadURL  https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-wz-eksport.user.js
@@ -14,7 +14,7 @@
   'use strict';
 
   const LOG = '[Savpol Eksport WZ]';
-  const SCRIPT_VERSION = '1.0.0';
+  const SCRIPT_VERSION = '1.1.0';
   console.log(LOG, 'Skrypt załadowany. URL:', location.href);
 
   // ---------- Konfiguracja ----------
@@ -182,28 +182,21 @@
   // Nagłówek dokumentu bierzemy z wiersza listy — otwieranie karty jest tylko
   // po pozycje, więc nie ma sensu odpytywać jej drugi raz o te same dane.
   function extractHeader(row) {
-    const [dekretNumber, dekretDate, dekretPeriod] = cellBold(row, 'DocNumberExtAdd1');
     return {
       docNumber: cellTitle(row, 'DocNumber'),
-      docNo: cellTitle(row, 'DocNo'),
+      docNumberExt: cellTitle(row, 'DocNumberExt'),
       docDate: (cellTitle(row, 'DocDate') || '').split(' ')[0],
       warehouseCode: cellTitle(row, 'Warehouse'),
       warehouseName: cellTitle(row, 'WarehouseDesc_PL'),
-      customerCode: cellTitle(row, 'CustomerIdent'),
-      customerName: cellText(row, 'CustomerIdent'),
-      status: cellTitle(row, 'csDocsHeadersStatusDesc'),
-      value: parsePl(cellTitle(row, 'FStock')),
       wzn: cellTitle(row, 'DocNumberExtAdd2'),
-      dekretNumber: dekretNumber || '',
-      dekretDate: dekretDate || '',
-      dekretPeriod: dekretPeriod || '',
-      employee: cellTitle(row, 'EmployeeDesc'),
-      relatedSales: cellText(row, 'RelatedSalesNumbers'),
       headerId: cellTitle(row, 'csDocsHeadersId'),
       warehouseId: cellTitle(row, 'csWarehousesId')
     };
   }
 
+  // WAŻNE: kolumny csItemsId/csItemsUnitsId nie są w tej siatce widoczne
+  // domyślnie — trzeba je włączyć w ustawieniach siatki ERP (wybór kolumn)
+  // ZANIM ten skrypt zacznie klikać, inaczej wyjdą puste.
   function extractPositions(header) {
     const grid = getVisiblePositionsGrid();
     if (!grid) return [];
@@ -213,15 +206,20 @@
       const skuEl = descCell.querySelector('.cs-style-text-bold');
       const sku = skuEl ? (skuEl.textContent || '').trim() : '';
       if (!sku) return null;
+      // Kolumna "Warehouse" (kod skrócony) bywa dodana też na siatce pozycji —
+      // gdy jest, jest wiarygodniejsza dla tej konkretnej pozycji niż kod
+      // z wiersza listy, więc wygrywa, gdy jest obecna.
+      const lineWarehouseCode = cellTitle(row, 'Warehouse');
       return Object.assign({}, header, {
-        lineId: cellTitle(row, 'Id'),
+        warehouseCode: lineWarehouseCode || header.warehouseCode,
         sku: sku,
         name: (descCell.getAttribute('title') || '').trim(),
         unit: cellTitle(row, 'Unit'),
         qty: parsePl(cellTitle(row, 'QuantityUnits')),
         unitPrice: parsePl(cellTitle(row, 'StockUnitPrice')),
         lineValue: parsePl(cellTitle(row, 'FStock')),
-        lineWarehouse: cellTitle(row, 'WarehouseTranslatedDesc')
+        csItemsId: cellTitle(row, 'csItemsId'),
+        csItemsUnitsId: cellTitle(row, 'csItemsUnitsId')
       });
     }).filter(Boolean);
   }
@@ -470,26 +468,27 @@
 
   // ---------- Eksport ----------
 
+  // Kolumny dobrane pod konkretne pola z bazy, o które proszono (nazwa z BD ->
+  // etykieta w arkuszu). Nie eksportujemy tu nic, co nie zostało wymienione —
+  // reszta danych z wiersza listy (klient, status, pracownik...) jest
+  // wyciągana w extractHeader, ale świadomie NIE trafia do TSV.
   const EXPORT_COLUMNS = [
-    ['Nr WZ', p => p.docNumber],
-    ['Nr WZN', p => p.wzn],
-    ['Data', p => p.docDate],
-    ['Magazyn', p => p.warehouseName],
-    ['Kod klienta', p => p.customerCode],
-    ['Klient', p => p.customerName],
-    ['Status', p => p.status],
-    ['Pracownik', p => p.employee],
-    ['Powiązane dokumenty', p => p.relatedSales],
-    ['Nr dekretu', p => p.dekretNumber],
-    ['Data dekretu', p => p.dekretDate],
-    ['Okres dekretu', p => p.dekretPeriod],
+    ['DocDate (Data wystawienia)', p => p.docDate],
+    ['WarehouseDesc_PL (Magazyn)', p => p.warehouseName],
+    ['Warehouse (magazyn, kod)', p => p.warehouseCode],
+    ['csDocsHeadersId', p => p.headerId],
+    ['DocNumber', p => p.docNumber],
+    ['DocNumberExt', p => p.docNumberExt],
+    ['DocNumberExtAdd2 (Nr WMS)', p => p.wzn],
+    ['csWarehousesId', p => p.warehouseId],
+    ['csItemsId', p => p.csItemsId],
+    ['ItemDesc (nazwa produktu)', p => p.name],
     ['SKU', p => p.sku],
-    ['Nazwa', p => p.name],
-    ['Jm', p => p.unit],
-    ['Ilość', p => p.qty],
-    ['Cena jedn.', p => p.unitPrice],
-    ['Wartość pozycji', p => p.lineValue],
-    ['Wartość WZ', p => p.value]
+    ['Unit (Jm)', p => p.unit],
+    ['csItemsUnitsId', p => p.csItemsUnitsId],
+    ['QuantityUnits (ilość)', p => p.qty],
+    ['StockUnitPrice (cena)', p => p.unitPrice],
+    ['FStock (wartość pozycji)', p => p.lineValue]
   ];
 
   // Z wierszem nagłówka — arkusz, do którego to trafia, jest osobnym plikiem
