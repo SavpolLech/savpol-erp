@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.55.0
+// @version      2.56.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2113,6 +2113,32 @@
 
 
 
+  // Przestawia wzorzec na inny produkt, nie ruszając jego struktury.
+  //
+  // Wiersze siatek są pozycyjne — znaczenie kolumny bierze się z FieldDefs.
+  // Dlatego nie da się wkleić wiersza z innego widoku: te same dane leżą tam
+  // w innej kolejności i w innym komplecie kolumn. Przepisujemy więc wartości
+  // PO NAZWACH, zostawiając w spokoju kolumny techniczne, których nasz wiersz
+  // nie zna.
+  function erpPodmienProduktWeWzorcu(wpis, sku) {
+    const zrodlo = erpPodsluch.produkty[sku];
+    if (!zrodlo) return false;
+    const doceloweDT = wpis.DataTableInit && wpis.DataTableInit.DataTable;
+    const zrodloweDT = zrodlo.DataTableInit && zrodlo.DataTableInit.DataTable;
+    if (!doceloweDT || !zrodloweDT || !doceloweDT.Rows || !doceloweDT.Rows.length) return false;
+
+    const nowe = erpNaObiekty(zrodloweDT)[0];
+    if (!nowe) return false;
+
+    doceloweDT.Rows[0] = doceloweDT.FieldDefs.map((f, i) => {
+      const stara = doceloweDT.Rows[0][i];
+      return Object.prototype.hasOwnProperty.call(nowe, f.FieldName)
+        ? { Item: nowe[f.FieldName] }
+        : stara;
+    });
+    return true;
+  }
+
   // Lista załączników produktu.
   //
   // Odtwarzamy żądanie, które strona wysyła sama przy wejściu na zakładkę
@@ -2136,8 +2162,14 @@
       if (w.QueryUID) w.QueryUID = erpGuid();
       // Kartotekę podmieniamy na tę, o którą naprawdę pytamy — szablon mógł
       // powstać przy innym produkcie.
-      if (String(w.DataSetSQLIdent || '') === 'csItems' && erpPodsluch.produkty[sku]) {
-        lista[k] = erpPodsluch.produkty[sku];
+      //
+      // ALE NIE PODMIENIAMY CAŁEGO ZESTAWU, tylko wartości w jego wierszu.
+      // Wcześniej wstawiałem tu wpis csItems zapamiętany z KATALOGU, a tam jest
+      // to lista filtrowana i ciągnie za sobą wymóg csItemsFilter. Czysty
+      // wzorzec z karty produktu psuł się więc przez moją własną podmianę —
+      // serwer odpowiadał „Brakujący: csitemsfilter", choć wzorzec był dobry.
+      if (String(w.DataSetSQLIdent || '') === 'csItems') {
+        erpPodmienProduktWeWzorcu(w, sku);
       }
     });
 
