@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.2.1
+// @version      3.2.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2390,13 +2390,20 @@
   // kończyło się „karta produktu nie otworzyła się", choć karta była na
   // wierzchu. Szukamy jej po numerze produktu w nazwie zakładki.
   function znajdzOtwartaKarte(sku) {
-    const li = Array.from(document.querySelectorAll('li.k-item[aria-controls]'))
-      .find(el => /csItemsOneBro_\d+/i.test(el.id || '')
-        && (el.textContent || '').indexOf(sku) >= 0);
-    if (!li) return null;
-    const id = li.getAttribute('aria-controls');
-    const panel = id ? document.getElementById(id) : null;
-    return panel ? { li: li, panel: panel, id: id } : null;
+    const zakladki = Array.from(document.querySelectorAll('li.k-item[aria-controls]'))
+      .filter(el => (el.textContent || '').indexOf(sku) >= 0);
+    for (const li of zakladki) {
+      const id = li.getAttribute('aria-controls');
+      const panel = id ? document.getElementById(id) : null;
+      if (!panel) continue;
+      // Karta poznaje się po formularzu w środku albo po identyfikatorze
+      // zakładki. Sam numer w nazwie nie wystarcza — zakładka katalogu też
+      // potrafi go nosić po wyszukaniu.
+      const toKarta = /csItemsOneBro_\d+/i.test(li.id || '')
+        || panel.querySelector('.csDictBaseForm.csItemsOneBro') !== null;
+      if (toKarta) return { li: li, panel: panel, id: id };
+    }
+    return null;
   }
 
   // Klik w zakładkę otwartej już karty i czekanie, aż podsłuch złapie wzorzec.
@@ -2452,20 +2459,36 @@
     if (descCell) descCell.click();
     await sleep(200);
 
-    const before = tabIdSet();
+    const przed = tabIdSet();
     if (!openEditCard()) return { ok: false, blad: 'nie ma przycisku „Edycja"' };
-    const newId = await waitFor(
-      () => Array.from(tabIdSet()).find(id => !before.has(id)) || null, 40, 200);
-    if (!newId) return { ok: false, blad: 'karta produktu nie otworzyła się' };
+
+    // Czekamy na KARTĘ TEGO PRODUKTU, nie na „jakąkolwiek nową zakładkę".
+    //
+    // Poprzednia wersja pilnowała wyłącznie tego, czy przybyło zakładek — i gdy
+    // ERP potrzebował na to więcej niż 8 sekund, ogłaszała, że karta się nie
+    // otworzyła, podczas gdy była już otwarta na ekranie. Ten ERP potrafi
+    // mielić kilkanaście sekund, więc czekamy dłużej i pytamy o właściwą rzecz.
+    const karta = await waitFor(() => znajdzOtwartaKarte(sku), 60, 500);
+    if (!karta) {
+      console.warn('[ERP] Nie rozpoznaję karty ' + sku + '. Otwarte zakładki: '
+        + Array.from(document.querySelectorAll('li.k-item[aria-controls]'))
+          .map(li => (li.textContent || '').trim()).join(' | '));
+      return { ok: false, blad: 'nie doczekałem się karty produktu ' + sku
+        + ' (czekałem 30 sekund)' };
+    }
+    // Zamykamy tylko to, co sami otworzyliśmy.
+    const naszaKarta = !przed.has(karta.id);
 
     let wynik;
     try {
-      wynik = await klikniZakladkeKarty(document.getElementById(newId), sku, nazwa, gotowe);
+      wynik = await klikniZakladkeKarty(karta.panel, sku, nazwa, gotowe);
     } finally {
-      closeTabById(newId);
-      await sleep(400);
-      if (!isCatalogTabActive()) await switchToCatalogTab();
-      await waitFor(() => findVisibleCatalogSearchInput() !== null, 20, 200);
+      if (naszaKarta) {
+        closeTabById(karta.id);
+        await sleep(400);
+        if (!isCatalogTabActive()) await switchToCatalogTab();
+        await waitFor(() => findVisibleCatalogSearchInput() !== null, 20, 200);
+      }
     }
     return wynik;
   }
