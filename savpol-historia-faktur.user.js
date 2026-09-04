@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      2.51.0
+// @version      2.52.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2084,6 +2084,20 @@
     return { ok: false, blad: 'serwer wciąż zgłasza braki po dołożeniu: ' + dolozone.join(', ') };
   }
 
+  // Podpowiedź dla człowieka, gdy droga zapasowa zawiedzie.
+  //
+  // Ścieżka „składam żądanie sam" okazała się ślepa: trzy przebiegi, trzy różne
+  // błędy, a ostatni to już wywrotka SQL po stronie serwera. Ten ERP trzyma stan
+  // widoku u siebie i nie da się go wiernie odtworzyć z zewnątrz.
+  //
+  // Wzorzec podpatrzony u strony działa bezbłędnie, tylko trzeba, żeby strona
+  // raz go wysłała. Kosztuje to jedno kliknięcie na sesję — mniej niż kolejne
+  // podejścia do drogi, która nie prowadzi do celu.
+  const RADA_ZALACZNIKI =
+    'Otwórz raz dowolny produkt (EDYCJA) i wejdź w zakładkę ZAŁĄCZNIKI — '
+    + 'skrypt zapamięta wzorzec zapytania na całą sesję i będzie pobierał '
+    + 'specyfikacje sam.';
+
   // Lista załączników produktu.
   //
   // Odtwarzamy żądanie, które strona wysyła sama przy wejściu na zakładkę
@@ -2550,7 +2564,13 @@
       ui.phase('Pobieram specyfikację produktu...');
       button.textContent = '📄 Pobieram specyfikację...';
       const spec = await wyslijSpecyfikacjeDoApki(mainSku);
-      if (!spec.ok) console.warn('[Specyfikacja] Nie wysłano: ' + spec.powod);
+      if (!spec.ok) {
+        console.warn('[Specyfikacja] Nie wysłano: ' + spec.powod);
+        // Gdy zawiodło odczytanie listy załączników, człowiek ma jak temu
+        // zaradzić — ale tylko jeśli mu o tym powiemy. Konsola nie wystarczy,
+        // bo nikt do niej nie zagląda w normalnej pracy.
+        if (!erpPodsluch.szablonZalacznikow) spec.rada = RADA_ZALACZNIKI;
+      }
 
       // Do kolejki trafia też przebieg bez kandydatów: sam fakt, że sygnał był
       // zbyt słaby, jest wynikiem — bez zapisu ktoś powtórzy tę samą robotę.
@@ -2583,6 +2603,7 @@
           'po prostu nie ma stałych towarzyszy. Zrób opis bez tej sekcji.');
         button.textContent = '🤷 Brak propozycji';
       } else {
+        if (spec && spec.rada) ui.detail('Specyfikacja nie została pobrana. ' + spec.rada);
         const clean = !partial && !analysis.unverified;
         ui.finish(`Gotowe — ${analysis.candidates.length} propozycji`, clean);
         ui.result(skusText, mainSku, {
