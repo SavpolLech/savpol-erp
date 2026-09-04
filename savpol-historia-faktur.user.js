@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.2.2
+// @version      3.2.3
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2841,9 +2841,6 @@
     const lista = await erpCzytajOpisy(sku);
     if (!lista.ok) return { ok: false, blad: lista.blad };
 
-    console.log('[Opisy] ' + sku + ' — kopia zapasowa przed zapisem trafia do pobranych plików.');
-    zrzucKopieOpisow(sku, lista.wiersze);
-
     const plan = klucze.map(k => {
       const typ = OPISY.TYPY[k];
       const istniejacy = opisPoTypie(lista.wiersze, typ);
@@ -2864,6 +2861,11 @@
       console.log('   Żeby zapisać naprawdę: savpolZapiszOpisy(sku, tresci, { zapisz: true })');
       return { ok: true, naSucho: true, plan: plan };
     }
+
+    // Kopia dopiero teraz — przy przymiarce nie ma czego zabezpieczać, a plik
+    // w pobranych ma znaczyć „za chwilę coś nadpisuję".
+    console.log('[Opisy] ' + sku + ' — kopia zapasowa trafia do pobranych plików.');
+    zrzucKopieOpisow(sku, lista.wiersze);
 
     for (const p of plan) {
       if (!p.wierszId) {
