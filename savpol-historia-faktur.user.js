@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.2.4
+// @version      3.3.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -13,6 +13,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
+// @grant        GM_download
 // @connect      esavpol-pdp.vercel.app
 // @run-at       document-idle
 // ==/UserScript==
@@ -2710,6 +2711,46 @@
 
   // ---------- Zapis opisów ----------
 
+  // Gdzie apka przyjmuje kopie sprzed nadpisania. Ten sam mechanizm, co przy
+  // specyfikacji: prywatne repo, wspólne dla całego zespołu.
+  const KOPIE = { ENDPOINT: '/api/opis-kopia' };
+
+  // Zabezpieczenie treści przed nadpisaniem — WSPÓLNE, nie na jednym dysku.
+  //
+  // Nad tym samym ERP pracują 2–3 osoby. Kopia w „Pobranych" jednej z nich nie
+  // ratuje pozostałych: gdy nadpiszę opis, którym zajmował się ktoś inny, plik
+  // ratunkowy leży u mnie, a on nawet nie wie, że powstał. Dlatego kopia idzie
+  // do apki, a plik na dysku jest wyłącznie zapasem na wypadek jej awarii.
+  //
+  // Gdy nie uda się ANI JEDNO, nie zapisujemy. ERP nie ma cofania, więc zapis
+  // bez kopii to zapis bez drogi powrotu.
+  async function zabezpieczOpisy(sku, wiersze) {
+    const login = erpPodsluch.koperta && erpPodsluch.koperta.LoginInfo;
+    const paczka = {
+      sku: sku,
+      kiedy: new Date().toISOString(),
+      kto: (login && login.UserName) || 'nieznany',
+      opisy: wiersze.map(w => ({
+        rodzaj: w.B2BDescriptionTypeTranslatedDesc || '',
+        typG: w.csB2BDescriptionTypesG || '',
+        wierszId: w.csItemsDesc4B2BPortalsId,
+        tresc: String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '')
+      }))
+    };
+
+    const r = await apkaZadanie('POST', KOPIE.ENDPOINT, paczka);
+    if (r.status >= 200 && r.status < 300) return { ok: true, gdzie: 'apka' };
+
+    console.warn('[Opisy] Apka nie przyjęła kopii (HTTP ' + r.status
+      + ') — robię kopię na dysku. Uwaga: zobaczysz ją tylko ty.');
+    try {
+      zrzucKopieOpisow(sku, wiersze);
+      return { ok: true, gdzie: 'plik na twoim dysku' };
+    } catch (e) {
+      return { ok: false, blad: 'nie udało się zrobić kopii ani w apce, ani na dysku' };
+    }
+  }
+
   // Kopia zapasowa PRZED nadpisaniem, zrzucana na dysk jako plik.
   //
   // ERP nie ma wersjonowania: w odpowiedziach nie ma ani `RowVersion`, ani
@@ -2733,10 +2774,19 @@
     const txt = linie.join('\n');
     const blob = new Blob(['﻿' + txt], { type: 'text/plain;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
+    const nazwa = 'opisy_przed_zapisem_' + sku + '_'
+      + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.txt';
+    // Podkatalog, żeby nie zasypywać korzenia „Pobranych". GM_download go
+    // rozumie; gdy go nie ma, spada do zwykłego pobrania.
+    if (typeof GM_download === 'function') {
+      try {
+        GM_download({ url: url, name: 'savpol-kopie-opisow/' + nazwa });
+        return txt;
+      } catch (e) { /* zwykłe pobranie niżej */ }
+    }
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'opisy_przed_zapisem_' + sku + '_'
-      + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.txt';
+    a.download = nazwa;
     a.click();
     URL.revokeObjectURL(url);
     return txt;
@@ -2885,10 +2935,12 @@
       return { ok: true, naSucho: true, plan: plan };
     }
 
-    // Kopia dopiero teraz — przy przymiarce nie ma czego zabezpieczać, a plik
-    // w pobranych ma znaczyć „za chwilę coś nadpisuję".
-    console.log('[Opisy] ' + sku + ' — kopia zapasowa trafia do pobranych plików.');
-    zrzucKopieOpisow(sku, lista.wiersze);
+    // Kopia dopiero teraz — przy przymiarce nie ma czego zabezpieczać.
+    const kopia = await zabezpieczOpisy(sku, lista.wiersze);
+    if (!kopia.ok) {
+      return { ok: false, blad: kopia.blad + ' — nie zapisuję, bo nie byłoby jak wrócić' };
+    }
+    console.log('[Opisy] ' + sku + ' — kopia sprzed zapisu: ' + kopia.gdzie + '.');
 
     for (const p of plan) {
       if (!p.wierszId) {
