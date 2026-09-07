@@ -2,21 +2,27 @@
 // TA SAMA logika DOM co savpol-wz-eksport.user.js (Tampermonkey), tylko
 // sterowana z Node zamiast z ręcznego kliknięcia w przeglądarce.
 //
-// Na razie (brak DB_NAME w .env) wynik NIE idzie do bazy — leci do
-// results.json obok tego pliku, żeby dało się sprawdzić dane przed
-// podpięciem zapisu do MSSQL.
+// Scrapuje SUROWE TEKSTY dokładnie pod nazwy kolumn dbo.csDocsHeaders /
+// dbo.csDocsItemsPositions (lista pól: lib/fields.js, uzasadnienie:
+// mapowanie-pol.md). Typowanie (int/decimal/data/tekst) i INSERT do MSSQL
+// są sterowane metadanymi ze schema-test-tables.json (wygenerowanym przez
+// generate-test-tables.js z PRAWDZIWEGO schematu cs06) — nie zgadujemy typów
+// ręcznie w tym pliku.
 //
-// SELEKTORY LOGOWANIA SĄ PLACEHOLDEREM — patrz LOGIN_SELECTORS niżej.
-// Zanim to zadziała, trzeba je podmienić na realne z sondy
-// diagnostyka/sonda-login-form.js.
+// Bez DB_NAME / bez schema-test-tables.json wynik leci do results.json
+// zamiast do bazy, żeby dało się sprawdzić dane przed podpięciem zapisu.
 //
-// Uruchomienie:  npm install   (raz)
+// Uruchomienie:  npm install                        (raz)
+//                node generate-test-tables.js --apply (raz, po ustaleniu DB_NAME)
 //                npm run scrape
 
 require('dotenv').config();
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
+const sql = require('mssql');
+const F = require('./lib/fields');
+const { mssqlType, coerceValue } = require('./lib/schema');
 
 // ---------- Konfiguracja ----------
 
@@ -60,9 +66,13 @@ async function login(page) {
 
 // ---------- Scraping WZ (logika 1:1 z savpol-wz-eksport.user.js) ----------
 // Ta funkcja jest wstrzykiwana do przeglądarki przez page.evaluate — działa
-// więc w kontekście strony ERP, dokładnie jak userscript.
+// więc w kontekście strony ERP, dokładnie jak userscript. Zwraca SUROWE
+// STRINGI (dokładnie to, co jest w atrybucie title komórki) — bez parsowania
+// liczb/dat, to robi Node po stronie, metadanymi ze schematu bazy.
 
-async function scrapeWzInPage(maxDocs) {
+async function scrapeWzInPage(opts) {
+  const { maxDocs, headerFields, headerFieldsFromPositions, positionFields } = opts;
+
   const DOC_TYPES = ['WZ'];
   const MAX_PAGES = 100;
   const MAX_CONSECUTIVE_FAILURES = 3;
@@ -78,12 +88,6 @@ async function scrapeWzInPage(maxDocs) {
       await sleep(interval);
     }
     return null;
-  }
-  function parsePl(raw) {
-    if (!raw) return 0;
-    const cleaned = String(raw).replace(/[\s ]/g, '').replace(',', '.');
-    const n = parseFloat(cleaned);
-    return isNaN(n) ? 0 : n;
   }
 
   function visibleGrids() {
@@ -117,40 +121,32 @@ async function scrapeWzInPage(maxDocs) {
   function rowDocNumber(row) { return cellTitle(row, 'DocNumber') || null; }
   function targetRows() { return listRows().filter(r => DOC_TYPES.includes(rowDocType(r))); }
 
-  function extractHeader(row) {
-    return {
-      docNumber: cellTitle(row, 'DocNumber'),
-      docNumberExt: cellTitle(row, 'DocNumberExt'),
-      docDate: (cellTitle(row, 'DocDate') || '').split(' ')[0],
-      warehouseCode: cellTitle(row, 'Warehouse'),
-      warehouseName: cellTitle(row, 'WarehouseDesc_PL'),
-      wzn: cellTitle(row, 'DocNumberExtAdd2'),
-      headerId: cellTitle(row, 'csDocsHeadersId'),
-      warehouseId: cellTitle(row, 'csWarehousesId')
-    };
+  // Rekord nagłówka: surowe stringi pod dokładnie te nazwy pól, które
+  // dostaliśmy z Node (headerFields — 23 pól wprost z gridu listy).
+  function extractHeaderRaw(row) {
+    const rec = {};
+    headerFields.forEach(f => { rec[f] = cellTitle(row, f); });
+    return rec;
   }
 
-  function extractPositions(header) {
+  // Pozycje: surowe stringi pod nazwy z positionFields. csDocsHeadersId
+  // pozycji NADPISUJEMY wartością z nagłówka (link do dokumentu) — w gridzie
+  // pozycji bywa puste/inne niż oczekiwane, a musi się zgadzać z rekordem
+  // nagłówka 1:1, żeby FK się trzymał.
+  function extractPositionsRaw(headerId) {
     const grid = getVisiblePositionsGrid();
     if (!grid) return [];
     return Array.from(grid.querySelectorAll('tr.cs-grid-data-row')).map(row => {
+      // Filtr "czy to realny wiersz pozycji": musi mieć SKU (pogrubiony
+      // fragment w ItemDesc) — puste/techniczne wiersze siatki pomijamy.
       const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
-      if (!descCell) return null;
-      const skuEl = descCell.querySelector('.cs-style-text-bold');
-      const sku = skuEl ? (skuEl.textContent || '').trim() : '';
-      if (!sku) return null;
-      const lineWarehouseCode = cellTitle(row, 'Warehouse');
-      return Object.assign({}, header, {
-        warehouseCode: lineWarehouseCode || header.warehouseCode,
-        sku: sku,
-        name: (descCell.getAttribute('title') || '').trim(),
-        unit: cellTitle(row, 'Unit'),
-        qty: parsePl(cellTitle(row, 'QuantityUnits')),
-        unitPrice: parsePl(cellTitle(row, 'StockUnitPrice')),
-        lineValue: parsePl(cellTitle(row, 'FStock')),
-        csItemsId: cellTitle(row, 'csItemsId'),
-        csItemsUnitsId: cellTitle(row, 'csItemsUnitsId')
-      });
+      const skuEl = descCell ? descCell.querySelector('.cs-style-text-bold') : null;
+      if (!skuEl || !(skuEl.textContent || '').trim()) return null;
+
+      const rec = {};
+      positionFields.forEach(f => { rec[f] = cellTitle(row, f); });
+      rec.csDocsHeadersId = headerId;
+      return rec;
     }).filter(Boolean);
   }
 
@@ -181,6 +177,7 @@ async function scrapeWzInPage(maxDocs) {
     return false;
   }
 
+  const headers = [];
   const positions = [];
   const processedDocs = new Set();
   let consecutiveFailures = 0;
@@ -201,7 +198,8 @@ async function scrapeWzInPage(maxDocs) {
       if (!row) continue;
 
       processedDocs.add(targetDoc);
-      const header = extractHeader(row);
+      const headerRec = extractHeaderRaw(row);
+      const headerId = headerRec.csDocsHeadersId;
 
       const btn = row.querySelector('td[data-datafield="DocNumber"] .csButtonAction');
       if (!btn) continue;
@@ -216,7 +214,7 @@ async function scrapeWzInPage(maxDocs) {
         await waitFor(() => getVisibleListGrid());
         await sleep(DELAY_AFTER_CLOSE);
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-          return { positions, docs: processed, partial: true };
+          return { headers, positions, docs: processed, partial: true };
         }
         continue;
       }
@@ -224,9 +222,19 @@ async function scrapeWzInPage(maxDocs) {
       consecutiveFailures = 0;
       await sleep(DELAY_AFTER_OPEN);
 
-      const rows = extractPositions(header);
+      const posRows = extractPositionsRaw(headerId);
+
+      // Pola nagłówka, których nie ma w gridzie listy, ale są w gridzie
+      // pozycji (ExchangeRate, csCurrenciesId, S01/S02Amount, DocWeight,
+      // DocGrossWeight) — bierzemy z PIERWSZEJ pozycji, to samo dla całego dok.
+      const posGridRow = grid.querySelector('tr.cs-grid-data-row');
+      if (posGridRow) {
+        headerFieldsFromPositions.forEach(f => { headerRec[f] = cellTitle(posGridRow, f); });
+      }
+
+      headers.push(headerRec);
+      positions.push(...posRows);
       processed++;
-      positions.push(...rows);
 
       const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
       if (closeBtn) closeBtn.click();
@@ -239,29 +247,74 @@ async function scrapeWzInPage(maxDocs) {
     const pager = getVisiblePager();
     if (!pagerHasNextPage(pager)) break;
     if (!await goToNextPage(pager)) {
-      return { positions, docs: processed, partial: true };
+      return { headers, positions, docs: processed, partial: true };
     }
     pageNum++;
   }
 
-  return { positions, docs: processed, partial: false };
+  return { headers, positions, docs: processed, partial: false };
 }
 
 // ---------- Zapis wyniku ----------
 
+function loadSchemaMeta() {
+  const p = path.join(__dirname, 'schema-test-tables.json');
+  if (!fs.existsSync(p)) return null;
+  return JSON.parse(fs.readFileSync(p, 'utf8'));
+}
+
+// Buduje jeden INSERT na tabelę + parametry otypowane wg metadanych kolumn
+// (mssqlType/coerceValue z lib/schema.js) — żeby SQL Server dostawał
+// prawdziwe int/decimal/date, nie surowe stringi z ekranu ERP.
+async function insertRows(pool, tableName, columnsMeta, rows) {
+  if (!rows.length) return 0;
+  let inserted = 0;
+  for (const row of rows) {
+    const request = pool.request();
+    const colNames = [];
+    const paramNames = [];
+    columnsMeta.forEach((col, i) => {
+      const paramName = 'p' + i;
+      const value = coerceValue(row[col.COLUMN_NAME], col);
+      request.input(paramName, mssqlType(col), value);
+      colNames.push('[' + col.COLUMN_NAME + ']');
+      paramNames.push('@' + paramName);
+    });
+    await request.query(
+      'INSERT INTO dbo.' + tableName + ' (' + colNames.join(', ') + ') VALUES (' + paramNames.join(', ') + ')'
+    );
+    inserted++;
+  }
+  return inserted;
+}
+
 async function saveResult(result) {
-  const dbName = process.env.DB_NAME;
-  if (!dbName) {
+  const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
+  const schema = loadSchemaMeta();
+
+  if (!DB_NAME || !schema) {
     const outPath = path.join(__dirname, 'results.json');
     fs.writeFileSync(outPath, JSON.stringify(result, null, 2), 'utf8');
-    console.log('[wynik] DB_NAME nie ustawione w .env — zapisano do', outPath,
-      '(' + result.positions.length + ' wierszy, ' + result.docs + ' WZ, partial=' + result.partial + ')');
+    console.log('[wynik]', !DB_NAME ? 'DB_NAME nie ustawione' : 'brak schema-test-tables.json (uruchom generate-test-tables.js --apply)',
+      '— zapisano do', outPath,
+      '(' + result.headers.length + ' WZ, ' + result.positions.length + ' pozycji, partial=' + result.partial + ')');
     return;
   }
 
-  // TODO: zapis do MSSQL, jak dojdzie DB_NAME i wiadomo, do jakiej tabeli
-  // (patrz mssql w package.json — połączenie z process.env.DB_HOST/PORT/USER/PASSWORD/NAME).
-  throw new Error('DB_NAME jest ustawione, ale zapis do MSSQL nie jest jeszcze zaimplementowany.');
+  const config = {
+    server: DB_HOST, port: parseInt(DB_PORT || '1433', 10),
+    user: DB_USER, password: DB_PASSWORD, database: DB_NAME,
+    options: { encrypt: true, trustServerCertificate: true }, connectionTimeout: 15000
+  };
+  const pool = await sql.connect(config);
+  try {
+    const insertedHeaders = await insertRows(pool, F.TEST_TABLE_HEADERS, schema.headers, result.headers);
+    const insertedPositions = await insertRows(pool, F.TEST_TABLE_POSITIONS, schema.positions, result.positions);
+    console.log('[wynik] Zapisano do bazy "' + DB_NAME + '": ' + insertedHeaders + ' wierszy w ' +
+      F.TEST_TABLE_HEADERS + ', ' + insertedPositions + ' wierszy w ' + F.TEST_TABLE_POSITIONS + '.');
+  } finally {
+    await pool.close();
+  }
 }
 
 // ---------- Główny przebieg ----------
@@ -271,8 +324,6 @@ async function main() {
   const context = await browser.newContext();
   const page = await context.newPage();
 
-  // Konsola strony (i błędy JS) widoczne w terminalu Node — przydatne przy
-  // debugowaniu, bo w trybie headed i tak widać ekran, ale logi łatwiej czytać tu.
   page.on('console', msg => console.log('[strona]', msg.text()));
   page.on('pageerror', err => console.error('[błąd strony]', err.message));
 
@@ -282,8 +333,13 @@ async function main() {
     await page.goto(WZ_LIST_URL, { waitUntil: 'networkidle' });
     console.log('[wz] Lista załadowana. Startuję zbieranie (max ' + MAX_DOCS + ' dok.)...');
 
-    const result = await page.evaluate(scrapeWzInPage, MAX_DOCS);
-    console.log('[wz] Zebrano', result.docs, 'WZ,', result.positions.length, 'pozycji. partial=' + result.partial);
+    const result = await page.evaluate(scrapeWzInPage, {
+      maxDocs: MAX_DOCS,
+      headerFields: F.HEADER_FIELDS,
+      headerFieldsFromPositions: F.HEADER_FIELDS_FROM_FIRST_POSITION,
+      positionFields: F.POSITION_FIELDS
+    });
+    console.log('[wz] Zebrano', result.headers.length, 'WZ,', result.positions.length, 'pozycji. partial=' + result.partial);
 
     await saveResult(result);
   } finally {
