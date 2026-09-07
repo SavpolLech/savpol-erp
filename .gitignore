@@ -13,3 +13,7 @@ cross_sell_*.csv
 automatyzacje/**/.env
 automatyzacje/**/.env.*
 !automatyzacje/**/.env.example
+
+# Zależności Node i lokalne wyniki testowe (dane WZ z ERP — nie wchodzą do repo)
+automatyzacje/**/node_modules/
+automatyzacje/**/results.json
