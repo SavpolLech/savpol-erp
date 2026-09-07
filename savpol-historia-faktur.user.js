@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.6.0
+// @version      3.7.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2760,6 +2760,78 @@
     return lista;
   }
 
+  // ---------- Migawka stanu ERP z chwili generowania ----------
+  //
+  // Po co: między wygenerowaniem opisu a jego zapisem mija czasem kwadrans,
+  // a nad tym samym ERP pracują 2–3 osoby. Gdyby ktoś w tym czasie poprawił
+  // opis ręcznie, zapis zamazałby jego pracę bez śladu — ERP nie ma
+  // wersjonowania. Porównanie „co było przy generowaniu" z „co jest teraz"
+  // pozwala się zatrzymać i zapytać.
+  //
+  // Trzymamy to LOKALNIE, a nie w apce. Apka nie wchodzi do ERP, więc znałaby
+  // tylko to, co jej wyślemy przy okazji specyfikacji — a produkty bez
+  // specyfikacji przez tamtą ścieżkę nie przechodzą i zostałyby bez ochrony.
+  // Lokalnie obejmujemy wszystkie.
+  const MIGAWKA_KLUCZ = 'savpol_stan_erp_';
+
+  function zapiszMigawke(sku, wiersze) {
+    if (typeof GM_setValue !== 'function') return;
+    const stan = {};
+    Object.keys(OPISY.TYPY).forEach(k => {
+      const w = opisPoTypie(wiersze, OPISY.TYPY[k]);
+      stan[k] = w ? String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '') : null;
+    });
+    try {
+      GM_setValue(MIGAWKA_KLUCZ + sku, JSON.stringify({
+        kiedy: new Date().toISOString(),
+        przebieg: PRZEBIEG_ID,
+        stan: stan
+      }));
+    } catch (e) { /* brak migawki to utrata ostrzeżenia, nie awaria */ }
+  }
+
+  function czytajMigawke(sku) {
+    if (typeof GM_getValue !== 'function') return null;
+    try {
+      const s = GM_getValue(MIGAWKA_KLUCZ + sku, '');
+      return s ? JSON.parse(s) : null;
+    } catch (e) { return null; }
+  }
+
+  // Czy ERP zmienił się od czasu migawki. Zwraca listę pól, które ktoś ruszył.
+  function ktoZmienil(sku, wiersze, klucze) {
+    const m = czytajMigawke(sku);
+    if (!m || !m.stan) return { znane: false, zmienione: [] };
+    const zmienione = klucze.filter(k => {
+      if (!Object.prototype.hasOwnProperty.call(m.stan, k)) return false;
+      const w = opisPoTypie(wiersze, OPISY.TYPY[k]);
+      const teraz = w ? String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '') : null;
+      return String(m.stan[k]) !== String(teraz);
+    });
+    return { znane: true, kiedy: m.kiedy, zmienione: zmienione };
+  }
+
+  // Robi migawkę stanu opisów w ERP i oddaje długi opis dla apki.
+  //
+  // Wołane w przebiegu, przy wysyłce specyfikacji — czyli w chwili, od której
+  // liczy się „przed generowaniem". Niepowodzenie NIE przerywa przebiegu:
+  // stracimy wtedy ostrzeżenie o cudzej zmianie, ale nie pracę.
+  async function migawkaOpisow(sku) {
+    try {
+      const lista = await erpCzytajOpisy(sku);
+      if (!lista.ok) {
+        console.warn('[Opisy] Nie zrobiłem migawki stanu ERP: ' + lista.blad
+          + ' — ostrzeżenie o cudzej zmianie będzie niedostępne.');
+        return null;
+      }
+      zapiszMigawke(sku, lista.wiersze);
+      const dlugi = opisPoTypie(lista.wiersze, OPISY.TYPY.opis);
+      return dlugi ? String(dlugi.ItemDesc1_PL || dlugi.ItemTranslatedDesc1 || '') : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   // ---------- SEO: wpisanie w formularz, bez zapisu ----------
   //
   // Świadomie NIE zapisujemy tego przez API. Nagranie C pokazało, że
@@ -3247,6 +3319,16 @@
       return { ok: true, naSucho: true, plan: plan };
     }
 
+    // Czy ktoś ruszył opis od czasu generowania. Ostrzegamy PRZED kopią, bo to
+    // powód, żeby się zatrzymać, a nie żeby ostrożniej nadpisać.
+    const czyjeZmiany = ktoZmienil(sku, lista.wiersze, klucze);
+    if (czyjeZmiany.zmienione.length) {
+      return { ok: false, blad: 'ktoś zmienił w ERP pola: '
+        + czyjeZmiany.zmienione.join(', ') + ' już po wygenerowaniu opisu ('
+        + czyjeZmiany.kiedy + '). Nie zapisuję, żeby nie zamazać cudzej pracy. '
+        + 'Obejrzyj opis w ERP i wygeneruj go ponownie, jeśli zmiana jest do porzucenia.' };
+    }
+
     // Kopia dopiero teraz — przy przymiarce nie ma czego zabezpieczać.
     const kopia = await zabezpieczOpisy(sku, lista.wiersze);
     if (!kopia.ok) {
@@ -3453,6 +3535,9 @@
       const odp = await apkaZadanie('POST', SPEC_PDF.ENDPOINT, {
         sku: sku,
         pdfBase64: plik.base64,
+        // Bieżąca treść opisu z ERP. Apka sama do ERP nie wchodzi, a bez tego
+        // nie miałaby czego oddać jako `stanZerp` przy generowaniu.
+        erpOpis: await migawkaOpisow(sku),
         meta: {
           attachmentId: String(wiersz.csAttachmentsId),
           versionId: String(wiersz.VersionId),
