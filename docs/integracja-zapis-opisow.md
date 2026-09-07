@@ -153,10 +153,26 @@ Po drodze wyszły dwie rzeczy, obie o kodowaniu:
 - **Odczyt wzorca musi dekodować UTF-8**, a nie brać bajt po bajcie. Inaczej
   przechwycona treść wraca do ERP zniekształcona, cicho.
 
-Zakres zapisu jest **zamknięty do dwóch rodzajów**: „Nazwa produktu" i „Opis
-produktu". Skład, przechowywanie przed i po otwarciu oraz opis skrócony
-prowadzi człowiek — skrypt ich nie tyka, a próba podania innego pola kończy
-się błędem, nie pominięciem.
+Zakres zapisu jest **zamknięty do trzech rodzajów**, rozpoznawanych po
+etykiecie widocznej w ERP:
+
+| Klucz w skrypcie | Etykieta w ERP | Skąd treść | Rola na PDP |
+|---|---|---|---|
+| `nazwa` | Nazwa produktu | `h1` z apki | zastępuje H1, gdy uzupełniona |
+| `opis` | Opis produktu | `long` z apki | długi opis |
+| `techniczne` | Dane techniczne | `short` z apki | — |
+
+Skład, przechowywanie przed i po otwarciu prowadzi człowiek. **„Opis skrócony
+produktu" to pole martwe** — jest w systemie, ale front e-commerce go nie
+używa; nie zapisujemy tam niczego. Próba podania innego pola kończy się
+błędem, nie pominięciem.
+
+GUID-y rodzajów: `2519e05a-c86c-41c9-79d4-79023b9ef2e0` (Nazwa produktu),
+`95381861-9314-41ae-d36c-deca87152a68` (Opis produktu). GUID-u „Danych
+technicznych" nie znamy — produkt, na którym pracowaliśmy, tego rodzaju nie
+miał. Dlatego skrypt **uczy się GUID-ów z odczytanych wierszy** (każdy niesie
+i etykietę, i GUID) i zapamiętuje je między sesjami. Dopasowanie po etykiecie
+jest dokładne, żeby „Opis produktu" nie trafił w „Opis skrócony produktu".
 
 ## Brak kontroli równoległych zmian
 

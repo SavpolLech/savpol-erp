@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.7.0
+// @version      3.8.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2670,11 +2670,56 @@
     // Lista jest zamknięta celowo: przy braku wersjonowania w ERP nadpisanie
     // składu albo warunków przechowywania to skasowanie danych, których nikt
     // nie odtworzy, a błąd byłby cichy.
-    TYPY: {
-      nazwa: '2519e05a-c86c-41c9-79d4-79023b9ef2e0',
-      opis: '95381861-9314-41ae-d36c-deca87152a68'
+    // Rodzaje, do których wolno pisać — rozpoznawane po ETYKIECIE z ERP.
+    //
+    // GUID-y są tu tylko zasiewem tego, co już potwierdziliśmy nagraniami.
+    // Reszty skrypt uczy się sam, z odczytanych wierszy: „Dane techniczne"
+    // nie występowały na produkcie, na którym pracowaliśmy, więc wpisanie
+    // wymyślonego GUID-u byłoby zgadywaniem. Etykieta jest tym, co człowiek
+    // widzi w ERP, i tym, czym się o tych polach umawiamy.
+    POLA: {
+      nazwa: { etykieta: 'Nazwa produktu', guid: '2519e05a-c86c-41c9-79d4-79023b9ef2e0' },
+      opis: { etykieta: 'Opis produktu', guid: '95381861-9314-41ae-d36c-deca87152a68' },
+      techniczne: { etykieta: 'Dane techniczne', guid: null }
     }
   };
+
+  // Nauczone GUID-y rodzajów. Trzymamy je między sesjami, bo produkt, na
+  // którym poznaliśmy dany rodzaj, nie musi być tym, który chcemy zapisać.
+  const TYPY_KLUCZ = 'savpol_typy_opisow';
+
+  function nauczoneTypy() {
+    if (typeof GM_getValue !== 'function') return {};
+    try { return JSON.parse(GM_getValue(TYPY_KLUCZ, '{}')) || {}; } catch (e) { return {}; }
+  }
+
+  // Każdy odczyt opisów to okazja do nauki: wiersz niesie i etykietę, i GUID.
+  function zapamietajTypy(wiersze) {
+    if (typeof GM_setValue !== 'function') return;
+    const znane = nauczoneTypy();
+    let nowe = false;
+    wiersze.forEach(w => {
+      const et = String(w.B2BDescriptionTypeTranslatedDesc || '').trim();
+      const g = String(w.csB2BDescriptionTypesG || '').toLowerCase();
+      if (!et || !g) return;
+      if (znane[et] !== g) { znane[et] = g; nowe = true; }
+    });
+    if (nowe) {
+      try { GM_setValue(TYPY_KLUCZ, JSON.stringify(znane)); } catch (e) { /* nieistotne */ }
+    }
+  }
+
+  function guidTypu(klucz) {
+    const pole = OPISY.POLA[klucz];
+    if (!pole) return null;
+    if (pole.guid) return pole.guid;
+    const g = nauczoneTypy()[pole.etykieta];
+    return g || null;
+  }
+
+  function etykietaTypu(klucz) {
+    return OPISY.POLA[klucz] ? OPISY.POLA[klucz].etykieta : klucz;
+  }
 
   // Lista opisów produktu. Ta sama mechanika, co przy załącznikach: odtwarzamy
   // żądanie, które strona wysyła sama, i sprawdzamy, czy pyta o WŁAŚCIWY produkt.
@@ -2709,12 +2754,23 @@
 
     const wiersze = erpNaObiekty(siatka)
       .filter(w => String(w.csB2BPortalsId || '') === String(OPISY.PORTAL_ID));
+    zapamietajTypy(wiersze);
     return { ok: true, wiersze: wiersze, itemId: czyj.itemId };
   }
 
-  function opisPoTypie(wiersze, typGuid) {
+  // Wiersz opisu danego rodzaju. Po GUID, gdy go znamy, a gdy nie — po
+  // etykiecie. Dopasowanie po etykiecie jest DOKŁADNE: „Opis produktu" nie
+  // może trafić w „Opis skrócony produktu".
+  function opisPoKluczu(wiersze, klucz) {
+    const g = guidTypu(klucz);
+    if (g) {
+      const po = wiersze.find(w =>
+        String(w.csB2BDescriptionTypesG || '').toLowerCase() === g);
+      if (po) return po;
+    }
+    const et = fold(etykietaTypu(klucz));
     return wiersze.find(w =>
-      String(w.csB2BDescriptionTypesG || '').toLowerCase() === typGuid) || null;
+      fold(String(w.B2BDescriptionTypeTranslatedDesc || '').trim()) === et) || null;
   }
 
   // Podgląd na żądanie: co ERP ma dziś dla tego produktu.
@@ -2751,8 +2807,8 @@
     ostatniZrzut = zrzut;
     skopiujDoSchowka(zrzut);
     console.log('  (zestawienie rodzaj → GUID jest w schowku)');
-    const brakujace = Object.keys(OPISY.TYPY)
-      .filter(k => !opisPoTypie(lista.wiersze, OPISY.TYPY[k]));
+    const brakujace = Object.keys(OPISY.POLA)
+      .filter(k => !opisPoKluczu(lista.wiersze, k));
     if (brakujace.length) {
       console.log('  Brakuje wierszy: ' + brakujace.join(', ')
         + ' — przy zapisie trzeba je najpierw założyć.');
@@ -2777,8 +2833,8 @@
   function zapiszMigawke(sku, wiersze) {
     if (typeof GM_setValue !== 'function') return;
     const stan = {};
-    Object.keys(OPISY.TYPY).forEach(k => {
-      const w = opisPoTypie(wiersze, OPISY.TYPY[k]);
+    Object.keys(OPISY.POLA).forEach(k => {
+      const w = opisPoKluczu(wiersze, k);
       stan[k] = w ? String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '') : null;
     });
     try {
@@ -2804,7 +2860,7 @@
     if (!m || !m.stan) return { znane: false, zmienione: [] };
     const zmienione = klucze.filter(k => {
       if (!Object.prototype.hasOwnProperty.call(m.stan, k)) return false;
-      const w = opisPoTypie(wiersze, OPISY.TYPY[k]);
+      const w = opisPoKluczu(wiersze, k);
       const teraz = w ? String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '') : null;
       return String(m.stan[k]) !== String(teraz);
     });
@@ -2825,7 +2881,7 @@
         return null;
       }
       zapiszMigawke(sku, lista.wiersze);
-      const dlugi = opisPoTypie(lista.wiersze, OPISY.TYPY.opis);
+      const dlugi = opisPoKluczu(lista.wiersze, 'opis');
       return dlugi ? String(dlugi.ItemDesc1_PL || dlugi.ItemTranslatedDesc1 || '') : null;
     } catch (e) {
       return null;
@@ -3258,17 +3314,17 @@
   // Cały zapis: sprawdź, przygotuj kopię, zapisz, sprawdź ponownie.
   //
   // `nowe` to obiekt w rodzaju { nazwa: '…', opis: '<p>…</p>' } — klucze
-  // wyłącznie z OPISY.TYPY. Cokolwiek innego jest odrzucane, nie ignorowane:
+  // wyłącznie z OPISY.POLA. Cokolwiek innego jest odrzucane, nie ignorowane:
   // literówka w nazwie pola nie może kończyć się cichym niezapisaniem.
   async function zapiszOpisy(sku, nowe, opcje) {
     const naSucho = !(opcje && opcje.zapisz === true);
     const klucze = Object.keys(nowe || {});
     if (!klucze.length) return { ok: false, blad: 'nie podałeś, co zapisać' };
 
-    const obce = klucze.filter(k => !OPISY.TYPY[k]);
+    const obce = klucze.filter(k => !OPISY.POLA[k]);
     if (obce.length) {
       return { ok: false, blad: 'nie znam pól: ' + obce.join(', ')
-        + '. Wolno tylko: ' + Object.keys(OPISY.TYPY).join(', ') };
+        + '. Wolno tylko: ' + Object.keys(OPISY.POLA).join(', ') };
     }
     const puste = klucze.filter(k => !String(nowe[k] || '').trim());
     if (puste.length) {
@@ -3280,8 +3336,8 @@
     if (!lista.ok) return { ok: false, blad: lista.blad };
 
     const plan = klucze.map(k => {
-      const typ = OPISY.TYPY[k];
-      const istniejacy = opisPoTypie(lista.wiersze, typ);
+      const typ = guidTypu(k);
+      const istniejacy = opisPoKluczu(lista.wiersze, k);
       const stara = istniejacy
         ? String(istniejacy.ItemDesc1_PL || istniejacy.ItemTranslatedDesc1 || '') : '';
       // Tryb edytora tego wiersza. `isExternalEditor = 0` znaczy, że pole jest
@@ -3344,7 +3400,7 @@
     // po fakcie już by tego nie odkręciło.
     for (const p of plan) {
       if (p.zewnEdytor !== 0) continue;
-      const wiersz = opisPoTypie(lista.wiersze, p.typ);
+      const wiersz = opisPoKluczu(lista.wiersze, p.klucz);
       const przel = await erpUstawZewnEdytor(wiersz, 1);
       if (!przel.ok) {
         return { ok: false, blad: 'nie udało się wyłączyć edytora WYSIWYG dla „'
@@ -3354,6 +3410,19 @@
       p.zewnEdytor = 1;
     }
 
+    // Nowy wiersz da się założyć tylko dla rodzaju, którego GUID znamy.
+    // „Dane techniczne" poznamy przy pierwszym produkcie, który je ma —
+    // do tego czasu mówimy o tym wprost, zamiast wysyłać puste pole i patrzeć,
+    // co zrobi z tym serwer.
+    const bezGuidu = plan.filter(p => !p.wierszId && !p.typ);
+    if (bezGuidu.length) {
+      return { ok: false, blad: 'nie znam jeszcze identyfikatora rodzaju: '
+        + bezGuidu.map(p => '„' + etykietaTypu(p.klucz) + '"').join(', ')
+        + '. Ten produkt takiego opisu nie ma, więc trzeba by go założyć — '
+        + 'poznam ten rodzaj, gdy odczytam produkt, który go ma '
+        + '(savpolOpisy z dowolnym takim SKU).' };
+    }
+
     for (const p of plan) {
       if (!p.wierszId) {
         const zal = await erpZalozWierszOpisu(lista.itemId, p.typ);
@@ -3361,7 +3430,7 @@
         // Identyfikator nadaje serwer, więc czytamy listę ponownie.
         const znow = await erpCzytajOpisy(sku);
         if (!znow.ok) return { ok: false, blad: 'założyłem wiersz, ale nie umiem go odczytać: ' + znow.blad };
-        const swiezy = opisPoTypie(znow.wiersze, p.typ);
+        const swiezy = opisPoKluczu(znow.wiersze, p.klucz);
         if (!swiezy) return { ok: false, blad: 'założony wiersz „' + p.klucz + '" nie pojawił się na liście' };
         p.wierszId = swiezy.csItemsDesc4B2BPortalsId;
       }
@@ -3374,7 +3443,7 @@
     const po = await erpCzytajOpisy(sku);
     if (!po.ok) return { ok: true, ostrzezenie: 'zapisane, ale nie udało się sprawdzić: ' + po.blad };
     const niezgodne = plan.filter(p => {
-      const w = opisPoTypie(po.wiersze, p.typ);
+      const w = opisPoKluczu(po.wiersze, p.klucz);
       const t = w ? String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '') : '';
       return t !== String(nowe[p.klucz]);
     }).map(p => p.klucz);
@@ -5486,6 +5555,10 @@
       '  <div style="font-size:12px;margin-bottom:3px">Opis produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
       '  <textarea data-role="opis" rows="7" spellcheck="false" style="' + pole + '"></textarea>',
       '</div>',
+      '<div style="margin-bottom:8px">',
+      '  <div style="font-size:12px;margin-bottom:3px">Dane techniczne <span style="opacity:.6">(puste = nie ruszam)</span></div>',
+      '  <textarea data-role="techniczne" rows="3" spellcheck="false" style="' + pole + '"></textarea>',
+      '</div>',
       '<div style="border-top:1px solid rgba(255,255,255,.15);margin:10px 0 8px;padding-top:8px">',
       '  <div style="font-size:12px;opacity:.75;margin-bottom:6px">',
       '    SEO wpisuję tylko w formularz karty — <b>zapis klikasz sam w ERP</b>.</div>',
@@ -5515,8 +5588,10 @@
       const tresci = {};
       const n = el('nazwa').value.trim();
       const o = el('opis').value;
+      const t = el('techniczne').value;
       if (n) tresci.nazwa = n;
       if (String(o).trim()) tresci.opis = o;
+      if (String(t).trim()) tresci.techniczne = t;
       return tresci;
     }
 
@@ -5550,7 +5625,7 @@
           pisz('NIE UDAŁO SIĘ:\n' + w.blad);
         } else if (w.naSucho) {
           pisz('Przymiarka — nic nie zapisano:\n\n'
-            + w.plan.map(p => '• ' + (p.klucz === 'nazwa' ? 'Nazwa produktu' : 'Opis produktu')
+            + w.plan.map(p => '• ' + etykietaTypu(p.klucz)
               + ': ' + p.czynnosc + '  (' + p.bylo + ' → ' + p.bedzie + ' znaków)'
               + (p.zewnEdytor === 0 ? '\n    UWAGA: to pole jest w ERP w trybie WYSIWYG — '
                 + 'HTML może zostać przez ERP zmieniony' : '')).join('\n')
@@ -5619,6 +5694,7 @@
       };
       el('nazwa').value = wez('Nazwa produktu');
       el('opis').value = wez('Opis produktu');
+      el('techniczne').value = wez('Dane techniczne');
       pisz('Wczytałem kopię z ' + kopie[nr - 1].kiedy + ' (' + kopie[nr - 1].kto + ').\n'
         + 'Treść jest w polach powyżej — NIC jeszcze nie zapisałem.\n'
         + 'Sprawdź ją i kliknij „Zapisz do ERP", żeby przywrócić.');
