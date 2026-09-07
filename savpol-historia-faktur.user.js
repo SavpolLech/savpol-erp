@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.8.0
+// @version      3.9.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2816,6 +2816,105 @@
     return lista;
   }
 
+  // Czekanie na opisy i pokazanie ich do zatwierdzenia.
+  //
+  // Startuje PO otwarciu generatora i chodzi w tle — użytkownik przez ten czas
+  // pracuje w apce. Nic nie zapisuje sam: gdy opisy są gotowe, otwiera panel
+  // już wypełniony, a decyzja zostaje przy człowieku.
+  async function pilnujOpisow(sku, ui) {
+    const tytulPrzed = document.title;
+    try {
+      const czekanie = await czekajNaOpisy(sku, zostalo => {
+        if (ui) ui.detail('Czekam na opisy z apki dla ' + sku
+          + ' — jeszcze do ' + zostalo + ' min.');
+      });
+      if (!czekanie.ok) {
+        if (ui) ui.detail('Apka nie oddała opisów dla ' + sku + '. '
+          + 'Gdy skończy, użyj przycisku „Zapisz opisy".');
+        return;
+      }
+      const d = czekanie.dane;
+      const zle = opisyDlaNas(d, sku);
+      if (zle) {
+        console.warn('[Opisy] Nie przyjmuję tych opisów: ' + zle);
+        if (ui) ui.detail('Dostałem opisy, ale ich nie przyjmuję: ' + zle);
+        return;
+      }
+
+      // Sygnał, że jest na co spojrzeć. Zakładka bywa w tle, a panel wtedy
+      // nikomu nie mignie przed oczami.
+      document.title = '✅ Opisy gotowe — ' + tytulPrzed;
+      setTimeout(() => { document.title = tytulPrzed; }, 60000);
+
+      const ile = t => (t ? String(t).length + ' znaków' : 'brak');
+      stworzPanelOpisow({
+        sku: sku,
+        nazwa: d.h1 || '',
+        opis: d.long || '',
+        techniczne: d.short || '',
+        seoTytul: d.metaTitle || '',
+        seoOpis: d.metaDescription || '',
+        info: 'Opisy z apki, wygenerowane ' + (d.wygenerowano || '?') + '.' + '\n' + '\n'
+          + '• Nazwa produktu: ' + ile(d.h1) + '\n'
+          + '• Opis produktu: ' + ile(d.long) + '\n'
+          + '• Dane techniczne: ' + ile(d.short) + '\n'
+          + '• Meta tytuł: ' + ile(d.metaTitle) + '\n'
+          + '• Meta opis: ' + ile(d.metaDescription) + '\n' + '\n'
+          + 'NIC JESZCZE NIE ZAPISAŁEM. Sprawdź treści, potem „Sprawdź, nie zapisuj"'
+          + ' albo od razu „Zapisz do ERP".'
+      });
+      if (ui) ui.detail('Opisy gotowe — sprawdź panel zapisu.');
+    } catch (e) {
+      console.warn('[Opisy] Czekanie na opisy przerwane: ' + (e && e.message));
+    }
+  }
+
+  // Które produkty już pilnujemy — dwa kliknięcia „Otwórz generator" nie mogą
+  // uruchomić dwóch pętli odpytujących ten sam produkt.
+  const pilnowane = {};
+
+  // ---------- Pobieranie gotowych opisów z apki ----------
+  //
+  // Apka nie ma jak zapukać do przeglądarki, więc pytamy my. Odpytywanie ma
+  // KONIEC: bez tego zapomniana zakładka pytałaby w nieskończoność, a przy
+  // kilku otwartych naraz zjadałaby limit API GitHuba po stronie apki.
+  const POBIERANIE = {
+    ENDPOINT: '/api/opis',
+    CO_ILE_MS: 15000,
+    NAJDLUZEJ_MS: 10 * 60 * 1000
+  };
+
+  async function czekajNaOpisy(sku, przyPostepie) {
+    const doKiedy = Date.now() + POBIERANIE.NAJDLUZEJ_MS;
+    while (Date.now() < doKiedy) {
+      const r = await apkaZadanie('GET',
+        POBIERANIE.ENDPOINT + '?sku=' + encodeURIComponent(sku));
+      if (r.status >= 200 && r.status < 300 && r.body && r.body.ok) {
+        return { ok: true, dane: r.body };
+      }
+      if (r.status !== 404 && r.status !== 0) {
+        console.warn('[Opisy] Apka odpowiedziała ' + r.status + ' — pytam dalej.');
+      }
+      const zostalo = Math.round((doKiedy - Date.now()) / 60000);
+      if (przyPostepie) przyPostepie(zostalo);
+      await sleep(POBIERANIE.CO_ILE_MS);
+    }
+    return { ok: false, blad: 'apka nie oddała opisów w ciągu 10 minut' };
+  }
+
+  // Sprawdzenia, zanim cokolwiek pokażemy człowiekowi jako gotowe.
+  function opisyDlaNas(dane, sku) {
+    if (String(dane.sku || '') !== String(sku)) {
+      return 'apka oddała opisy produktu ' + dane.sku + ', a pracuję nad ' + sku;
+    }
+    // `przebieg` bywa nieobecny (apka wdrożyła kontrakt przed tym polem).
+    // Gdy jest — musi się zgadzać; gdy go nie ma, ufamy SKU i świeżości.
+    if (dane.przebieg && String(dane.przebieg) !== PRZEBIEG_ID) {
+      return 'te opisy zamówiła inna zakładka przeglądarki';
+    }
+    return null;
+  }
+
   // ---------- Migawka stanu ERP z chwili generowania ----------
   //
   // Po co: między wygenerowaniem opisu a jego zapisem mija czasem kwadrans,
@@ -4133,6 +4232,21 @@
       openGenerator(anchor, resultSkus, resultHints);
       el('gen').textContent = 'Otwarte w nowej karcie';
       setTimeout(() => { el('gen').textContent = 'Otwórz generator opisów'; }, 2500);
+
+      // Od tej chwili czekamy na opisy. To najlepszy moment na start: apka
+      // właśnie zaczyna pracę. Nie blokujemy niczego — pilnowanie chodzi
+      // w tle, a użytkownik pracuje w apce.
+      //
+      // Świadomie NIE każemy klikać osobnego przycisku w ERP: przycisk
+      // „Zapisz opisy" zostaje na poprawki i na produkty spoza przebiegu,
+      // ale w normalnej pracy panel ma pojawić się sam.
+      if (!pilnowane[anchor]) {
+        pilnowane[anchor] = true;
+        el('detail').textContent = 'Czekam na opisy z apki dla ' + anchor + '.';
+        pilnujOpisow(anchor, {
+          detail: t => { const d = el('detail'); if (d) d.textContent = t; }
+        }).finally(() => { delete pilnowane[anchor]; });
+      }
     });
 
     el('stop').addEventListener('click', () => {
@@ -5514,7 +5628,7 @@
   // Tutaj wystarczy wkleić.
   const PANEL_OPISOW_ID = 'savpol-panel-opisow';
 
-  function stworzPanelOpisow() {
+  function stworzPanelOpisow(wstepne) {
     const stary = document.getElementById(PANEL_OPISOW_ID);
     if (stary) stary.remove();
 
@@ -5727,6 +5841,18 @@
         el('seo').disabled = false;
         el('stan').textContent = '';
       }
+    }
+
+    // Wypełnienie z apki. Panel otwarty ręcznie zostaje pusty — to nadal
+    // narzędzie do poprawek; wypełniony pojawia się sam, gdy opisy są gotowe.
+    if (wstepne) {
+      el('sku').value = wstepne.sku || '';
+      el('nazwa').value = wstepne.nazwa || '';
+      el('opis').value = wstepne.opis || '';
+      el('techniczne').value = wstepne.techniczne || '';
+      el('seoTytul').value = wstepne.seoTytul || '';
+      el('seoOpis').value = wstepne.seoOpis || '';
+      if (wstepne.info) pisz(wstepne.info);
     }
 
     el('close').addEventListener('click', () => box.remove());
