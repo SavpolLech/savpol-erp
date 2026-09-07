@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.3.2
+// @version      3.4.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -141,6 +141,19 @@
     ENABLE: true,
     URL: 'https://esavpol-pdp.vercel.app/'
   };
+
+  // Identyfikator TEJ zakładki przeglądarki.
+  //
+  // Skrypt chodzi realnie w kilku zakładkach naraz, każda nad innym produktem.
+  // Bez takiego znacznika apka nie ma jak powiedzieć, do której zakładki wraca
+  // z odpowiedzią — a pomyłka „opis produktu A zapisany do produktu B" byłaby
+  // całkowicie cicha. SKU samo nie wystarcza: dwie zakładki mogą pracować nad
+  // tym samym produktem, a jedna z nich mieć wynik starszy.
+  //
+  // Żyje tyle, co zakładka: po odświeżeniu jest nowy i to jest w porządku,
+  // bo po odświeżeniu i tak nie ma do czego wracać.
+  const PRZEBIEG_ID = 'p' + Date.now().toString(36)
+    + Math.random().toString(36).slice(2, 8);
 
   // ---------- Konfiguracja: specyfikacja PDP z ERP do apki ----------
   // Specyfikacja wisi w ERP przy produkcie jako zalacznik. Skrypt pobiera ja
@@ -3253,6 +3266,7 @@
 
     const url = GENERATOR.URL
       + '?sku=' + encodeURIComponent(anchorSku)
+      + '&przebieg=' + encodeURIComponent(PRZEBIEG_ID)
       + (cross ? '&cross=' + encodeURIComponent(cross) : '')
       + (hints && typeof hints.invoices === 'number'
         ? '&invoices=' + hints.invoices : '')
@@ -5155,9 +5169,11 @@
       '  <div style="font-size:12px;margin-bottom:3px">Opis produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
       '  <textarea data-role="opis" rows="7" spellcheck="false" style="' + pole + '"></textarea>',
       '</div>',
-      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">',
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">',
       '  <button data-role="sucho" style="' + guzik + ';background:#3e4c59;color:#f5f7fa">Sprawdź, nie zapisuj</button>',
       '  <button data-role="zapisz" style="' + guzik + ';background:#b44d12;color:#fff">Zapisz do ERP</button>',
+      '  <button data-role="pdp" style="' + guzik + ';background:#2c5f8a;color:#fff">Zobacz PDP</button>',
+      '  <button data-role="kopie" style="' + guzik + ';background:#3e4c59;color:#f5f7fa">Poprzednie wersje</button>',
       '  <span data-role="stan" style="font-size:12px;opacity:.8"></span>',
       '</div>',
       '<div data-role="wynik" style="font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;' +
@@ -5228,9 +5244,65 @@
       }
     }
 
+    // Sprawdzenie na żywym PDP jest częścią pracy użytkownika, więc niech
+    // będzie pod ręką, a nie do wyszukiwania w drugiej zakładce.
+    async function pokazPdp() {
+      const sku = el('sku').value.trim();
+      if (!sku) { pisz('Podaj SKU.'); return; }
+      const url = ESAVPOL.SEARCH_URL(sku);
+      if (typeof GM_openInTab === 'function') GM_openInTab(url, { active: true });
+      else window.open(url, '_blank');
+    }
+
+    // Przywrócenie poprzedniej wersji. Wpisujemy treść w pola panelu, a NIE
+    // zapisujemy od razu — cofanie zmiany jest też zmianą i zasługuje na te
+    // same dwa kroki: obejrzyj, potem zatwierdź.
+    async function pokazPoprzednie() {
+      const sku = el('sku').value.trim();
+      if (!sku) { pisz('Podaj SKU.'); return; }
+      el('stan').textContent = 'Szukam kopii…';
+      const r = await apkaZadanie('GET', KOPIE.ENDPOINT + '?sku=' + encodeURIComponent(sku));
+      el('stan').textContent = '';
+      const kopie = r.body && r.body.kopie;
+      if (r.status < 200 || r.status >= 300 || !kopie) {
+        pisz('Nie udało się pobrać listy kopii (HTTP ' + r.status + ').');
+        return;
+      }
+      if (!kopie.length) { pisz('Dla ' + sku + ' nie ma jeszcze żadnej kopii.'); return; }
+
+      const lista = kopie.slice(0, 10)
+        .map((k, i) => (i + 1) + '. ' + k.kiedy + '  ' + k.kto).join('\n');
+      const wybor = prompt('Kopie dla ' + sku + ' — od najnowszej.\n'
+        + 'Podaj numer, żeby wpisać jej treść do pól panelu:\n\n' + lista, '1');
+      const nr = parseInt(wybor, 10);
+      if (!nr || nr < 1 || nr > kopie.length) { pisz('Anulowane.'); return; }
+
+      el('stan').textContent = 'Wczytuję kopię…';
+      const jedna = await apkaZadanie('GET',
+        KOPIE.ENDPOINT + '?path=' + encodeURIComponent(kopie[nr - 1].path));
+      el('stan').textContent = '';
+      const tresc = jedna.body && jedna.body.tresc;
+      if (jedna.status < 200 || jedna.status >= 300 || !tresc) {
+        pisz('Nie udało się wczytać kopii (HTTP ' + jedna.status + ').');
+        return;
+      }
+      const wez = rodzaj => {
+        const w = tresc[rodzaj];
+        if (w == null) return '';
+        return typeof w === 'string' ? w : String(w.tekst || '');
+      };
+      el('nazwa').value = wez('Nazwa produktu');
+      el('opis').value = wez('Opis produktu');
+      pisz('Wczytałem kopię z ' + kopie[nr - 1].kiedy + ' (' + kopie[nr - 1].kto + ').\n'
+        + 'Treść jest w polach powyżej — NIC jeszcze nie zapisałem.\n'
+        + 'Sprawdź ją i kliknij „Zapisz do ERP", żeby przywrócić.');
+    }
+
     el('close').addEventListener('click', () => box.remove());
     el('sucho').addEventListener('click', () => uruchom(false));
     el('zapisz').addEventListener('click', () => uruchom(true));
+    el('pdp').addEventListener('click', () => pokazPdp());
+    el('kopie').addEventListener('click', () => pokazPoprzednie());
     el('sku').focus();
     return box;
   }
