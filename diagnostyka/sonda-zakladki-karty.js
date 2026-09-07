@@ -1,5 +1,5 @@
 // Sonda: jak zbudowane są zakładki WEWNĄTRZ karty produktu.
-// WERSJA: 2026-09-07.1
+// WERSJA: 2026-09-07.2
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -18,7 +18,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-07.1';
+  const WERSJA = '2026-09-07.2';
   const MAX_ETYKIET = 200;
 
   function fold(s) {
@@ -100,29 +100,58 @@
     // otwartej zakładki SEO wyszedł więc pusty, choć pola były na ekranie.
     // Etykiety szukamy w górę drzewa, bo w tym ERP leżą one w kontenerze
     // kontrolki, a nie w atrybucie pola.
-    linie.push('');
-    linie.push('--- pola formularza (input / textarea / select) ---');
     const pola = Array.from(karta.querySelectorAll('input, textarea, select'))
       .filter(el => el.type !== 'hidden');
-    linie.push('  razem: ' + pola.length);
-    pola.slice(0, 80).forEach(el => {
-      let etykieta = '';
+
+    function etykietaPola(el) {
       let w = el;
-      for (let i = 0; i < 6 && w && !etykieta; i++) {
+      for (let i = 0; i < 6 && w; i++) {
         w = w.parentElement;
         if (!w) break;
         const lab = w.querySelector('label.Label, label, .csDBRadioGroupLabel, .Label');
-        if (lab) etykieta = (lab.getAttribute('title') || lab.textContent || '').trim();
+        if (lab) return (lab.getAttribute('title') || lab.textContent || '').trim();
       }
+      return '';
+    }
+
+    function wypiszPole(el) {
       const wartosc = String(el.value || '');
-      linie.push('  ' + (etykieta || '(bez etykiety)').slice(0, 34).padEnd(34)
+      return '  ' + (etykietaPola(el) || '(bez etykiety)').slice(0, 34).padEnd(34)
         + '  ' + opisEl(el)
         + (el.name ? ' name="' + el.name + '"' : '')
         + (el.placeholder ? ' placeholder="' + el.placeholder + '"' : '')
         + '  znaków=' + wartosc.length
-        + (wartosc ? '  „' + wartosc.slice(0, 60).replace(/\s+/g, ' ') + '"' : ''));
+        + (wartosc ? '  „' + wartosc.slice(0, 80).replace(/\s+/g, ' ') + '"' : '');
+    }
+
+    // NAJPIERW to, czego szukamy. Poprzedni zrzut miał 211 pól, limit 80 — i
+    // akurat pola SEO wypadły za listą. Sekcja filtrowana idzie więc pierwsza
+    // i nie podlega limitowi: żadne obcięcie nie schowa już właściwego pola.
+    linie.push('');
+    linie.push('--- POLA PASUJĄCE DO SZUKANYCH SŁÓW ---');
+    ['seo', 'meta', 'tytul', 'title', 'slug', 'adres', 'url'].forEach(slowo => {
+      const trafienia = pola.filter(el =>
+        fold(etykietaPola(el)).indexOf(slowo) >= 0
+        || fold(el.id || '').indexOf(slowo) >= 0
+        || fold(el.name || '').indexOf(slowo) >= 0
+        || fold(el.className || '').indexOf(slowo) >= 0);
+      linie.push('  „' + slowo + '" → ' + trafienia.length);
+      trafienia.forEach(el => linie.push('  ' + wypiszPole(el)));
     });
-    if (pola.length > 80) linie.push('  …[jeszcze ' + (pola.length - 80) + ']');
+
+    // Osobno WSZYSTKIE textarea — meta description to najpewniej któraś z nich,
+    // a jest ich w karcie niewiele.
+    linie.push('');
+    linie.push('--- wszystkie textarea w karcie ---');
+    const areas = pola.filter(el => el.tagName.toLowerCase() === 'textarea');
+    linie.push('  razem: ' + areas.length);
+    areas.forEach(el => linie.push(wypiszPole(el)));
+
+    linie.push('');
+    linie.push('--- pola formularza (input / textarea / select) ---');
+    linie.push('  razem: ' + pola.length);
+    pola.slice(0, 250).forEach(el => linie.push(wypiszPole(el)));
+    if (pola.length > 250) linie.push('  …[jeszcze ' + (pola.length - 250) + ']');
 
     // 3. Budowa karty w głąb — żeby zobaczyć, gdzie siedzi pasek zakładek.
     linie.push('');
