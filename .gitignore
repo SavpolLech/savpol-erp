@@ -6,3 +6,10 @@
 # Historie faktur z ERP — dane handlowe, trzymane lokalnie w Downloads
 historia_faktur_*.csv
 cross_sell_*.csv
+
+# Sekrety automatyzacji (hasła do bazy, connection stringi) — repo jest
+# de facto publiczne (linki raw dla marketingu), więc to NIGDY nie wchodzi
+# do commita. .env.example (bez realnych wartości) zostaje wersjonowany.
+automatyzacje/**/.env
+automatyzacje/**/.env.*
+!automatyzacje/**/.env.example
