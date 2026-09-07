@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.3.0
+// @version      3.3.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2726,20 +2726,36 @@
   // bez kopii to zapis bez drogi powrotu.
   async function zabezpieczOpisy(sku, wiersze) {
     const login = erpPodsluch.koperta && erpPodsluch.koperta.LoginInfo;
-    const paczka = {
-      sku: sku,
-      kiedy: new Date().toISOString(),
-      kto: (login && login.UserName) || 'nieznany',
-      opisy: wiersze.map(w => ({
-        rodzaj: w.B2BDescriptionTypeTranslatedDesc || '',
+
+    // Kluczem jest CZYTELNA NAZWA rodzaju, bo apka wylicza `rodzaje` jako
+    // `Object.keys(tresc)`. Wartość jest obiektem, nie samym tekstem — do
+    // odtworzenia potrzebne są jeszcze GUID rodzaju i identyfikator wiersza.
+    //
+    // Zabezpieczamy WSZYSTKIE opisy produktu, nie tylko te dwa, które
+    // zapisujemy. Kopia ma być zdjęciem stanu sprzed zmiany; gdyby kiedyś
+    // ktoś rozszerzył zakres zapisu albo ERP zrobił coś nieoczekiwanego,
+    // węższa kopia okazałaby się bezużyteczna dokładnie wtedy, gdy trzeba.
+    const tresc = {};
+    wiersze.forEach(w => {
+      const rodzaj = w.B2BDescriptionTypeTranslatedDesc || ('typ ' + w.csB2BDescriptionTypesG);
+      tresc[rodzaj] = {
         typG: w.csB2BDescriptionTypesG || '',
         wierszId: w.csItemsDesc4B2BPortalsId,
-        tresc: String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '')
-      }))
-    };
+        tekst: String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '')
+      };
+    });
 
-    const r = await apkaZadanie('POST', KOPIE.ENDPOINT, paczka);
-    if (r.status >= 200 && r.status < 300) return { ok: true, gdzie: 'apka' };
+    // `kiedy` nadaje apka — jeden zegar dla wszystkich, zamiast trzech
+    // przeglądarek, z których każda może chodzić inaczej.
+    const r = await apkaZadanie('POST', KOPIE.ENDPOINT, {
+      sku: sku,
+      kto: (login && login.UserName) || 'nieznany',
+      tresc: tresc
+    });
+    // 2xx znaczy „kopia jest w repo PO COMMICIE" — dopiero wtedy istnieje.
+    if (r.status >= 200 && r.status < 300 && r.body && r.body.ok !== false) {
+      return { ok: true, gdzie: 'apka', sciezka: r.body && r.body.path };
+    }
 
     console.warn('[Opisy] Apka nie przyjęła kopii (HTTP ' + r.status
       + ') — robię kopię na dysku. Uwaga: zobaczysz ją tylko ty.');
@@ -2749,6 +2765,54 @@
     } catch (e) {
       return { ok: false, blad: 'nie udało się zrobić kopii ani w apce, ani na dysku' };
     }
+  }
+
+  // Lista kopii dla produktu i odtworzenie jednej z nich.
+  //
+  // Kopia, do której nie ma jak zajrzeć, jest zabezpieczeniem tylko na papierze
+  // — a szukać jej trzeba będzie w najgorszym momencie, gdy ktoś właśnie
+  // zauważył, że opis wygląda inaczej niż wczoraj.
+  async function pokazKopie(sku) {
+    const r = await apkaZadanie('GET', KOPIE.ENDPOINT + '?sku=' + encodeURIComponent(sku));
+    if (r.status < 200 || r.status >= 300 || !r.body || !r.body.kopie) {
+      console.warn('[Kopie] Nie udało się odczytać listy (HTTP ' + r.status + ').');
+      return r;
+    }
+    if (!r.body.kopie.length) {
+      console.log('[Kopie] ' + sku + ' — nie ma jeszcze żadnej kopii.');
+      return r;
+    }
+    console.log('[Kopie] ' + sku + ' — od najnowszej:');
+    r.body.kopie.forEach(k => console.log('  • ' + k.kiedy + '  ' + k.kto
+      + '  ' + Math.round((k.sizeBytes || 0) / 1024) + ' kB'
+      + '\n      savpolKopia(\'' + k.path + '\')'));
+    return r;
+  }
+
+  async function pokazKopie1(path) {
+    const r = await apkaZadanie('GET', KOPIE.ENDPOINT + '?path=' + encodeURIComponent(path));
+    if (r.status < 200 || r.status >= 300 || !r.body) {
+      console.warn('[Kopie] Nie udało się odczytać kopii (HTTP ' + r.status + ').');
+      return r;
+    }
+    const t = r.body.tresc || {};
+    console.log('[Kopie] ' + path);
+    Object.keys(t).forEach(rodzaj => {
+      const w = t[rodzaj];
+      const tekst = typeof w === 'string' ? w : String(w && w.tekst || '');
+      console.log('  • ' + rodzaj + '  ' + tekst.length + ' znaków');
+    });
+    // Do przywrócenia trzeba treści w całości, a nie jej początku — więc
+    // zamiast wypisywać ją w konsoli, oddajemy ją do schowka.
+    const doSchowka = Object.keys(t).map(rodzaj => {
+      const w = t[rodzaj];
+      return '===== ' + rodzaj + ' =====\n'
+        + (typeof w === 'string' ? w : String(w && w.tekst || ''));
+    }).join('\n\n');
+    ostatniZrzut = doSchowka;
+    skopiujDoSchowka(doSchowka);
+    console.log('  (treść w schowku — możesz ją wkleić w panel „Zapisz opisy")');
+    return r;
   }
 
   // Kopia zapasowa PRZED nadpisaniem, zrzucana na dysk jako plik.
@@ -2940,7 +3004,8 @@
     if (!kopia.ok) {
       return { ok: false, blad: kopia.blad + ' — nie zapisuję, bo nie byłoby jak wrócić' };
     }
-    console.log('[Opisy] ' + sku + ' — kopia sprzed zapisu: ' + kopia.gdzie + '.');
+    console.log('[Opisy] ' + sku + ' — kopia sprzed zapisu: ' + kopia.gdzie
+      + (kopia.sciezka ? ' (' + kopia.sciezka + ')' : '') + '.');
 
     for (const p of plan) {
       if (!p.wierszId) {
@@ -5662,6 +5727,16 @@
     unsafeWindow.savpolZapiszOpisy = function (sku, tresci, opcje) {
       if (!sku) { console.warn('[Opisy] Podaj SKU.'); return; }
       return zapiszOpisy(String(sku), tresci || {}, opcje);
+    };
+
+    // Kopie sprzed nadpisania: lista dla produktu i odtworzenie jednej.
+    unsafeWindow.savpolKopie = function (sku) {
+      if (!sku) { console.warn('[Kopie] Podaj SKU.'); return; }
+      return pokazKopie(String(sku));
+    };
+    unsafeWindow.savpolKopia = function (path) {
+      if (!path) { console.warn('[Kopie] Podaj ścieżkę z savpolKopie().'); return; }
+      return pokazKopie1(String(path));
     };
 
     unsafeWindow.savpolOstatniZrzut = function () {
