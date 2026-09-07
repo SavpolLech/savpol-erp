@@ -3,96 +3,113 @@
 Źródło: Michał (migracja danych), 2026-09-07. Docelowe tabele:
 `dbo.csDocsHeaders` / `dbo.csDocsItemsPositions` (testowo: `..._test`).
 
-**WAŻNE — zmiana zakresu:** ten zestaw pól ma objąć różne typy dokumentów,
-nie tylko WZ. Wiele pól (VAT, waluty, terminy płatności) może być puste/
-nieistotne dla WZ i mieć sens dopiero dla faktur/zamówień. Mapujemy na razie
-pod kątem WZ (to, co mamy przetestowane), reszta typów dokumentów — kolejny
-krok po tym, jak WZ przejdzie od początku do końca.
+Potwierdzone na podstawie **pełnego zrzutu panelu wyboru kolumn ERP**
+(`diagnostyka/sonda-lista-kolumn.js`, 2026-09-07: `automatyzacje/wz/zrzut-kolkumn-erp.txt`,
+Panel #0 = nagłówek listy WZ, 163 pola; Panel #10 = pozycje karty WZ, 157 pól).
+To nie jest już zgadywanie — panel pokazuje WSZYSTKIE pola dostępne w danym
+gridzie, włączone i wyłączone.
 
-Legenda statusu:
-- ✅ mamy już w `scrape.js` (potwierdzone sondami na WZ)
-- ❓ nie sprawdzone — może być dostępne przez dodanie kolumny w gridzie ERP (tak jak `csItemsId`/`csItemsUnitsId`)
-- ⚠️ prawdopodobnie NIEDOSTĘPNE przez klikanie — typowe pole tylko-bazodanowe (grupowanie, zaokrąglenia, wymiary analityczne), którego żaden grid raczej nie renderuje
+**Zmiana zakresu:** ten zestaw pól ma objąć różne typy dokumentów, nie tylko
+WZ. Mapujemy pod kątem WZ (to, co przetestowane); dla innych typów dokumentów
+(FA, ZO...) panel kolumn trzeba będzie sprawdzić osobno — część pól (VAT,
+terminy płatności) może być tam dostępna inaczej niż dla WZ.
 
-## dbo.csDocsHeaders
+## dbo.csDocsItemsPositions — 55/55 pól, 100% pokrycia
 
-| Pole (DB) | Status | Źródło w ERP / uwaga |
-|---|---|---|
-| csDocsHeadersId | ✅ | `csDocsHeadersId` (lista) |
-| csDocsHeadersG | ⚠️ | typowe pole grupujące (multi-waluta/storno?) — do sprawdzenia |
-| csCompaniesId | ❓ | widoczne w URL-ach ERP (np. `.../213217693`) — może to właśnie to |
-| csDocsTypesId | ❓ | typ dokumentu (WZ/FA/...) jako ID, mamy tylko tekst "WZ" |
-| DocNo | ✅ | `DocNo` (lista) — mieliśmy w v1.0, usunięte z eksportu na prośbę, można wrócić |
-| DocNumber | ✅ | `DocNumber` (lista) |
-| DocNumberExt | ✅ | `DocNumberExt` (lista, zwykle puste) |
-| ExchangeRate | ❓ | pewnie istotne tylko dla dokumentów w obcej walucie |
-| CGAmount / CNAmount / CTAmount | ❓ | kwoty brutto/netto/VAT w walucie dok. |
-| FGAmount / FNAmount / FTAmount | ❓ | kwoty brutto/netto/VAT w PLN — `FStock` to inne pole (wartość magazynowa) |
-| DocDate | ✅ | `DocDate` (lista) |
-| DocDateExt | ❓ | |
-| csCustomersId | ❓ | mamy tylko `CustomerIdent` (kod tekstowy), nie wewnętrzny ID |
-| PaymentDate / PaymentDay | ❓ | dot. faktur, nie WZ |
-| csPaymentsTypesId | ❓ | dot. faktur |
-| csPeriodsId | ❓ | |
-| DocSaleDate / DocRecipientDate | ❓ | |
-| csCurrenciesId | ❓ | |
-| DocVATDate | ❓ | dot. faktur |
-| csDocsHeadersStatusId | ❓ | mamy tylko `csDocsHeadersStatusDesc` (tekst "ZAKSIĘGOWANE") |
-| csVATPeriodsId | ❓ | dot. faktur |
-| Cor | ❓ | flaga korekty? |
-| csEmployeesId | ❓ | mamy tylko `EmployeeDesc` (tekst) |
-| ShipmentType | ❓ | |
-| Stock | ❓ | inne niż `FStock`? do wyjaśnienia |
-| csWarehousesId | ✅ | `csWarehousesId` (lista) |
-| FStock | ✅ | `FStock` (lista, wartość dokumentu) |
-| DocNumberExtAdd2 | ✅ | `DocNumberExtAdd2` (WZN) |
-| IsOffInvoice | ❓ | |
-| csB2BPortalsId / csB2BPortalsDeliveryMethodsId | ⚠️ | prawdopodobnie dot. zamówień z portalu B2B, nie WZ |
-| S01Amount / S02Amount | ⚠️ | wymiary analityczne? |
-| csPayersId | ❓ | |
-| TermsFromPayer | ⚠️ | |
-| DocWeight / DocGrossWeight | ❓ | logistyczne — mogą być gdzieś na karcie WZ, nie sprawdzaliśmy |
-| anaKind / anaUse / anaDocDate | ⚠️ | wygląda na pola analityczne (BI), zwykle tylko-bazodanowe |
+Wszystkie pola z listy Michała są w Panelu #10. Status WŁĄCZONE/wyłączone wg
+zrzutu z 2026-09-07 — **trzeba włączyć w ERP przed uruchomieniem scrapera**:
 
-## dbo.csDocsItemsPositions
+| Pole (DB) | Stan w ERP |
+|---|---|
+| csCompaniesId | ⬜ włącz |
+| csDocsHeadersId | ⬜ włącz |
+| csDocsItemsPositionsId | ⬜ włącz |
+| csDocsItemsPositionsG | ✅ już włączone |
+| Id | ✅ już włączone |
+| csItemsId | ✅ już włączone |
+| csItemsUnitsId | ✅ już włączone |
+| csVATRatesId | ✅ już włączone |
+| QuantityUnits | ✅ już włączone |
+| Quantity | ✅ już włączone |
+| Discount | ✅ już włączone |
+| CUnitPrice | ✅ już włączone |
+| CUnitNetPrice | ✅ już włączone |
+| FUnitNetPrice | ✅ już włączone |
+| CUnitGrossPrice | ✅ już włączone |
+| FUnitGrossPrice | ✅ już włączone |
+| CNetPrice | ✅ już włączone |
+| FNetPrice | ✅ już włączone |
+| CGrossPrice | ✅ już włączone |
+| FGrossPrice | ✅ już włączone |
+| CGAmount | ⬜ włącz |
+| CNAmount | ⬜ włącz |
+| CTAmount | ⬜ włącz |
+| FGAmount | ⬜ włącz |
+| FNAmount | ⬜ włącz |
+| FTAmount | ⬜ włącz |
+| csCurrenciesId | ✅ już włączone |
+| PositionDesc | ✅ już włączone |
+| Rate | ✅ już włączone |
+| FStock | ✅ już włączone |
+| QStock | ⬜ włącz |
+| dCGAmount / dCNAmount / dCTAmount / dFGAmount / dFNAmount / dFTAmount / dQuantity | ✅ już włączone |
+| PStock | ✅ już włączone |
+| csWarehousesId | ✅ już włączone |
+| csWarehousesIdDel | ✅ już włączone |
+| S01Amount / S01Quantity / S02Amount / S02Quantity | ✅ już włączone |
+| CUnitListPrice / CUnitListPriceLimit / CUnitListPriceMin | ✅ już włączone |
+| DocPackageWeight / DocWeight / QuantityPallets / DocGrossWeight | ✅ już włączone |
+| priceInfo | ✅ już włączone |
+| CUnitPriceSuggested / CUnitPriceSuggestedSalesAgr | ✅ już włączone |
+| paramsJSON | ✅ już włączone |
 
-| Pole (DB) | Status | Źródło w ERP / uwaga |
-|---|---|---|
-| csCompaniesId | ❓ | jak wyżej |
-| csDocsHeadersId | ✅ | dziedziczone z nagłówka |
-| csDocsItemsPositionsId | ❓ | mamy `Id` (numer pozycji 1,2,3...) — to raczej NIE to samo co wewnętrzny ID pozycji |
-| csDocsItemsPositionsG | ⚠️ | |
-| Id | ✅ | `Id` (lp. pozycji) |
-| csItemsId | ✅ | `csItemsId` (po dodaniu kolumny) |
-| csItemsUnitsId | ✅ | `csItemsUnitsId` (po dodaniu kolumny) |
-| csVATRatesId | ❓ | |
-| QuantityUnits | ✅ | `QuantityUnits` |
-| Quantity | ❓ | inna jednostka miary niż `QuantityUnits`? do wyjaśnienia z Michałem |
-| Discount | ❓ | |
-| CUnitPrice / CUnitNetPrice / FUnitNetPrice / CUnitGrossPrice / FUnitGrossPrice | ❓ | mamy `StockUnitPrice` — czy to jest któreś z tych, czy coś innego (cena magazynowa vs cena sprzedaży) |
-| CNetPrice / FNetPrice / CGrossPrice / FGrossPrice | ❓ | wartości pozycji w różnych walutach/stawkach |
-| CGAmount / CNAmount / CTAmount / FGAmount / FNAmount / FTAmount | ❓ | jak w nagłówku, ale per pozycja |
-| csCurrenciesId | ❓ | |
-| PositionDesc | ✅ | to raczej `ItemDesc` (nazwa produktu) — do potwierdzenia nazwy |
-| Rate | ❓ | |
-| FStock | ✅ | `FStock` (wartość pozycji) |
-| QStock | ❓ | widzieliśmy w innej siatce na karcie (zakładka partii/lot) |
-| dCGAmount / dCNAmount / dCTAmount / dFGAmount / dFNAmount / dFTAmount / dQuantity | ⚠️ | prefiks "d" = delty/różnice, prawdopodobnie tylko-bazodanowe |
-| PStock | ❓ | |
-| csWarehousesId / csWarehousesIdDel | ❓/⚠️ | mamy `Warehouse` (kod skrócony) na poziomie pozycji, ale nie wewnętrzny ID; "Del" = magazyn docelowy? |
-| S01Amount / S01Quantity / S02Amount / S02Quantity | ⚠️ | wymiary analityczne |
-| CUnitListPrice / CUnitListPriceLimit / CUnitListPriceMin | ❓ | cennik |
-| DocPackageWeight / DocWeight / QuantityPallets / DocGrossWeight | ❓ | logistyka pozycji |
-| priceInfo / paramsJSON | ⚠️ | brzmi jak pola JSON/meta, prawdopodobnie tylko-bazodanowe |
-| CUnitPriceSuggested / CUnitPriceSuggestedSalesAgr | ❓ | |
+**Do zrobienia w ERP:** włącz 10 pól oznaczonych ⬜ w panelu kolumn karty
+pozycji WZ: `csCompaniesId`, `csDocsHeadersId`, `csDocsItemsPositionsId`,
+`CGAmount`, `CNAmount`, `CTAmount`, `FGAmount`, `FNAmount`, `FTAmount`, `QStock`.
+
+## dbo.csDocsHeaders — 23/46 wprost, +6 da się wziąć z poziomu pozycji, 17 niedostępnych
+
+### ✅ Już dostępne i włączone w Panelu #0 (nic nie trzeba klikać)
+
+`csDocsHeadersId`, `csDocsHeadersG`, `csCompaniesId`, `csDocsTypesId`, `DocNo`,
+`DocNumber`, `DocNumberExt`, `CGAmount`, `CNAmount`, `CTAmount`, `FGAmount`,
+`FNAmount`, `FTAmount`, `DocDate`, `DocDateExt`, `csCustomersId`, `PaymentDate`,
+`DocSaleDate`, `DocVATDate`, `Stock`, `csWarehousesId`, `FStock`, `DocNumberExtAdd2`
+
+### 🔁 Nie ma kolumny w nagłówku, ALE jest w pozycjach (klucz w Panelu #10) — da się doczepić z pierwszej pozycji dokumentu
+
+| Pole | Włączone w pozycjach? |
+|---|---|
+| ExchangeRate | ⬜ trzeba włączyć |
+| csCurrenciesId | ✅ już włączone |
+| S01Amount | ✅ już włączone |
+| S02Amount | ✅ już włączone |
+| DocWeight | ✅ już włączone |
+| DocGrossWeight | ✅ już włączone |
+
+### ❌ Nie istnieją w żadnym z dwóch gridów — niedostępne przez klikanie
+
+`PaymentDay`, `csPaymentsTypesId`, `csPeriodsId`, `DocRecipientDate`,
+`csDocsHeadersStatusId` (jest tylko tekstowy opis `csDocsHeadersStatusDesc`),
+`csVATPeriodsId`, `Cor`, `csEmployeesId` (jest tylko tekstowy `EmployeeDesc`),
+`ShipmentType`, `IsOffInvoice`, `csB2BPortalsId`,
+`csB2BPortalsDeliveryMethodsId`, `csPayersId`, `TermsFromPayer`, `anaKind`,
+`anaUse`, `anaDocDate`.
+
+**Do ustalenia z Michałem:** czy te 17 pól może zostać puste (NULL) po
+stronie danych z UI-scrapingu, czy są krytyczne i wymagają innego źródła
+(inny widok w ERP, którego jeszcze nie sprawdziliśmy, albo eksport/API tylko
+dla tych konkretnych pól).
 
 ## Następny krok
 
-Dużo pól jest ❓ — nie wiadomo, czy da się je dodać jako kolumnę w gridzie
-ERP (tak jak `csItemsId`), zanim nie sprawdzimy. Zamiast sprawdzać pole po
-polu, szybciej będzie: **jak dokładnie dodałeś `csItemsId`/`csItemsUnitsId`
-do siatki pozycji ostatnim razem?** (które menu/przycisk). Jeśli to ten sam
-mechanizm w obu siatkach (lista dokumentów i pozycje), spróbujmy dodać
-od razu WSZYSTKIE pola z tej listy jako kolumny w obu gridach, i jednym
-przebiegiem sondy zobaczymy, co się dało, a co realnie nie istnieje w UI
-(kandydaci ⚠️).
+1. Włącz w ERP: 10 pól w gridzie pozycji (lista wyżej) + `ExchangeRate` też
+   w gridzie pozycji.
+2. Zrób raz jeszcze `savpolWzSondaSurowyWiersz()` (albo po prostu odpal
+   `scrape.js`) żeby potwierdzić, że wszystkie te pola faktycznie renderują
+   się jako `data-datafield` w wierszach.
+3. Zgłoś Michałowi listę 17 niedostępnych pól nagłówka — decyzja, czy to
+   blokuje, czy nie.
+4. Jak to się domknie — przepisuję `extractHeader`/`extractPositions` w
+   `scrape.js` na pełny zestaw potwierdzonych pól, 1:1 pod nazwy kolumn w
+   bazie.
