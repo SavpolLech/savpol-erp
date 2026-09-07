@@ -167,12 +167,18 @@ produktu" to pole martwe** — jest w systemie, ale front e-commerce go nie
 używa; nie zapisujemy tam niczego. Próba podania innego pola kończy się
 błędem, nie pominięciem.
 
-GUID-y rodzajów: `2519e05a-c86c-41c9-79d4-79023b9ef2e0` (Nazwa produktu),
-`95381861-9314-41ae-d36c-deca87152a68` (Opis produktu). GUID-u „Danych
-technicznych" nie znamy — produkt, na którym pracowaliśmy, tego rodzaju nie
-miał. Dlatego skrypt **uczy się GUID-ów z odczytanych wierszy** (każdy niesie
-i etykietę, i GUID) i zapamiętuje je między sesjami. Dopasowanie po etykiecie
-jest dokładne, żeby „Opis produktu" nie trafił w „Opis skrócony produktu".
+GUID-y rodzajów (`csB2BDescriptionTypesG`):
+
+| GUID | Rodzaj | Skąd |
+|---|---|---|
+| `2519e05a-c86c-41c9-79d4-79023b9ef2e0` | Nazwa produktu | nagranie A |
+| `95381861-9314-41ae-d36c-deca87152a68` | Opis produktu | nagranie B |
+| `e1884a1a-0ae7-4843-761e-652f748abeab` | Dane techniczne | nagranie E |
+
+Skrypt **uczy się GUID-ów także sam**, z odczytanych wierszy (każdy niesie
+i etykietę, i GUID), i zapamiętuje je między sesjami — dzięki temu nowy rodzaj
+opisu nie wymaga zmiany w kodzie. Dopasowanie po etykiecie jest dokładne, żeby
+„Opis produktu" nie trafił w „Opis skrócony produktu".
 
 ## Brak kontroli równoległych zmian
 

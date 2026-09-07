@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.11.0
+// @version      3.12.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2680,7 +2680,7 @@
     POLA: {
       nazwa: { etykieta: 'Nazwa produktu', guid: '2519e05a-c86c-41c9-79d4-79023b9ef2e0' },
       opis: { etykieta: 'Opis produktu', guid: '95381861-9314-41ae-d36c-deca87152a68' },
-      techniczne: { etykieta: 'Dane techniczne', guid: null }
+      techniczne: { etykieta: 'Dane techniczne', guid: 'e1884a1a-0ae7-4843-761e-652f748abeab' }
     }
   };
 
@@ -2847,6 +2847,14 @@
       setTimeout(() => { document.title = tytulPrzed; }, 60000);
 
       const ile = t => (t ? String(t).length + ' znaków' : 'brak');
+
+      // Co dokładnie przyszło z apki. Przy 0029940 „Dane techniczne" nie
+      // zostały przechwycone, a bez tego wpisu nie da się rozstrzygnąć, czy
+      // apka ich nie oddała, czy oddała pod inną nazwą pola.
+      console.log('[Opisy] Apka oddała dla ' + sku + ': '
+        + Object.keys(d).map(k => k + '='
+          + (d[k] == null ? 'null' : (typeof d[k] === 'string'
+            ? d[k].length + ' zn.' : JSON.stringify(d[k]).slice(0, 40)))).join(', '));
       stworzPanelOpisow({
         sku: sku,
         nazwa: d.h1 || '',
@@ -5760,7 +5768,6 @@
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">',
       '  <button data-role="zapisz" style="' + guzik + ';background:#b44d12;color:#fff">1. Zapisz opisy do ERP</button>',
       '  <button data-role="seo" style="' + guzik + ';background:#2c5f8a;color:#fff">2. Wpisz SEO w kartotekę</button>',
-      '  <button data-role="pdp" title="Otwiera stronę produktu w esavpol.pl, żeby sprawdzić efekt" style="' + guzik + ';background:#3e4c59;color:#f5f7fa">Zobacz w sklepie</button>',
       '  <span data-role="stan" style="font-size:12px;opacity:.8"></span>',
       '</div>',
       '<div data-role="wynik" style="font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;' +
@@ -5865,16 +5872,6 @@
       }
     }
 
-    // Sprawdzenie na żywym PDP jest częścią pracy użytkownika, więc niech
-    // będzie pod ręką, a nie do wyszukiwania w drugiej zakładce.
-    async function pokazPdp() {
-      const sku = el('sku').value.trim();
-      if (!sku) { pisz('Podaj SKU.'); return; }
-      const url = ESAVPOL.SEARCH_URL(sku);
-      if (typeof GM_openInTab === 'function') GM_openInTab(url, { active: true });
-      else window.open(url, '_blank');
-    }
-
     // Przywrócenie poprzedniej wersji. Wpisujemy treść w pola panelu, a NIE
     // zapisujemy od razu — cofanie zmiany jest też zmianą i zasługuje na te
     // same dwa kroki: obejrzyj, potem zatwierdź.
@@ -5967,7 +5964,6 @@
     el('close').addEventListener('click', () => box.remove());
     el('min').addEventListener('click', () => ustawZwiniecie(!zwiniety));
     el('zapisz').addEventListener('click', () => uruchom(true));
-    el('pdp').addEventListener('click', () => pokazPdp());
     el('seo').addEventListener('click', () => wpiszSeoZPanelu());
     el('kopie').addEventListener('click', () => pokazPoprzednie());
     el('sku').focus();
