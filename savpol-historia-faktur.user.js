@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.9.0
+// @version      3.10.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3549,7 +3549,8 @@
 
     if (niezgodne.length) {
       console.warn('[Opisy] ZAPISANE, ALE PO ODCZYCIE RÓŻNI SIĘ: ' + niezgodne.join(', ')
-        + '. Sprawdź w ERP; kopia sprzed zapisu jest w pobranych plikach.');
+        + '. Sprawdź w ERP; kopię sprzed zapisu znajdziesz pod „Przywróć '
+        + 'poprzednią wersję".');
       return { ok: false, blad: 'po zapisie treść nie zgadza się dla: ' + niezgodne.join(', ') };
     }
     console.log('[Opisy] ' + sku + ' — zapisane i potwierdzone odczytem.');
@@ -5652,51 +5653,95 @@
     box.innerHTML = [
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
       '  <strong style="flex:1;font-size:13px">Zapis opisów do ERP</strong>',
+      '  <span data-role="min" title="Zwiń — zostaną same przyciski" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">–</span>',
       '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
       '</div>',
-      '<div style="font-size:12px;opacity:.75;margin-bottom:8px">',
-      '  Zapisuje wyłącznie <b>Nazwę produktu</b> i <b>Opis produktu</b>.',
-      '  Skład, przechowywanie i opis skrócony zostają nietknięte.</div>',
-      '<div style="margin-bottom:8px">',
+
+      // Pasek tożsamości. ZOSTAJE widoczny także po zwinięciu — po to, żeby
+      // przy klikaniu „Zapisz" w ERP dało się jednym spojrzeniem potwierdzić,
+      // że to wciąż ten produkt.
+      '<div data-role="glowka" style="margin-bottom:8px">',
       '  <div style="font-size:12px;margin-bottom:3px">SKU produktu</div>',
       '  <input data-role="sku" spellcheck="false" style="' + pole + '" placeholder="np. 0009905">',
+      '  <div data-role="ktoTo" style="font-size:12px;opacity:.8;margin-top:4px"></div>',
       '</div>',
-      '<div style="margin-bottom:8px">',
-      '  <div style="font-size:12px;margin-bottom:3px">Nazwa produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
-      '  <textarea data-role="nazwa" rows="2" spellcheck="false" style="' + pole + '"></textarea>',
+
+      '<div data-role="pelne">',
+      '  <div style="font-size:12px;opacity:.75;margin-bottom:8px">',
+      '    Zapisuje <b>Nazwę produktu</b>, <b>Opis produktu</b> i <b>Dane techniczne</b>.',
+      '    Skład, przechowywanie i opis skrócony zostają nietknięte.</div>',
+      '  <div style="margin-bottom:8px">',
+      '    <div style="font-size:12px;margin-bottom:3px">Nazwa produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
+      '    <textarea data-role="nazwa" rows="2" spellcheck="false" style="' + pole + '"></textarea>',
+      '  </div>',
+      '  <div style="margin-bottom:8px">',
+      '    <div style="font-size:12px;margin-bottom:3px">Opis produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
+      '    <textarea data-role="opis" rows="7" spellcheck="false" style="' + pole + '"></textarea>',
+      '  </div>',
+      '  <div style="margin-bottom:8px">',
+      '    <div style="font-size:12px;margin-bottom:3px">Dane techniczne <span style="opacity:.6">(puste = nie ruszam)</span></div>',
+      '    <textarea data-role="techniczne" rows="3" spellcheck="false" style="' + pole + '"></textarea>',
+      '  </div>',
+      '  <div style="border-top:1px solid rgba(255,255,255,.15);margin:10px 0 8px;padding-top:8px">',
+      '    <div style="font-size:12px;opacity:.75;margin-bottom:6px">',
+      '      SEO wpisuję tylko w formularz karty — <b>zapis klikasz sam w ERP</b>.</div>',
+      '    <div style="font-size:12px;margin-bottom:3px">Meta tytuł</div>',
+      '    <textarea data-role="seoTytul" rows="2" spellcheck="false" style="' + pole + '"></textarea>',
+      '    <div style="font-size:12px;margin:6px 0 3px">Meta opis</div>',
+      '    <textarea data-role="seoOpis" rows="3" spellcheck="false" style="' + pole + '"></textarea>',
+      '  </div>',
       '</div>',
-      '<div style="margin-bottom:8px">',
-      '  <div style="font-size:12px;margin-bottom:3px">Opis produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
-      '  <textarea data-role="opis" rows="7" spellcheck="false" style="' + pole + '"></textarea>',
-      '</div>',
-      '<div style="margin-bottom:8px">',
-      '  <div style="font-size:12px;margin-bottom:3px">Dane techniczne <span style="opacity:.6">(puste = nie ruszam)</span></div>',
-      '  <textarea data-role="techniczne" rows="3" spellcheck="false" style="' + pole + '"></textarea>',
-      '</div>',
-      '<div style="border-top:1px solid rgba(255,255,255,.15);margin:10px 0 8px;padding-top:8px">',
-      '  <div style="font-size:12px;opacity:.75;margin-bottom:6px">',
-      '    SEO wpisuję tylko w formularz karty — <b>zapis klikasz sam w ERP</b>.</div>',
-      '  <div style="font-size:12px;margin-bottom:3px">Meta tytuł</div>',
-      '  <textarea data-role="seoTytul" rows="2" spellcheck="false" style="' + pole + '"></textarea>',
-      '  <div style="font-size:12px;margin:6px 0 3px">Meta opis</div>',
-      '  <textarea data-role="seoOpis" rows="3" spellcheck="false" style="' + pole + '"></textarea>',
-      '  <button data-role="seo" style="' + guzik + ';background:#3e4c59;color:#f5f7fa;margin-top:8px">Wpisz SEO w kartę</button>',
-      '</div>',
+
+      // Dwa kroki, w kolejności, w jakiej się je wykonuje. Numery są tu po to,
+      // żeby po zwinięciu panelu nadal było wiadomo, co jest dalej.
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">',
-      '  <button data-role="sucho" style="' + guzik + ';background:#3e4c59;color:#f5f7fa">Sprawdź, nie zapisuj</button>',
-      '  <button data-role="zapisz" style="' + guzik + ';background:#b44d12;color:#fff">Zapisz do ERP</button>',
-      '  <button data-role="pdp" style="' + guzik + ';background:#2c5f8a;color:#fff">Zobacz PDP</button>',
-      '  <button data-role="kopie" style="' + guzik + ';background:#3e4c59;color:#f5f7fa">Poprzednie wersje</button>',
+      '  <button data-role="zapisz" style="' + guzik + ';background:#b44d12;color:#fff">1. Zapisz opisy do ERP</button>',
+      '  <button data-role="seo" style="' + guzik + ';background:#2c5f8a;color:#fff">2. Wpisz SEO w kartotekę</button>',
+      '  <button data-role="pdp" title="Otwiera stronę produktu w esavpol.pl, żeby sprawdzić efekt" style="' + guzik + ';background:#3e4c59;color:#f5f7fa">Zobacz w sklepie</button>',
       '  <span data-role="stan" style="font-size:12px;opacity:.8"></span>',
       '</div>',
       '<div data-role="wynik" style="font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;' +
-      'background:rgba(0,0,0,.25);border-radius:4px;padding:8px;max-height:220px;overflow:auto"></div>'
+      'background:rgba(0,0,0,.25);border-radius:4px;padding:8px;max-height:220px;overflow:auto"></div>',
+
+      // Przywracanie to inny przebieg niż zapis — więc i inne miejsce.
+      '<div data-role="stopka" style="margin-top:8px;font-size:12px;opacity:.7">',
+      '  <span data-role="kopie" style="cursor:pointer;text-decoration:underline">Przywróć poprzednią wersję…</span>',
+      '</div>'
     ].join('\n');
 
     document.body.appendChild(box);
 
     const el = r => box.querySelector('[data-role="' + r + '"]');
     const pisz = t => { el('wynik').textContent = t; };
+
+    // Zwinięcie, nie zamknięcie.
+    //
+    // Panel w prawym dolnym rogu zasłaniał w ERP przycisk „Zapisz", a
+    // zamknięcie go kasowało wszystkie wczytane treści — czyli jedyne wyjście
+    // niszczyło pracę. Zwinięty panel przenosi się do prawego GÓRNEGO rogu,
+    // bo na dole jest właśnie pasek zapisu karty.
+    //
+    // Zostają: numer i nazwa produktu (żeby dało się jednym spojrzeniem
+    // potwierdzić, że to wciąż ten sam) oraz przyciski.
+    let zwiniety = false;
+    function ustawZwiniecie(tak) {
+      zwiniety = tak;
+      el('pelne').style.display = tak ? 'none' : '';
+      el('stopka').style.display = tak ? 'none' : '';
+      el('min').textContent = tak ? '+' : '–';
+      el('min').title = tak ? 'Rozwiń' : 'Zwiń — zostaną same przyciski';
+      el('sku').readOnly = tak;
+      el('ktoTo').textContent = tak ? (el('nazwa').value.trim().slice(0, 90) || '') : '';
+      box.style.width = tak ? '380px' : '520px';
+      box.style.maxHeight = tak ? '40vh' : '90vh';
+      if (tak) {
+        box.style.top = '16px';
+        box.style.bottom = 'auto';
+      } else {
+        box.style.top = 'auto';
+        box.style.bottom = '16px';
+      }
+    }
 
     function zebrane() {
       const tresci = {};
@@ -5721,15 +5766,14 @@
       // prawdziwym zapisie pytamy zawsze: to jedyny moment, w którym da się
       // jeszcze zawrócić, bo ERP nie ma cofania.
       if (naprawde) {
-        const co = Object.keys(tresci)
-          .map(k => k === 'nazwa' ? 'Nazwę produktu' : 'Opis produktu').join(' i ');
+        const co = Object.keys(tresci).map(k => etykietaTypu(k)).join(', ');
         if (!confirm('Nadpisać w ERP ' + co + ' dla produktu ' + sku + '?\n\n'
-          + 'ERP nie ma cofania. Kopia obecnych opisów zostanie pobrana na dysk.')) {
+          + 'ERP nie ma cofania. Kopia obecnej treści trafi do repozytorium — '
+          + 'wrócisz do niej przez „Przywróć poprzednią wersję".')) {
           pisz('Anulowane.');
           return;
         }
       }
-      el('sucho').disabled = true;
       el('zapisz').disabled = true;
       el('stan').textContent = naprawde ? 'Zapisuję…' : 'Sprawdzam…';
       pisz('Pracuję. Skrypt sam wejdzie w kartę produktu — nie klikaj w ERP.');
@@ -5753,7 +5797,6 @@
       } catch (e) {
         pisz('Błąd: ' + (e && e.message));
       } finally {
-        el('sucho').disabled = false;
         el('zapisz').disabled = false;
         el('stan').textContent = '';
       }
@@ -5824,6 +5867,9 @@
       if (!tytul && !opis) { pisz('Pola SEO są puste — nie ma czego wpisać.'); return; }
       el('seo').disabled = true;
       el('stan').textContent = 'Wpisuję SEO…';
+      // Zwijamy OD RAZU: karta zaraz się otworzy, a panel w pełnym rozmiarze
+      // zasłania w niej pasek z przyciskiem „Zapisz".
+      ustawZwiniecie(true);
       pisz('Otwieram kartę produktu i zakładkę SEO. Nie klikaj w ERP.');
       try {
         const w = await wpiszSeo(sku, { tytul: tytul, opis: opis });
@@ -5856,7 +5902,7 @@
     }
 
     el('close').addEventListener('click', () => box.remove());
-    el('sucho').addEventListener('click', () => uruchom(false));
+    el('min').addEventListener('click', () => ustawZwiniecie(!zwiniety));
     el('zapisz').addEventListener('click', () => uruchom(true));
     el('pdp').addEventListener('click', () => pokazPdp());
     el('seo').addEventListener('click', () => wpiszSeoZPanelu());
