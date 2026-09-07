@@ -230,3 +230,30 @@ nagłówka ZIP-a.
 3. **Zapamiętaj poprzednią treść** przed każdym zapisem (patrz wyżej).
 4. **Na początku człowiek zatwierdza zapis.** Automat dopiero po serii
    bezbłędnych przebiegów.
+
+## Tryb edytora pola opisu (nagranie D, 7 września 2026)
+
+`isExternalEditor` w wierszu opisu rozstrzyga, czy pole obsługuje w ERP edytor
+WYSIWYG (`0`), czy edytor zewnętrzny — zwykła textarea (`1`). Wpisywanie HTML-u
+ze `<style>` w pole będące w trybie WYSIWYG jest proszeniem się o cichą
+przeróbkę treści.
+
+Przełącznik zapisuje akcja **`csItemsDesc4B2BPortalsUpdate`**
+(`DataSetTypeIdent: csItemsDesc4B2BPortals`, `DataSetSQLIdent:
+csItemsDesc4B2BPortalsEdit`, zestaw `ActionParams_csItemsDesc4B2BPortalsEdit`),
+wskazując wiersz przez `csItemsDesc4B2BPortalsG` w `__SelectedRecords__`.
+
+**Żądanie odsyła CAŁY wiersz opisu**, razem z obecną treścią (`ItemDesc1_PL`
+i `ItemTranslatedDesc1`). Dlatego wiersz bierzemy dokładnie takim, jaki
+przeczytaliśmy z ERP, i zmieniamy w nim wyłącznie ten jeden atrybut — ta sama
+zasada, co przy załącznikach i przy SEO.
+
+Pola w żądaniu: `__RowGuid__`, `csItemsDesc4B2BPortalsId`,
+`csItemsDesc4B2BPortalsG`, `csCompaniesId`, `csB2BPortalsId`, `csItemsId`,
+`ItemDesc1_PL`, `csB2BDescriptionTypesG`, `isExternalEditor`, `PortalDesc_PL`,
+`PortalDesc_EN`, `B2BDescriptionType_PL`, `B2BDescriptionType_EN`,
+`csSupLangId`, `PortalTranslatedDesc`, `ItemTranslatedDesc1`,
+`B2BDescriptionTypeTranslatedDesc`.
+
+Kolejność przy zapisie: **najpierw tryb, potem treść.** Odwrotna kolejność nie
+odkręca już tego, co edytor zrobiłby z HTML-em.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.4.0
+// @version      3.5.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2920,6 +2920,75 @@
     return odp.ok ? { ok: true } : odp;
   }
 
+  // Przełączenie pola opisu w tryb edytora zewnętrznego (nagranie D).
+  //
+  // `isExternalEditor = 0` znaczy, że pole obsługuje w ERP edytor WYSIWYG.
+  // Wpisywanie tam HTML-u ze `<style>` jest proszeniem się o cichą przeróbkę
+  // treści przez edytor. Przełącznik zapisuje się akcją `…Update`, która
+  // odsyła CAŁY wiersz opisu — więc odsyłamy go dokładnie takim, jaki
+  // przeczytaliśmy, zmieniając wyłącznie ten jeden atrybut.
+  //
+  // To ten sam wzorzec, co przy załącznikach: bierzemy stan od ERP i oddajemy
+  // go z jedną świadomą różnicą, zamiast składać wiersz z własnych wyobrażeń.
+  const POLA_UPDATE = [
+    '__RowGuid__', 'csItemsDesc4B2BPortalsId', 'csItemsDesc4B2BPortalsG',
+    'csCompaniesId', 'csB2BPortalsId', 'csItemsId', 'ItemDesc1_PL',
+    'csB2BDescriptionTypesG', 'isExternalEditor',
+    'PortalDesc_PL', 'PortalDesc_EN', 'B2BDescriptionType_PL', 'B2BDescriptionType_EN',
+    'csSupLangId', 'PortalTranslatedDesc', 'ItemTranslatedDesc1',
+    'B2BDescriptionTypeTranslatedDesc'
+  ];
+
+  async function erpUstawZewnEdytor(wiersz, wartosc) {
+    if (!wiersz.csItemsDesc4B2BPortalsG) {
+      return { ok: false, blad: 'wiersz opisu bez csItemsDesc4B2BPortalsG' };
+    }
+    const pola = {};
+    POLA_UPDATE.forEach(n => {
+      if (Object.prototype.hasOwnProperty.call(wiersz, n)) pola[n] = wiersz[n];
+    });
+    pola.isExternalEditor = wartosc;
+    if (pola.__RowGuid__ == null) pola.__RowGuid__ = 'rowid_0';
+
+    const odp = await erpWywolaj({
+      OperationName: 'ActionExecute',
+      Params: {
+        DictIdent: 'csItemsOneBro',
+        ActionIdent: 'csItemsDesc4B2BPortalsUpdate',
+        DataSetTypeIdent: 'csItemsDesc4B2BPortals',
+        DataSetSQLIdent: 'csItemsDesc4B2BPortalsEdit',
+        __StartField__: 'B2BDescriptionTypeTranslatedDesc',
+        __SelectedRecords__: '<csSelectedRows><row><csItemsDesc4B2BPortalsG>'
+          + wiersz.csItemsDesc4B2BPortalsG + '</csItemsDesc4B2BPortalsG></row></csSelectedRows>',
+        __PageRecords__: '<csPageRecords><row></row></csPageRecords>',
+        __SortList__: '<SortList><row><FieldName>PortalTranslatedDesc</FieldName>'
+          + '<DirectSort>1</DirectSort></row></SortList>',
+        HasParams: '1', ActionExecuteType: 0, LoginProviderObject: null
+      },
+      DelegateIdent: erpGuid(),
+      RefreshInputObject: null,
+      DataTableInitList: {
+        '0': {
+          DataSetSQLIdent: 'ActionParams_csItemsDesc4B2BPortalsEdit',
+          SortList: [],
+          DataTableInit: {
+            DataTable: {
+              FieldDefs: Object.keys(pola).map((n, i) => ({
+                Index: i, FieldName: n,
+                FieldType: typeof pola[n] === 'number' ? 'number' : 'System.String',
+                OriginalFieldType: typeof pola[n] === 'number' ? 'System.Int64' : 'System.String'
+              })),
+              Rows: [Object.keys(pola).map(n => ({ Item: pola[n] }))]
+            }
+          },
+          Refresh: false
+        },
+        length: 1
+      }
+    });
+    return odp.ok ? { ok: true } : odp;
+  }
+
   // Wpisanie treści (nagranie A krok 2, nagranie B krok 2) — jeden wiersz
   // o siedmiu polach.
   async function erpZapiszTrescOpisu(itemId, typGuid, wierszId, tresc) {
@@ -3014,7 +3083,7 @@
     console.log('[Opisy] ' + sku + (naSucho ? ' — NA SUCHO, nic nie zapisuję:' : ' — zapisuję:'));
     plan.forEach(p => console.log('   • ' + p.klucz + ': ' + p.czynnosc
       + '  (' + p.bylo + ' → ' + p.bedzie + ' znaków)'
-      + (p.zewnEdytor === 0 ? '  [UWAGA: pole w trybie WYSIWYG]' : '')));
+      + (p.zewnEdytor === 0 ? '  [do przełączenia z WYSIWYG]' : '')));
 
     // Ostrzeżenie, nie blokada — ale ostrzeżenie widoczne.
     //
@@ -3023,9 +3092,8 @@
     // szkoda byłaby najwyżej jawna. Zamiast zgadywać, mówimy o tym wprost.
     const wysiwyg = plan.filter(p => p.zewnEdytor === 0).map(p => p.klucz);
     if (wysiwyg.length) {
-      console.warn('[Opisy] Pola ' + wysiwyg.join(', ') + ' mają w ERP włączony '
-        + 'edytor WYSIWYG (isExternalEditor = 0). HTML może zostać zmieniony '
-        + 'przez ERP. Odczyt kontrolny po zapisie to pokaże.');
+      console.log('[Opisy] Pola ' + wysiwyg.join(', ') + ' mają włączony edytor '
+        + 'WYSIWYG — przed zapisem przełączę je na edytor zewnętrzny.');
     }
     if (naSucho) {
       console.log('   Żeby zapisać naprawdę: savpolZapiszOpisy(sku, tresci, { zapisz: true })');
@@ -3039,6 +3107,23 @@
     }
     console.log('[Opisy] ' + sku + ' — kopia sprzed zapisu: ' + kopia.gdzie
       + (kopia.sciezka ? ' (' + kopia.sciezka + ')' : '') + '.');
+
+    // Najpierw tryb edytora, potem treść.
+    //
+    // Kolejność ma znaczenie: gdybyśmy wpisali HTML w pole będące jeszcze
+    // w trybie WYSIWYG, ERP mógłby go przy okazji przerobić, a przełączenie
+    // po fakcie już by tego nie odkręciło.
+    for (const p of plan) {
+      if (p.zewnEdytor !== 0) continue;
+      const wiersz = opisPoTypie(lista.wiersze, p.typ);
+      const przel = await erpUstawZewnEdytor(wiersz, 1);
+      if (!przel.ok) {
+        return { ok: false, blad: 'nie udało się wyłączyć edytora WYSIWYG dla „'
+          + p.klucz + '": ' + przel.blad };
+      }
+      console.log('   ✓ ' + p.klucz + ' — wyłączony edytor WYSIWYG');
+      p.zewnEdytor = 1;
+    }
 
     for (const p of plan) {
       if (!p.wierszId) {

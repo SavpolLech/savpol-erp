@@ -1,5 +1,5 @@
 // Sonda: jak zbudowane są zakładki WEWNĄTRZ karty produktu.
-// WERSJA: 2026-09-04.1
+// WERSJA: 2026-09-07.1
 //            Konsola wypisuje ja po wklejeniu — jesli tam widzisz
 //            inny numer, w przegladarce siedzi starsza kopia.
 //
@@ -18,7 +18,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-04.1';
+  const WERSJA = '2026-09-07.1';
   const MAX_ETYKIET = 200;
 
   function fold(s) {
@@ -92,6 +92,37 @@
             ? ': ' + trafienia.slice(0, 8).map(e => e.t + ' ' + opisEl(e.el)).join('  |  ')
             : ''));
       });
+
+    // 2b. POLA FORMULARZA.
+    //
+    // Pierwsza wersja sondy ich nie widziała: wypisywała wyłącznie elementy
+    // z własnym tekstem, a `input` i `textarea` tekstu nie mają. Zrzut z
+    // otwartej zakładki SEO wyszedł więc pusty, choć pola były na ekranie.
+    // Etykiety szukamy w górę drzewa, bo w tym ERP leżą one w kontenerze
+    // kontrolki, a nie w atrybucie pola.
+    linie.push('');
+    linie.push('--- pola formularza (input / textarea / select) ---');
+    const pola = Array.from(karta.querySelectorAll('input, textarea, select'))
+      .filter(el => el.type !== 'hidden');
+    linie.push('  razem: ' + pola.length);
+    pola.slice(0, 80).forEach(el => {
+      let etykieta = '';
+      let w = el;
+      for (let i = 0; i < 6 && w && !etykieta; i++) {
+        w = w.parentElement;
+        if (!w) break;
+        const lab = w.querySelector('label.Label, label, .csDBRadioGroupLabel, .Label');
+        if (lab) etykieta = (lab.getAttribute('title') || lab.textContent || '').trim();
+      }
+      const wartosc = String(el.value || '');
+      linie.push('  ' + (etykieta || '(bez etykiety)').slice(0, 34).padEnd(34)
+        + '  ' + opisEl(el)
+        + (el.name ? ' name="' + el.name + '"' : '')
+        + (el.placeholder ? ' placeholder="' + el.placeholder + '"' : '')
+        + '  znaków=' + wartosc.length
+        + (wartosc ? '  „' + wartosc.slice(0, 60).replace(/\s+/g, ' ') + '"' : ''));
+    });
+    if (pola.length > 80) linie.push('  …[jeszcze ' + (pola.length - 80) + ']');
 
     // 3. Budowa karty w głąb — żeby zobaczyć, gdzie siedzi pasek zakładek.
     linie.push('');
