@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.5.0
+// @version      3.6.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2467,6 +2467,44 @@
       : { ok: false, blad: 'kliknąłem w „' + nazwa + '", ale nie zobaczyłem zapytania o ' + sku };
   }
 
+  // Karta otwarta i ZOSTAWIONA otwarta.
+  //
+  // Inaczej niż przy podsłuchu wzorca: tam karta była środkiem do celu i po
+  // pracy ją zamykaliśmy. Tu karta JEST celem — użytkownik ma w niej obejrzeć
+  // wpisane wartości i sam kliknąć „Zapisz".
+  async function otworzKarteDoEdycji(sku) {
+    const juz = znajdzOtwartaKarte(sku);
+    if (juz) {
+      (juz.li.querySelector('span.k-link') || juz.li).click();
+      await sleep(300);
+      return { ok: true, panel: juz.panel, id: juz.id };
+    }
+
+    if (!isCatalogTabActive() && !(await switchToCatalogTab())) {
+      return { ok: false, blad: 'nie ma zakładki katalogu, więc nie wejdę w kartę produktu' };
+    }
+    await searchCatalog(sku);
+    const grid = getVisibleCatalogGrid();
+    const row = grid && Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row'))
+      .find(r => {
+        const c = r.querySelector('td[data-datafield="Item"]');
+        return c && c.getAttribute('title') === sku;
+      });
+    if (!row) return { ok: false, blad: 'nie znalazłem ' + sku + ' w katalogu' };
+
+    await clearCatalogSelection();
+    const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
+    if (descCell) descCell.click();
+    await sleep(200);
+    if (!openEditCard()) return { ok: false, blad: 'nie ma przycisku „Edycja"' };
+
+    const karta = await waitFor(() => znajdzOtwartaKarte(sku), 60, 500);
+    if (!karta) {
+      return { ok: false, blad: 'nie doczekałem się karty produktu ' + sku };
+    }
+    return { ok: true, panel: karta.panel, id: karta.id };
+  }
+
   async function erpOtworzZakladkeDlaSku(sku, nazwa, gotowe) {
     // Najpierw: czy karta już jest otwarta. Jeśli tak, pracujemy na niej
     // i NIE ZAMYKAMY jej na koniec — nie jest nasza.
@@ -2720,6 +2758,115 @@
         + ' — przy zapisie trzeba je najpierw założyć.');
     }
     return lista;
+  }
+
+  // ---------- SEO: wpisanie w formularz, bez zapisu ----------
+  //
+  // Świadomie NIE zapisujemy tego przez API. Nagranie C pokazało, że
+  // `csItemsUpdate` odsyła CAŁY rekord produktu — około 130 pól, w tym ceny,
+  // wagi, VAT i grupy B2B. Wpisanie wartości w formularz i zostawienie
+  // przycisku „Zapisz" człowiekowi omija to ryzyko w całości: zapisuje ERP,
+  // swoim własnym mechanizmem, ze wszystkimi swoimi walidacjami.
+  //
+  // Zakładka SEO ma osobne komplety pól dla każdego języka (POL, ANGIE,
+  // NIEMI, …) jako zakładki. Panele nieaktywnych języków siedzą w DOM, ale są
+  // NIEWIDOCZNE — i to jest nasze rozróżnienie. Ani etykieta (identyczna we
+  // wszystkich językach), ani `id` (losowy GUID, inny przy każdym renderze)
+  // nie nadają się na kryterium.
+  const SEO_POLA = { tytul: 'tytul', opis: 'opis' };
+
+  function widoczne(el) {
+    return el && el.offsetParent !== null;
+  }
+
+  // Pole SEO danego rodzaju z WIDOCZNEGO (czyli aktywnego językowo) kompletu.
+  function znajdzPoleSeo(panel, etykietaSzukana) {
+    return Array.from(panel.querySelectorAll('textarea'))
+      .filter(widoczne)
+      .find(el => fold(etykietaPolaKarty(el)) === etykietaSzukana) || null;
+  }
+
+  // Etykieta kontrolki: w tym ERP leży w kontenerze pola, nie w atrybucie.
+  function etykietaPolaKarty(el) {
+    let w = el;
+    for (let i = 0; i < 6 && w; i++) {
+      w = w.parentElement;
+      if (!w) break;
+      const lab = w.querySelector('label.Label, label, .Label');
+      if (lab) return (lab.getAttribute('title') || lab.textContent || '').trim();
+    }
+    return '';
+  }
+
+  // Wpisanie wartości tak, żeby ERP ją zauważył.
+  //
+  // Samo przypisanie do `.value` nie wystarcza: kontrolka nie dowiaduje się
+  // o zmianie i „Zapisz" wysłałby starą treść. Ustawiamy przez natywny setter
+  // i wysyłamy te zdarzenia, których nasłuchuje formularz.
+  function wpiszWPole(el, tekst) {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype, 'value').set;
+    el.focus();
+    setter.call(el, tekst);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.blur();
+  }
+
+  // Która zakładka językowa jest teraz aktywna.
+  function jezykSeo(panel) {
+    const aktywna = Array.from(panel.querySelectorAll('li.k-item, li[role="tab"]'))
+      .filter(widoczne)
+      .find(li => /k-state-active|csTabItemActive/.test(li.className));
+    return aktywna ? (aktywna.getAttribute('title') || aktywna.textContent || '').trim() : '';
+  }
+
+  async function wpiszSeo(sku, wartosci) {
+    const tytul = String((wartosci && wartosci.tytul) || '').trim();
+    const opis = String((wartosci && wartosci.opis) || '').trim();
+    if (!tytul && !opis) return { ok: false, blad: 'nie podałeś ani tytułu, ani opisu' };
+
+    const karta = await otworzKarteDoEdycji(sku);
+    if (!karta.ok) return karta;
+
+    const zakl = await waitFor(() => erpZakladkaKarty(karta.panel, ZAKLADKI.SEO), 40, 250);
+    if (!zakl) return { ok: false, blad: 'nie widzę w karcie zakładki „SEO"' };
+    (zakl.querySelector('span.k-link') || zakl).click();
+    await sleep(600);
+
+    // Sprawdzamy język, zanim cokolwiek wpiszemy. Gdyby ktoś zostawił kartę
+    // na zakładce niemieckiej, wpisalibyśmy polski opis w niemieckie pole —
+    // i nikt by tego nie zauważył, bo pole wygląda tak samo.
+    const jezyk = jezykSeo(karta.panel);
+    if (jezyk && !/^pol/i.test(fold(jezyk))) {
+      return { ok: false, blad: 'aktywna jest zakładka językowa „' + jezyk
+        + '", a nie polska — nie wpisuję' };
+    }
+
+    const cel = {};
+    if (tytul) cel.tytul = await waitFor(() => znajdzPoleSeo(karta.panel, SEO_POLA.tytul), 20, 250);
+    if (opis) cel.opis = await waitFor(() => znajdzPoleSeo(karta.panel, SEO_POLA.opis), 20, 250);
+
+    const brak = Object.keys(cel).filter(k => !cel[k]);
+    if (brak.length) {
+      console.warn('[SEO] Widoczne pola tekstowe na tej zakładce: '
+        + Array.from(karta.panel.querySelectorAll('textarea')).filter(widoczne)
+          .map(el => etykietaPolaKarty(el) || '(bez etykiety)').join(' | '));
+      return { ok: false, blad: 'nie znalazłem pól: ' + brak.join(', ') };
+    }
+
+    const przed = {};
+    Object.keys(cel).forEach(k => { przed[k] = String(cel[k].value || ''); });
+    if (tytul) wpiszWPole(cel.tytul, tytul);
+    if (opis) wpiszWPole(cel.opis, opis);
+
+    return {
+      ok: true,
+      jezyk: jezyk || 'polska (domyślna)',
+      przed: przed,
+      // Zapisu NIE robimy — to należy do człowieka.
+      dalej: 'Sprawdź wpisane wartości w karcie i kliknij w ERP „Zapisz".'
+    };
   }
 
   // ---------- Zapis opisów ----------
@@ -5254,6 +5401,15 @@
       '  <div style="font-size:12px;margin-bottom:3px">Opis produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
       '  <textarea data-role="opis" rows="7" spellcheck="false" style="' + pole + '"></textarea>',
       '</div>',
+      '<div style="border-top:1px solid rgba(255,255,255,.15);margin:10px 0 8px;padding-top:8px">',
+      '  <div style="font-size:12px;opacity:.75;margin-bottom:6px">',
+      '    SEO wpisuję tylko w formularz karty — <b>zapis klikasz sam w ERP</b>.</div>',
+      '  <div style="font-size:12px;margin-bottom:3px">Meta tytuł</div>',
+      '  <textarea data-role="seoTytul" rows="2" spellcheck="false" style="' + pole + '"></textarea>',
+      '  <div style="font-size:12px;margin:6px 0 3px">Meta opis</div>',
+      '  <textarea data-role="seoOpis" rows="3" spellcheck="false" style="' + pole + '"></textarea>',
+      '  <button data-role="seo" style="' + guzik + ';background:#3e4c59;color:#f5f7fa;margin-top:8px">Wpisz SEO w kartę</button>',
+      '</div>',
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">',
       '  <button data-role="sucho" style="' + guzik + ';background:#3e4c59;color:#f5f7fa">Sprawdź, nie zapisuj</button>',
       '  <button data-role="zapisz" style="' + guzik + ';background:#b44d12;color:#fff">Zapisz do ERP</button>',
@@ -5383,10 +5539,40 @@
         + 'Sprawdź ją i kliknij „Zapisz do ERP", żeby przywrócić.');
     }
 
+    // SEO idzie osobnym przyciskiem, bo kończy się inaczej niż zapis opisów:
+    // nie zapisem, a zostawieniem otwartej karty do zatwierdzenia.
+    async function wpiszSeoZPanelu() {
+      const sku = el('sku').value.trim();
+      if (!sku) { pisz('Podaj SKU.'); return; }
+      const tytul = el('seoTytul').value.trim();
+      const opis = el('seoOpis').value.trim();
+      if (!tytul && !opis) { pisz('Pola SEO są puste — nie ma czego wpisać.'); return; }
+      el('seo').disabled = true;
+      el('stan').textContent = 'Wpisuję SEO…';
+      pisz('Otwieram kartę produktu i zakładkę SEO. Nie klikaj w ERP.');
+      try {
+        const w = await wpiszSeo(sku, { tytul: tytul, opis: opis });
+        pisz(w.ok
+          ? 'WPISANE w kartę (język: ' + w.jezyk + '), ale JESZCZE NIE ZAPISANE.\n\n'
+            + (w.przed.tytul != null ? '• meta tytuł: było ' + w.przed.tytul.length
+              + ' znaków, jest ' + tytul.length + '\n' : '')
+            + (w.przed.opis != null ? '• meta opis: było ' + w.przed.opis.length
+              + ' znaków, jest ' + opis.length + '\n' : '')
+            + '\n' + w.dalej
+          : 'NIE UDAŁO SIĘ:\n' + w.blad);
+      } catch (e) {
+        pisz('Błąd: ' + (e && e.message));
+      } finally {
+        el('seo').disabled = false;
+        el('stan').textContent = '';
+      }
+    }
+
     el('close').addEventListener('click', () => box.remove());
     el('sucho').addEventListener('click', () => uruchom(false));
     el('zapisz').addEventListener('click', () => uruchom(true));
     el('pdp').addEventListener('click', () => pokazPdp());
+    el('seo').addEventListener('click', () => wpiszSeoZPanelu());
     el('kopie').addEventListener('click', () => pokazPoprzednie());
     el('sku').focus();
     return box;
