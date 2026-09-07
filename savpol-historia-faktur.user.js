@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.3.1
+// @version      3.3.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2983,17 +2983,37 @@
       const istniejacy = opisPoTypie(lista.wiersze, typ);
       const stara = istniejacy
         ? String(istniejacy.ItemDesc1_PL || istniejacy.ItemTranslatedDesc1 || '') : '';
+      // Tryb edytora tego wiersza. `isExternalEditor = 0` znaczy, że pole jest
+      // w ERP obsługiwane WYSIWYG-iem — a wtedy nie wiadomo, co ERP zrobi
+      // z wklejonym HTML-em. Nowe wiersze zakładamy z jedynką, ale wiersz
+      // istniejący mógł zostać założony przez człowieka w trybie WYSIWYG.
+      const zewn = istniejacy && istniejacy.isExternalEditor != null
+        ? Number(istniejacy.isExternalEditor) : null;
       return {
         klucz: k, typ: typ,
         wierszId: istniejacy ? istniejacy.csItemsDesc4B2BPortalsId : null,
         bylo: stara.length, bedzie: String(nowe[k]).length,
+        zewnEdytor: zewn,
         czynnosc: istniejacy ? (stara ? 'nadpisuję' : 'wypełniam pusty') : 'zakładam i wypełniam'
       };
     });
 
     console.log('[Opisy] ' + sku + (naSucho ? ' — NA SUCHO, nic nie zapisuję:' : ' — zapisuję:'));
     plan.forEach(p => console.log('   • ' + p.klucz + ': ' + p.czynnosc
-      + '  (' + p.bylo + ' → ' + p.bedzie + ' znaków)'));
+      + '  (' + p.bylo + ' → ' + p.bedzie + ' znaków)'
+      + (p.zewnEdytor === 0 ? '  [UWAGA: pole w trybie WYSIWYG]' : '')));
+
+    // Ostrzeżenie, nie blokada — ale ostrzeżenie widoczne.
+    //
+    // Nie wiemy jeszcze, czy ERP w trybie WYSIWYG przepuszcza HTML bez zmian.
+    // Odczyt kontrolny po zapisie to wykryje (porównuje znak w znak), więc
+    // szkoda byłaby najwyżej jawna. Zamiast zgadywać, mówimy o tym wprost.
+    const wysiwyg = plan.filter(p => p.zewnEdytor === 0).map(p => p.klucz);
+    if (wysiwyg.length) {
+      console.warn('[Opisy] Pola ' + wysiwyg.join(', ') + ' mają w ERP włączony '
+        + 'edytor WYSIWYG (isExternalEditor = 0). HTML może zostać zmieniony '
+        + 'przez ERP. Odczyt kontrolny po zapisie to pokaże.');
+    }
     if (naSucho) {
       console.log('   Żeby zapisać naprawdę: savpolZapiszOpisy(sku, tresci, { zapisz: true })');
       return { ok: true, naSucho: true, plan: plan };
@@ -5189,7 +5209,9 @@
         } else if (w.naSucho) {
           pisz('Przymiarka — nic nie zapisano:\n\n'
             + w.plan.map(p => '• ' + (p.klucz === 'nazwa' ? 'Nazwa produktu' : 'Opis produktu')
-              + ': ' + p.czynnosc + '  (' + p.bylo + ' → ' + p.bedzie + ' znaków)').join('\n')
+              + ': ' + p.czynnosc + '  (' + p.bylo + ' → ' + p.bedzie + ' znaków)'
+              + (p.zewnEdytor === 0 ? '\n    UWAGA: to pole jest w ERP w trybie WYSIWYG — '
+                + 'HTML może zostać przez ERP zmieniony' : '')).join('\n')
             + '\n\nJeśli to się zgadza, kliknij „Zapisz do ERP".');
         } else {
           pisz('ZAPISANE i potwierdzone odczytem z ERP:\n\n'
