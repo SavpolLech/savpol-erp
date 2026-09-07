@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.10.0
+// @version      3.11.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2863,7 +2863,9 @@
           + 'NIC JESZCZE NIE ZAPISAŁEM. Sprawdź treści, potem „Sprawdź, nie zapisuj"'
           + ' albo od razu „Zapisz do ERP".'
       });
-      if (ui) ui.detail('Opisy gotowe — sprawdź panel zapisu.');
+      // Okienko przebiegu zrobiło swoje, a od tej chwili tylko zasłania —
+      // siedzi w prawym dolnym rogu, dokładnie tam, gdzie ERP trzyma „Zapisz".
+      removeProgressOverlay();
     } catch (e) {
       console.warn('[Opisy] Czekanie na opisy przerwane: ' + (e && e.message));
     }
@@ -2872,6 +2874,44 @@
   // Które produkty już pilnujemy — dwa kliknięcia „Otwórz generator" nie mogą
   // uruchomić dwóch pętli odpytujących ten sam produkt.
   const pilnowane = {};
+
+  // ---------- Zapamiętane wyniki analizy ----------
+  //
+  // Analiza faktur trwa około trzech minut. Gdy ktoś zamknie przeglądarkę
+  // między analizą a zrobieniem opisu, wracając na ten sam produkt musiał
+  // dotąd przechodzić ją od nowa — mimo że wynik był policzony i nic się
+  // w międzyczasie nie zmieniło.
+  //
+  // Trzymamy więc gotowy wynik lokalnie. To pamięć podręczna, nie źródło
+  // prawdy: decyzję „użyć czy policzyć jeszcze raz" zostawiamy człowiekowi,
+  // bo tylko on wie, czy od tamtej pory coś się wydarzyło.
+  const WYNIK_KLUCZ = 'savpol_wynik_';
+  const WYNIK_WAZNY_DNI = 30;
+
+  function zapiszWynikPrzebiegu(sku, wynik) {
+    if (typeof GM_setValue !== 'function' || !sku) return;
+    try {
+      GM_setValue(WYNIK_KLUCZ + sku, JSON.stringify({
+        kiedy: new Date().toISOString(),
+        skusText: wynik.skusText || '',
+        invoices: wynik.invoices || 0,
+        group: wynik.group || null,
+        kandydatow: wynik.kandydatow || 0
+      }));
+    } catch (e) { /* brak pamięci to powtórna analiza, nie awaria */ }
+  }
+
+  function czytajWynikPrzebiegu(sku) {
+    if (typeof GM_getValue !== 'function' || !sku) return null;
+    try {
+      const s = GM_getValue(WYNIK_KLUCZ + sku, '');
+      if (!s) return null;
+      const w = JSON.parse(s);
+      const dni = (Date.now() - new Date(w.kiedy).getTime()) / 86400000;
+      // Stary wynik gorzej niż nie pomaga: sugeruje aktualność, której nie ma.
+      return dni > WYNIK_WAZNY_DNI ? null : w;
+    } catch (e) { return null; }
+  }
 
   // ---------- Pobieranie gotowych opisów z apki ----------
   //
@@ -3873,10 +3913,27 @@
             : '\n\nWyniki są gotowe, nie musisz robić tego jeszcze raz.') +
           '\n\nSprawdzić jeszcze raz? Zajmie to około 3 minut.';
         if (!confirm(opis)) {
-          ui.finish('Ten produkt jest już zrobiony', false);
-          ui.detail('Sprawdzony ' + formatCollectedAt(known.collectedAt) +
-            '. Gotowe numery znajdziesz w generatorze opisów.');
-          button.textContent = '✅ Już zrobione';
+          // Zapamiętany wynik pozwala od razu otworzyć generator, zamiast
+          // odsyłać człowieka z niczym. Gdy go nie ma (inna przeglądarka,
+          // wynik starszy niż miesiąc), zostaje dotychczasowy komunikat.
+          const zapamietany = czytajWynikPrzebiegu(mainSku);
+          if (zapamietany) {
+            ui.finish('Mam gotowy wynik z ' + formatCollectedAt(zapamietany.kiedy), true);
+            ui.result(zapamietany.skusText, mainSku, {
+              invoices: zapamietany.invoices,
+              group: zapamietany.group
+            });
+            ui.detail('To wynik policzony wcześniej na tej przeglądarce — nie '
+              + 'liczyłem nic od nowa. Możesz otworzyć generator albo kliknąć '
+              + '„Zbuduj opis" ponownie i wybrać przeliczenie.');
+            button.textContent = '✅ Wynik przywrócony';
+          } else {
+            ui.finish('Ten produkt jest już zrobiony', false);
+            ui.detail('Sprawdzony ' + formatCollectedAt(known.collectedAt) +
+              '. Nie mam tu zapamiętanego wyniku — jeśli potrzebujesz numerów ' +
+              'do cross-sellingu, uruchom analizę ponownie.');
+            button.textContent = '✅ Już zrobione';
+          }
           setTimeout(() => { button.textContent = originalText; }, 3000);
           await closeHistoryTab(null);
           return;
@@ -4057,6 +4114,12 @@
         ui.result(skusText, mainSku, {
           invoices: analysis.N,
           group: anchorGroup
+        });
+        zapiszWynikPrzebiegu(mainSku, {
+          skusText: skusText,
+          invoices: analysis.N,
+          group: anchorGroup,
+          kandydatow: analysis.candidates.length
         });
         if (analysis.unverified) {
           ui.detail('Nie udało mi się sprawdzić dostępności, więc mogą tu być ' +
