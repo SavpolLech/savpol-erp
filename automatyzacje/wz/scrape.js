@@ -26,13 +26,14 @@ const WZ_LIST_URL = process.env.WZ_LIST_URL ||
   'https://erp.savpol.pl/pl/wydania-zewnetrzne/csdocsheaders4goodsissue';
 const MAX_DOCS = parseInt(process.env.MAX_DOCS || '5', 10); // tak samo ostrożnie jak w userscripcie na start
 
-// PLACEHOLDER — DO PODMIANY na podstawie wyniku diagnostyka/sonda-login-form.js.
-// Pierwsze dopasowanie na stronie wygrywa; jeśli selektor nie trafi, skrypt
-// rzuci czytelny błąd zamiast cicho utknąć.
+// Z sondy diagnostyka/sonda-login-form.js (2026-09-07): oba pola mają
+// zduplikowane id="Input" (nieunikalne w DOM), więc idziemy po `name` —
+// to jest unikalne. Przycisku logowania NIE MA w DOM (0 widocznych
+// <button>/[type=submit]/[role=button]) — formularz łapie Enter w polu
+// hasła, więc submitujemy klawiszem, nie klikiem.
 const LOGIN_SELECTORS = {
-  username: '#TODO-username-selector',
-  password: '#TODO-password-selector',
-  submit: '#TODO-submit-selector'
+  username: 'input[name="username"]',
+  password: 'input[name="password"]'
 };
 
 // ---------- Logowanie do ERP ----------
@@ -51,7 +52,7 @@ async function login(page) {
   await page.fill(LOGIN_SELECTORS.password, pass);
   await Promise.all([
     page.waitForLoadState('networkidle'),
-    page.click(LOGIN_SELECTORS.submit)
+    page.press(LOGIN_SELECTORS.password, 'Enter')
   ]);
 
   console.log('[login] Zalogowano (albo przynajmniej strona się przeładowała). URL:', page.url());
