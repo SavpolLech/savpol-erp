@@ -329,15 +329,32 @@ async function insertRows(pool, tableName, columnsMeta, rows) {
   return inserted;
 }
 
+// Prosty CSV (średnik jako separator — spójnie z resztą narzędzi w repo,
+// PL Excel domyślnie oczekuje średnika). Ucieczka cudzysłowów wg RFC4180.
+function toCsv(rows) {
+  if (!rows.length) return '';
+  const cols = Object.keys(rows[0]);
+  const esc = v => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  const lines = [cols.join(';')];
+  rows.forEach(r => lines.push(cols.map(c => esc(r[c])).join(';')));
+  return lines.join('\n');
+}
+
 async function saveResult(result) {
   const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
+  const forceCsv = process.argv.includes('--csv');
   const schema = loadSchemaMeta();
 
-  if (!DB_NAME || !schema) {
-    const outPath = path.join(__dirname, 'results.json');
-    fs.writeFileSync(outPath, JSON.stringify(result, null, 2), 'utf8');
-    console.log('[wynik]', !DB_NAME ? 'DB_NAME nie ustawione' : 'brak schema-test-tables.json (uruchom generate-test-tables.js --apply)',
-      '— zapisano do', outPath,
+  if (forceCsv || !DB_NAME || !schema) {
+    const headersPath = path.join(__dirname, 'results-headers.csv');
+    const positionsPath = path.join(__dirname, 'results-positions.csv');
+    fs.writeFileSync(headersPath, toCsv(result.headers), 'utf8');
+    fs.writeFileSync(positionsPath, toCsv(result.positions), 'utf8');
+    console.log('[wynik]', forceCsv ? '--csv wymuszone' : (!DB_NAME ? 'DB_NAME nie ustawione' : 'brak schema-test-tables.json'),
+      '— zapisano do', headersPath, 'i', positionsPath,
       '(' + result.headers.length + ' WZ, ' + result.positions.length + ' pozycji, partial=' + result.partial + ')');
     return;
   }
