@@ -33,10 +33,20 @@ const WZ_LIST_URL = process.env.WZ_LIST_URL ||
   'https://erp.savpol.pl/pl/wydania-zewnetrzne/csdocsheaders4goodsissue';
 const MAX_DOCS = parseInt(process.env.MAX_DOCS || '5', 10); // tak samo ostrożnie jak w userscripcie na start
 
-// Górny limit czasu jednej sesji — człowiek nie siedzi w ERP klikając to
-// samo bez przerwy godzinami. Po przekroczeniu kończymy przebieg (wynik
-// częściowy, jak przy limicie dokumentów), zamiast ciągnąć w nieskończoność.
-const MAX_SESSION_MINUTES = parseInt(process.env.MAX_SESSION_MINUTES || '25', 10);
+// Długość sesji jest LOSOWANA w tym przedziale przy każdym uruchomieniu —
+// stała wartość (poprzednio sztywne 25 min) jest sama w sobie sygnałem
+// automatyzacji: człowiek loguje się, robi swoje, wylogowuje po zmiennym
+// czasie, nie co do minuty tak samo. Jeśli jeden "job" (np. 10 dni
+// backfillu) nie mieści się w jednej sesji, dzielimy go na kilka —
+// każde kolejne uruchomienie to nowa, osobna sesja (nowe logowanie).
+const MIN_SESSION_MINUTES = parseInt(process.env.MIN_SESSION_MINUTES || '30', 10);
+const MAX_SESSION_MINUTES = parseInt(process.env.MAX_SESSION_MINUTES || '60', 10);
+
+// Ile dokumentów na jedną "paczkę" — po każdej paczce zapisujemy postęp
+// (baza + plik stanu), więc padnięcie procesu w połowie kosztuje najwyżej
+// jedną paczkę, nie cały przebieg. Krótszy odstęp niż kiedyś (dawniej zapis
+// był tylko raz, na sam koniec całego przebiegu).
+const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '15', 10);
 
 // Opcjonalny filtr daty. FILTER_DATE=YYYY-MM-DD ustawia "Od"/"Do" na TĘ SAMĄ
 // datę. FILTER_DATE_FROM/FILTER_DATE_TO pozwalają ustawić różne granice
@@ -297,17 +307,27 @@ async function scrapeWzInPage(opts) {
       await humanPause(DELAY_AFTER_CLOSE);
     }
 
-    if (processed >= maxDocs) break;
+    if (processed >= maxDocs) {
+      // Limit TEJ PACZKI osiągnięty — to NIE znaczy, że lista się skończyła.
+      return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'batch_limit' };
+    }
 
     const pager = getVisiblePager();
-    if (!pagerHasNextPage(pager)) break;
+    if (!pagerHasNextPage(pager)) {
+      // Naturalny koniec: pager mówi, że nie ma kolejnej strony. To JEDYNE
+      // miejsce, gdzie wolno ustawić allPagesExhausted — reszta wyjść z tej
+      // funkcji (limit paczki, limit czasu, błędy) NIE oznacza końca listy.
+      return { headers, positions, completedDocNumbers, docs: processed, partial: false, allPagesExhausted: true };
+    }
     if (!await goToNextPage(pager)) {
-      return { headers, positions, completedDocNumbers, docs: processed, partial: true };
+      return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'pagination_stuck' };
     }
     pageNum++;
   }
 
-  return { headers, positions, completedDocNumbers, docs: processed, partial: false, allPagesExhausted: true };
+  // Tu trafiamy TYLKO gdy pageNum przekroczył MAX_PAGES (bezpiecznik) — to
+  // NIE jest naturalny koniec listy, tylko rezygnacja z dalszego przewijania.
+  return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'max_pages_safety_limit' };
 }
 
 // ---------- Zapis wyniku ----------
@@ -368,31 +388,39 @@ async function insertRows(pool, tableName, columnsMeta, rows) {
 
 // Prosty CSV (średnik jako separator — spójnie z resztą narzędzi w repo,
 // PL Excel domyślnie oczekuje średnika). Ucieczka cudzysłowów wg RFC4180.
-function toCsv(rows) {
-  if (!rows.length) return '';
+// DOPISUJE do pliku (nagłówek tylko przy pierwszym zapisie) — bo teraz
+// zapisujemy PACZKAMI w trakcie przebiegu, nie raz na koniec; nadpisywanie
+// skasowałoby wcześniejsze paczki tego samego przebiegu.
+function appendCsv(filePath, rows) {
+  if (!rows.length) return;
   const cols = Object.keys(rows[0]);
   const esc = v => {
     const s = v === null || v === undefined ? '' : String(v);
     return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  const lines = [cols.join(';')];
+  const lines = [];
+  if (!fs.existsSync(filePath)) lines.push(cols.join(';'));
   rows.forEach(r => lines.push(cols.map(c => esc(r[c])).join(';')));
-  return lines.join('\n');
+  fs.appendFileSync(filePath, lines.join('\n') + '\n', 'utf8');
 }
 
-async function saveResult(result) {
+// `label` = zakres dat (np. "2026-08-03_2026-08-03") — osobne pliki na
+// zakres, żeby wznowienie tego samego dnia dopisywało do właściwego pliku,
+// a nie mieszało się z danymi z zupełnie innego dnia/testu.
+async function saveResult(result, label) {
   const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
   const forceCsv = process.argv.includes('--csv');
   const schema = loadSchemaMeta();
+  const suffix = label ? '_' + label : '';
 
   if (forceCsv || !DB_NAME || !schema) {
-    const headersPath = path.join(__dirname, 'results-headers.csv');
-    const positionsPath = path.join(__dirname, 'results-positions.csv');
-    fs.writeFileSync(headersPath, toCsv(result.headers), 'utf8');
-    fs.writeFileSync(positionsPath, toCsv(result.positions), 'utf8');
+    const headersPath = path.join(__dirname, 'results-headers' + suffix + '.csv');
+    const positionsPath = path.join(__dirname, 'results-positions' + suffix + '.csv');
+    appendCsv(headersPath, result.headers);
+    appendCsv(positionsPath, result.positions);
     console.log('[wynik]', forceCsv ? '--csv wymuszone' : (!DB_NAME ? 'DB_NAME nie ustawione' : 'brak schema-test-tables.json'),
-      '— zapisano do', headersPath, 'i', positionsPath,
-      '(' + result.headers.length + ' WZ, ' + result.positions.length + ' pozycji, partial=' + result.partial + ')');
+      '— dopisano do', headersPath, 'i', positionsPath,
+      '(+' + result.headers.length + ' WZ, +' + result.positions.length + ' pozycji w tej paczce, partial=' + result.partial + ')');
     return;
   }
 
@@ -543,6 +571,20 @@ async function readPagerCount(page) {
   });
 }
 
+// Sam odczyt bywa "0" albo pusty przez ułamek sekundy w trakcie przeładowania
+// siatki po zmianie filtra — czekamy, aż wartość się USTABILIZUJE (dwa
+// odczyty z rzędu takie same, i niezerowe), zamiast ufać pierwszemu odczytowi.
+async function readPagerCountStable(page, { tries = 15, intervalMs = 400 } = {}) {
+  let last = null;
+  for (let i = 0; i < tries; i++) {
+    const now = await readPagerCount(page);
+    if (now && now !== '0' && now === last) return now;
+    last = now;
+    await page.waitForTimeout(intervalMs);
+  }
+  return last; // niech i tak zwróci coś (z ostrzeżeniem u wywołującego), zamiast wisieć w nieskończoność
+}
+
 async function humanClickDelay(page) {
   await page.waitForTimeout(300 + Math.random() * 500);
 }
@@ -574,6 +616,14 @@ async function main() {
   const runStarted = Date.now();
   const dateFrom = FILTER_DATE_FROM || FILTER_DATE_TO;
   const dateTo = FILTER_DATE_TO || FILTER_DATE_FROM;
+  const csvLabel = (dateFrom || dateTo) ? (dateFrom + '_' + dateTo) : null;
+
+  // Długość TEJ sesji — losowana raz, na starcie procesu (patrz komentarz
+  // przy MIN/MAX_SESSION_MINUTES).
+  const sessionMinutes = MIN_SESSION_MINUTES + Math.random() * (MAX_SESSION_MINUTES - MIN_SESSION_MINUTES);
+  const sessionDeadline = runStarted + sessionMinutes * 60 * 1000;
+  console.log('[sesja] Długość tej sesji: ' + sessionMinutes.toFixed(1) + ' min (losowo z przedziału ' +
+    MIN_SESSION_MINUTES + '-' + MAX_SESSION_MINUTES + ').');
 
   // Wznowienie: co już zebraliśmy dla TEGO SAMEGO zakresu dat w poprzednich
   // (być może przerwanych) przebiegach — te numery WZ nie zostaną otwarte
@@ -585,6 +635,7 @@ async function main() {
       priorState.processedDocNumbers.length + ' dok. już zebranych wcześniej' +
       (priorState.complete ? ' (zakres oznaczony jako KOMPLETNY — ten przebieg nic nowego nie znajdzie).' : '.'));
   }
+  const processedThisRun = new Set(priorState ? priorState.processedDocNumbers : []);
 
   const browser = await chromium.launch({ headless: HEADLESS });
   const context = await browser.newContext();
@@ -593,7 +644,11 @@ async function main() {
   page.on('console', msg => console.log('[strona]', msg.text()));
   page.on('pageerror', err => console.error('[błąd strony]', err.message));
 
-  let result = null;
+  let totalHeaders = 0;
+  let totalPositions = 0;
+  let allPagesExhausted = false;
+  let lastStoppedReason = null;
+  let expectedTotal = null;
   let errorMsg = null;
 
   try {
@@ -612,49 +667,97 @@ async function main() {
       await setDateFilter(page, dateFrom, dateTo);
     }
 
-    console.log('[wz] Lista załadowana. Startuję zbieranie (max ' + MAX_DOCS + ' dok.)...');
+    // Ile ERP twierdzi, że jest dokumentów dla tego filtra — do porównania
+    // na koniec z tym, ile faktycznie zebraliśmy (łącznie, przez wszystkie
+    // sesje na ten zakres, nie tylko tę jedną).
+    const expectedRaw = await readPagerCountStable(page);
+    expectedTotal = expectedRaw ? parseInt(expectedRaw.replace(/[\s ]/g, ''), 10) : null;
+    if (!expectedTotal) {
+      console.warn('[wz] UWAGA: nie udało się odczytać liczby dokumentów z pagera (dostałem "' + expectedRaw + '") — kontrola na koniec przebiegu będzie pominięta.');
+    }
+    console.log('[wz] ERP zgłasza ' + (expectedTotal ?? '?') + ' dokumentów dla tego filtra.' +
+      (priorState ? ' Mamy już ' + priorState.processedDocNumbers.length + ' z poprzednich sesji.' : ''));
 
-    result = await page.evaluate(scrapeWzInPage, {
-      maxDocs: MAX_DOCS,
-      headerFields: F.HEADER_FIELDS,
-      headerFieldsFromPositions: F.HEADER_FIELDS_FROM_FIRST_POSITION,
-      positionFields: F.POSITION_FIELDS,
-      maxSessionMs: MAX_SESSION_MINUTES * 60 * 1000,
-      alreadyProcessed: priorState ? priorState.processedDocNumbers : []
-    });
-    console.log('[wz] Zebrano', result.headers.length, 'WZ,', result.positions.length, 'pozycji. partial=' + result.partial +
-      (result.stoppedReason === 'session_time_limit' ? ' (koniec: limit czasu sesji ' + MAX_SESSION_MINUTES + ' min)' : ''));
+    console.log('[wz] Lista załadowana. Startuję zbieranie w paczkach po ' + BATCH_SIZE + ' dok. ' +
+      '(max ' + MAX_DOCS + ' łącznie w tej sesji)...');
 
-    await saveResult(result);
+    let collectedThisSession = 0;
+    while (collectedThisSession < MAX_DOCS) {
+      const remainingMs = sessionDeadline - Date.now();
+      if (remainingMs <= 0) {
+        lastStoppedReason = 'session_time_limit';
+        break;
+      }
+
+      const batchMaxDocs = Math.min(BATCH_SIZE, MAX_DOCS - collectedThisSession);
+      const batch = await page.evaluate(scrapeWzInPage, {
+        maxDocs: batchMaxDocs,
+        headerFields: F.HEADER_FIELDS,
+        headerFieldsFromPositions: F.HEADER_FIELDS_FROM_FIRST_POSITION,
+        positionFields: F.POSITION_FIELDS,
+        maxSessionMs: remainingMs,
+        alreadyProcessed: Array.from(processedThisRun)
+      });
+
+      // ZAPIS OD RAZU — nie czekamy do końca sesji. Padnięcie procesu teraz
+      // kosztuje najwyżej tę jedną paczkę, nie cały przebieg.
+      await saveResult(batch, csvLabel);
+
+      batch.completedDocNumbers.forEach(d => processedThisRun.add(d));
+      totalHeaders += batch.headers.length;
+      totalPositions += batch.positions.length;
+      collectedThisSession += batch.headers.length;
+      allPagesExhausted = !!batch.allPagesExhausted;
+      lastStoppedReason = batch.stoppedReason || null;
+
+      if (dateFrom || dateTo) {
+        const saved = saveState(dateFrom, dateTo, {
+          newDocNumbers: batch.completedDocNumbers,
+          complete: allPagesExhausted,
+          runSummary: {
+            ts: new Date().toISOString(),
+            paczkaDok: batch.headers.length,
+            partial: batch.partial,
+            stoppedReason: batch.stoppedReason || null
+          }
+        });
+        console.log('[paczka] +' + batch.headers.length + ' WZ (łącznie w stanie: ' +
+          saved.processedDocNumbers.length + (expectedTotal ? '/' + expectedTotal : '') + '), complete=' + saved.complete);
+      }
+
+      if (allPagesExhausted) break;
+      if (batch.headers.length === 0 && !batch.partial) break; // bezpiecznik: nic nowego, a nie "koniec" — nie kręćmy się w kółko
+      if (lastStoppedReason && lastStoppedReason !== 'batch_limit') break; // błąd/limit inny niż "zwykły koniec paczki" — kończymy sesję
+    }
+
+    console.log('[wz] Koniec sesji. Zebrano w tej sesji: ' + totalHeaders + ' WZ, ' + totalPositions + ' pozycji.' +
+      (lastStoppedReason ? ' Powód zatrzymania: ' + lastStoppedReason + '.' : ' (lista wyczerpana).'));
+
+    if (expectedTotal) {
+      const haveTotal = processedThisRun.size;
+      if (haveTotal >= expectedTotal) {
+        console.log('[kontrola] ZGADZA SIĘ: mamy ' + haveTotal + ' dok., ERP zgłaszał ' + expectedTotal + '.');
+      } else {
+        console.warn('[kontrola] NIEKOMPLETNE: mamy ' + haveTotal + ' z ' + expectedTotal +
+          ' zgłaszanych przez ERP (brakuje ' + (expectedTotal - haveTotal) + '). ' +
+          (allPagesExhausted ? 'Lista była wyczerpana mimo to — sprawdź ręcznie, coś się nie zgadza.' :
+            'Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.'));
+      }
+    }
   } catch (err) {
     errorMsg = err.message;
     throw err;
   } finally {
-    if (dateFrom || dateTo) {
-      const newDocNumbers = result ? result.completedDocNumbers : [];
-      const nowComplete = !!(result && result.allPagesExhausted);
-      const saved = saveState(dateFrom, dateTo, {
-        newDocNumbers,
-        complete: nowComplete,
-        runSummary: {
-          ts: new Date().toISOString(),
-          docsNowe: newDocNumbers.length,
-          partial: result ? result.partial : null,
-          stoppedReason: result ? result.stoppedReason || null : null,
-          blad: errorMsg
-        }
-      });
-      console.log('[wznowienie] Stan dla ' + dateFrom + '..' + dateTo + ' zapisany: ' +
-        saved.processedDocNumbers.length + ' dok. łącznie, complete=' + saved.complete);
-    }
-
     appendRunLog({
       filterDateFrom: dateFrom, filterDateTo: dateTo,
-      maxDocs: MAX_DOCS, maxSessionMinutes: MAX_SESSION_MINUTES,
-      docsZebraneWTymPrzebiegu: result ? result.headers.length : 0,
-      pozycjeZebraneWTymPrzebiegu: result ? result.positions.length : 0,
-      partial: result ? result.partial : null,
-      stoppedReason: result ? result.stoppedReason || null : null,
+      sessionMinutes: Number(sessionMinutes.toFixed(1)),
+      maxDocs: MAX_DOCS, batchSize: BATCH_SIZE,
+      docsZebraneWTejSesji: totalHeaders,
+      pozycjeZebraneWTejSesji: totalPositions,
+      docsLacznieDlaZakresu: (dateFrom || dateTo) ? processedThisRun.size : null,
+      expectedTotal,
+      allPagesExhausted,
+      stoppedReason: lastStoppedReason,
       czasTrwaniaMs: Date.now() - runStarted,
       blad: errorMsg
     });
