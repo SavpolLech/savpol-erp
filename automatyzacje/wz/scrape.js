@@ -32,6 +32,11 @@ const WZ_LIST_URL = process.env.WZ_LIST_URL ||
   'https://erp.savpol.pl/pl/wydania-zewnetrzne/csdocsheaders4goodsissue';
 const MAX_DOCS = parseInt(process.env.MAX_DOCS || '5', 10); // tak samo ostrożnie jak w userscripcie na start
 
+// Górny limit czasu jednej sesji — człowiek nie siedzi w ERP klikając to
+// samo bez przerwy godzinami. Po przekroczeniu kończymy przebieg (wynik
+// częściowy, jak przy limicie dokumentów), zamiast ciągnąć w nieskończoność.
+const MAX_SESSION_MINUTES = parseInt(process.env.MAX_SESSION_MINUTES || '25', 10);
+
 // Z sondy diagnostyka/sonda-login-form.js (2026-09-07): oba pola mają
 // zduplikowane id="Input" (nieunikalne w DOM), więc idziemy po `name` —
 // to jest unikalne. Przycisku logowania NIE MA w DOM (0 widocznych
@@ -77,16 +82,33 @@ async function login(page) {
 // liczb/dat, to robi Node po stronie, metadanymi ze schematu bazy.
 
 async function scrapeWzInPage(opts) {
-  const { maxDocs, headerFields, headerFieldsFromPositions, positionFields } = opts;
+  const { maxDocs, headerFields, headerFieldsFromPositions, positionFields, maxSessionMs } = opts;
 
   const DOC_TYPES = ['WZ'];
   const MAX_PAGES = 100;
   const MAX_CONSECUTIVE_FAILURES = 3;
-  const DELAY_AFTER_OPEN = 300;
-  const DELAY_AFTER_CLOSE = 300;
-  const DELAY_AFTER_PAGE = 400;
+
+  // Przedziały zamiast stałych wartości — identyczne opóźnienie powtórzone
+  // na każdym kroku jest samo w sobie sygnałem "to nie jest człowiek".
+  // Losowość + od czasu do czasu dłuższa pauza (jakby ktoś czytał dokument)
+  // ma to rozmyć, nie tylko spowolnić.
+  const DELAY_AFTER_OPEN = [400, 1100];
+  const DELAY_AFTER_CLOSE = [350, 900];
+  const DELAY_AFTER_PAGE = [500, 1400];
+  const LONG_PAUSE_CHANCE = 0.12; // ok. co 8. dokument dłuższa "przerwa na czytanie"
+  const LONG_PAUSE_RANGE = [2000, 5000];
+
+  const started = Date.now();
+  function sessionTimeUp() {
+    return maxSessionMs && (Date.now() - started) > maxSessionMs;
+  }
 
   function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  function jitter([min, max]) { return min + Math.random() * (max - min); }
+  async function humanPause(range) {
+    await sleep(jitter(range));
+    if (Math.random() < LONG_PAUSE_CHANCE) await sleep(jitter(LONG_PAUSE_RANGE));
+  }
   async function waitFor(fn, tries = 40, interval = 250) {
     for (let i = 0; i < tries; i++) {
       const v = fn();
@@ -176,7 +198,7 @@ async function scrapeWzInPage(opts) {
     if (next) {
       next.click();
       if (await waitFor(pageChanged, 40, 250)) {
-        await sleep(DELAY_AFTER_PAGE);
+        await humanPause(DELAY_AFTER_PAGE);
         return true;
       }
     }
@@ -191,6 +213,9 @@ async function scrapeWzInPage(opts) {
   let pageNum = 1;
 
   while (processed < maxDocs && pageNum <= MAX_PAGES) {
+    if (sessionTimeUp()) {
+      return { headers, positions, docs: processed, partial: true, stoppedReason: 'session_time_limit' };
+    }
     if (targetRows().length === 0) {
       await waitFor(() => targetRows().length > 0, 20, 300);
     }
@@ -199,6 +224,9 @@ async function scrapeWzInPage(opts) {
 
     for (const targetDoc of docsOnPage) {
       if (processed >= maxDocs) break;
+      if (sessionTimeUp()) {
+        return { headers, positions, docs: processed, partial: true, stoppedReason: 'session_time_limit' };
+      }
 
       const row = targetRows().find(r => rowDocNumber(r) === targetDoc);
       if (!row) continue;
@@ -218,7 +246,10 @@ async function scrapeWzInPage(opts) {
         const stray = document.querySelector('li.k-state-active .csCloseButton_span');
         if (stray) stray.click();
         await waitFor(() => getVisibleListGrid());
-        await sleep(DELAY_AFTER_CLOSE);
+        // Narastający backoff: pierwsza porażka to zwykła pauza, kolejne z
+        // rzędu czekają coraz dłużej — jak przy realnym problemie po stronie
+        // człowieka (zawieszenie, ponowna próba), nie mechaniczne "bang bang bang".
+        await sleep(jitter(DELAY_AFTER_CLOSE) * consecutiveFailures);
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
           return { headers, positions, docs: processed, partial: true };
         }
@@ -226,7 +257,7 @@ async function scrapeWzInPage(opts) {
       }
 
       consecutiveFailures = 0;
-      await sleep(DELAY_AFTER_OPEN);
+      await humanPause(DELAY_AFTER_OPEN);
 
       const posRows = extractPositionsRaw(headerId);
 
@@ -245,7 +276,7 @@ async function scrapeWzInPage(opts) {
       const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
       if (closeBtn) closeBtn.click();
       await waitFor(() => getVisibleListGrid());
-      await sleep(DELAY_AFTER_CLOSE);
+      await humanPause(DELAY_AFTER_CLOSE);
     }
 
     if (processed >= maxDocs) break;
@@ -329,7 +360,28 @@ async function saveResult(result) {
 
 // ---------- Główny przebieg ----------
 
+// Jedna aktywna sesja na raz — nigdy dwie równoległe wobec tego samego ERP.
+// Blokada wygasa sama po godzinie (na wypadek, gdyby poprzedni proces padł
+// bez sprzątnięcia po sobie), żeby nie trzeba było jej ręcznie kasować.
+const LOCK_PATH = path.join(__dirname, '.scrape.lock');
+const LOCK_MAX_AGE_MS = 60 * 60 * 1000;
+
+function acquireLock() {
+  if (fs.existsSync(LOCK_PATH)) {
+    const age = Date.now() - fs.statSync(LOCK_PATH).mtimeMs;
+    if (age < LOCK_MAX_AGE_MS) {
+      throw new Error('Inna sesja scrapera już trwa (blokada z ' + Math.round(age / 1000) + 's temu) — kończę bez startu.');
+    }
+    console.warn('[lock] Stara blokada (' + Math.round(age / 60000) + ' min) — poprzedni proces prawdopodobnie padł. Nadpisuję.');
+  }
+  fs.writeFileSync(LOCK_PATH, String(process.pid));
+}
+function releaseLock() {
+  try { fs.unlinkSync(LOCK_PATH); } catch (e) { /* już nie ma, trudno */ }
+}
+
 async function main() {
+  acquireLock();
   const browser = await chromium.launch({ headless: HEADLESS });
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -350,13 +402,16 @@ async function main() {
       maxDocs: MAX_DOCS,
       headerFields: F.HEADER_FIELDS,
       headerFieldsFromPositions: F.HEADER_FIELDS_FROM_FIRST_POSITION,
-      positionFields: F.POSITION_FIELDS
+      positionFields: F.POSITION_FIELDS,
+      maxSessionMs: MAX_SESSION_MINUTES * 60 * 1000
     });
-    console.log('[wz] Zebrano', result.headers.length, 'WZ,', result.positions.length, 'pozycji. partial=' + result.partial);
+    console.log('[wz] Zebrano', result.headers.length, 'WZ,', result.positions.length, 'pozycji. partial=' + result.partial +
+      (result.stoppedReason === 'session_time_limit' ? ' (koniec: limit czasu sesji ' + MAX_SESSION_MINUTES + ' min)' : ''));
 
     await saveResult(result);
   } finally {
     await browser.close();
+    releaseLock();
   }
 }
 

@@ -21,3 +21,6 @@ automatyzacje/**/results.json
 # Wygenerowany artefakt (generate-test-tables.js odtwarza go z bazy) — nie
 # ma sensu wersjonować, łatwo się rozjedzie z prawdziwym schematem
 automatyzacje/**/schema-test-tables.json
+
+# Plik-blokada jednej aktywnej sesji scrapera — czysto lokalny stan procesu
+automatyzacje/**/.scrape.lock
