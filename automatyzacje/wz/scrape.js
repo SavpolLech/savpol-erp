@@ -45,6 +45,10 @@ const MAX_SESSION_MINUTES = parseInt(process.env.MAX_SESSION_MINUTES || '25', 10
 const FILTER_DATE_FROM = process.env.FILTER_DATE_FROM || process.env.FILTER_DATE || null;
 const FILTER_DATE_TO = process.env.FILTER_DATE_TO || process.env.FILTER_DATE || null;
 
+// Zapisany filtr ERP "WZ" — mniej stron do przewijania (patrz setDocTypeFilter).
+// DOC_TYPES w scrapeWzInPage zostaje jako druga linia obrony niezależnie od tego.
+const USE_DOC_TYPE_FILTER = process.env.USE_DOC_TYPE_FILTER !== 'false';
+
 // Z sondy diagnostyka/sonda-login-form.js (2026-09-07): oba pola mają
 // zduplikowane id="Input" (nieunikalne w DOM), więc idziemy po `name` —
 // to jest unikalne. Przycisku logowania NIE MA w DOM (0 widocznych
@@ -383,6 +387,52 @@ async function saveResult(result) {
   }
 }
 
+// ---------- Filtr typu dokumentu (zapisany filtr "WZ") ----------
+// Domyślna lista miesza WZ z WZZ/WZZR i pewnie innymi typami — dotąd
+// odsiewaliśmy to WYŁĄCZNIE po naszej stronie (DOC_TYPES w scrapeWzInPage).
+// ERP ma gotowy zapisany filtr "WZ", który robi to samo po stronie serwera —
+// mniej stron do przewijania, więc stosujemy oba: ten filtr ZMNIEJSZA to, co
+// w ogóle trzeba pobrać, a DOC_TYPES zostaje jako druga linia obrony (gdyby
+// zapisany filtr kiedyś zniknął/zmienił nazwę, scraper nadal nie weźmie
+// niewłaściwego typu). Sekwencja ustalona przez nagranie kliknięć użytkownika
+// (diagnostyka/sonda-klikniecia.js), nie zgadywanie.
+async function setDocTypeFilter(page, label) {
+  await humanClickDelay(page);
+  const advFilterBtn = page.locator('.csButtonAdvancedFilter:visible').first();
+  await advFilterBtn.waitFor({ timeout: 10000 });
+  await advFilterBtn.click();
+
+  await humanClickDelay(page);
+  const dropdown = page.locator('.FilterList.FilterListPopupCombo:visible, .FilterList:visible').first();
+  await dropdown.waitFor({ timeout: 10000 });
+  await dropdown.click();
+
+  await humanClickDelay(page);
+  const option = page.locator('li.k-item:visible', { hasText: label }).first();
+  await option.waitFor({ timeout: 10000 });
+  await option.click();
+
+  await humanClickDelay(page);
+  const applyBtn = page.locator('.caption[title="Zastosuj"]:visible').first();
+  await applyBtn.waitFor({ timeout: 10000 });
+
+  const pagerCountBefore = await readPagerCount(page);
+  await applyBtn.click();
+
+  await page.waitForFunction((before) => {
+    const p = Array.from(document.querySelectorAll('.csDataPager')).find(el => el.offsetParent !== null);
+    const e = p && p.querySelector('.ResultsCountValue');
+    const now = e ? (e.value || e.textContent || '').trim() : null;
+    return now !== null && now !== before;
+  }, pagerCountBefore, { timeout: 15000 }).catch(() => {
+    console.warn('[filtr-typ] Licznik rekordów nie zmienił się w 15s po "Zastosuj" — możliwe, że filtr "' + label + '" się nie zastosował.');
+  });
+  await page.waitForTimeout(500);
+
+  const pagerCountAfter = await readPagerCount(page);
+  console.log('[filtr-typ] Zastosowano zapisany filtr "' + label + '". Rekordów: przed=' + pagerCountBefore + ', po=' + pagerCountAfter);
+}
+
 // ---------- Filtr daty (Od/Do) ----------
 // Automatyzacja startuje w OSOBNEJ, świeżej sesji przeglądarki — filtr
 // ustawiony ręcznie przez człowieka w jego własnej karcie jej nie dotyczy.
@@ -500,6 +550,10 @@ async function main() {
     // Tak samo jak w scrapeWzInPage: siatka ładuje się asynchronicznie, więc
     // czekamy na realny sygnał (wiersz z DocNumber), nie na stan sieci.
     await page.waitForSelector('td[data-datafield="DocNumber"]', { timeout: 30000 });
+
+    if (USE_DOC_TYPE_FILTER) {
+      await setDocTypeFilter(page, 'WZ');
+    }
 
     if (FILTER_DATE_FROM || FILTER_DATE_TO) {
       await setDateFilter(page, FILTER_DATE_FROM || FILTER_DATE_TO, FILTER_DATE_TO || FILTER_DATE_FROM);
