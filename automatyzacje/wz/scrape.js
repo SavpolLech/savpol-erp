@@ -424,59 +424,38 @@ async function setDateFilter(page, isoDateFrom, isoDateTo) {
       ' (oczekiwano od=' + isoDateFrom + ', do=' + isoDateTo + ')');
   }
 
-  // UWAGA: title="Pokaż" występuje TEŻ wewnątrz komórek wiersza (np. "Pokaż
-  // Nr dok.", widoczne w sondzie listy WZ) — złapanie pierwszego pasującego
-  // elementu na całej stronie ryzykuje kliknięcie czegoś zupełnie innego niż
-  // przycisk zatwierdzenia filtra. Zawężamy do widocznego #ToolBarPanel.
-  //
-  // KLIKAMY PRAWDZIWĄ MYSZĄ (locator.click()), nie JS-owym element.click() —
-  // ten framework najwyraźniej nasłuchuje realnych zdarzeń wskaźnika
-  // (mousedown/pointerdown), których syntetyczny .click() nie generuje.
-  // Pierwsza próba przez page.evaluate + .click() nie odświeżała siatki
-  // mimo poprawnie wypełnionych pól — to jest bardziej "ludzkie" i naprawia problem.
+  // Przycisk zatwierdzający filtr NIE jest żadnym z dwóch "Pokaż" (te otwierają
+  // dokument) — to ".ButtonRefresh", mała ikona (lupa) obok pola "Szukaj" w
+  // panelu "ZAWĘŻANIE WYNIKÓW". Ustalone przez nagranie realnych kliknięć
+  // użytkownika (diagnostyka/sonda-klikniecia.js), nie zgadywanie.
   await humanClickDelay(page);
-  const rowsBefore = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('td[data-datafield="DocNumber"]')).map(td => td.getAttribute('title')).join('|'));
+  const pagerCountBefore = await readPagerCount(page);
 
-  // DIAGNOSTYKA: ile pasujących #ToolBarPanel/przycisków "Pokaż" w ogóle jest
-  // w DOM (widzieliśmy już duplikaty paneli w tym ERP — może to ten sam problem).
-  const toolbarInfo = await page.evaluate(() => {
-    const panels = Array.from(document.querySelectorAll('#ToolBarPanel'));
-    return panels.map((p, i) => ({
-      idx: i,
-      visible: p.offsetParent !== null,
-      hasPokaz: !!p.querySelector('.caption[title="Pokaż"]')
-    }));
+  const refreshBtn = page.locator('.ButtonRefresh:visible').first();
+  await refreshBtn.waitFor({ timeout: 10000 });
+  await refreshBtn.click();
+
+  await page.waitForFunction((before) => {
+    const p = Array.from(document.querySelectorAll('.csDataPager')).find(el => el.offsetParent !== null);
+    const e = p && p.querySelector('.ResultsCountValue');
+    const now = e ? (e.value || e.textContent || '').trim() : null;
+    return now !== null && now !== before;
+  }, pagerCountBefore, { timeout: 15000 }).catch(() => {
+    console.warn('[filtr] Licznik rekordów nie zmienił się w 15s po kliknięciu ".ButtonRefresh" — możliwe, że filtr się nie zastosował.');
   });
-  console.log('[filtr] #ToolBarPanel w DOM:', JSON.stringify(toolbarInfo));
+  await page.waitForTimeout(500);
 
-  await page.screenshot({ path: path.join(__dirname, 'debug-przed-pokaz.png') });
+  const pagerCountAfter = await readPagerCount(page);
+  console.log('[filtr] Ustawiono zakres ' + isoDateFrom + '..' + isoDateTo + ', kliknięto ".ButtonRefresh". ' +
+    'Rekordów: przed=' + pagerCountBefore + ', po=' + pagerCountAfter);
+}
 
-  const showButton = page.locator('#ToolBarPanel:visible .caption[title="Pokaż"]').first();
-  await showButton.waitFor({ timeout: 10000 });
-  const box = await showButton.boundingBox();
-  console.log('[filtr] Pozycja przycisku "Pokaż":', JSON.stringify(box));
-  await showButton.click();
-
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: path.join(__dirname, 'debug-po-pokaz.png') });
-
-  const pagerCount = await page.evaluate(() => {
+async function readPagerCount(page) {
+  return page.evaluate(() => {
     const p = Array.from(document.querySelectorAll('.csDataPager')).find(el => el.offsetParent !== null);
     const e = p && p.querySelector('.ResultsCountValue');
     return e ? (e.value || e.textContent || '').trim() : null;
   });
-  console.log('[filtr] Licznik rekordów w pagerze po kliknięciu:', pagerCount);
-
-  const rowsAfter = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('td[data-datafield="DocNumber"]')).map(td => td.getAttribute('title')).slice(0, 3));
-  const changed = rowsAfter.join('|') !== rowsBefore;
-
-  if (!changed) {
-    console.warn('[filtr] UWAGA: siatka nie zmieniła zawartości po kliknięciu "Pokaż" — filtr prawdopodobnie NIE zadziałał.');
-  }
-  console.log('[filtr] Ustawiono zakres ' + isoDateFrom + '..' + isoDateTo + ', kliknięto "Pokaż" (zmiana siatki: ' + changed +
-    '). Pierwsze wiersze teraz: ' + JSON.stringify(rowsAfter));
 }
 
 async function humanClickDelay(page) {
