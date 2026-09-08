@@ -6,13 +6,18 @@
 const sql = require('mssql');
 
 async function fetchColumnsMeta(pool, tableSchema, tableName, wantedFields) {
+  // INFORMATION_SCHEMA nie mówi, czy kolumna jest WYLICZANA (computed) —
+  // takich nie da się wprost wstawić przez INSERT (SQL Server liczy je sam).
+  // Dołączamy sys.columns.is_computed, żeby scrape.js mógł je pominąć.
   const result = await pool.request()
     .input('schema', sql.NVarChar, tableSchema)
     .input('table', sql.NVarChar, tableName)
     .query(`
-      SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, NUMERIC_SCALE, IS_NULLABLE
-      FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_SCHEMA = @schema AND TABLE_NAME = @table
+      SELECT c.COLUMN_NAME, c.DATA_TYPE, c.CHARACTER_MAXIMUM_LENGTH, c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.IS_NULLABLE,
+             sc.is_computed AS IS_COMPUTED
+      FROM INFORMATION_SCHEMA.COLUMNS c
+      JOIN sys.columns sc ON sc.object_id = OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME) AND sc.name = c.COLUMN_NAME
+      WHERE c.TABLE_SCHEMA = @schema AND c.TABLE_NAME = @table
     `);
   const byName = new Map(result.recordset.map(r => [r.COLUMN_NAME, r]));
   const found = [];

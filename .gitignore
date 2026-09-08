@@ -17,3 +17,7 @@ automatyzacje/**/.env.*
 # Zależności Node i lokalne wyniki testowe (dane WZ z ERP — nie wchodzą do repo)
 automatyzacje/**/node_modules/
 automatyzacje/**/results.json
+
+# Wygenerowany artefakt (generate-test-tables.js odtwarza go z bazy) — nie
+# ma sensu wersjonować, łatwo się rozjedzie z prawdziwym schematem
+automatyzacje/**/schema-test-tables.json

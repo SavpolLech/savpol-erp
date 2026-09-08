@@ -56,12 +56,18 @@ async function login(page) {
   await page.waitForSelector(LOGIN_SELECTORS.username, { timeout: 15000 });
   await page.fill(LOGIN_SELECTORS.username, user);
   await page.fill(LOGIN_SELECTORS.password, pass);
-  await Promise.all([
-    page.waitForLoadState('networkidle'),
-    page.press(LOGIN_SELECTORS.password, 'Enter')
-  ]);
 
-  console.log('[login] Zalogowano (albo przynajmniej strona się przeładowała). URL:', page.url());
+  // NIE czekamy na 'networkidle' — ERP non-stop odbudowuje WebSocket
+  // (socket.io) w tle, więc sieć nigdy nie jest naprawdę bezczynna i to
+  // czekanie potrafi wisieć aż do timeoutu nawet po udanym logowaniu.
+  // Czekamy na realny sygnał: adres przestaje zawierać "/logowania/".
+  await page.press(LOGIN_SELECTORS.password, 'Enter');
+  await page.waitForFunction(
+    () => !location.href.includes('/logowanie/'),
+    { timeout: 20000 }
+  );
+
+  console.log('[login] Zalogowano. URL:', page.url());
 }
 
 // ---------- Scraping WZ (logika 1:1 z savpol-wz-eksport.user.js) ----------
@@ -268,12 +274,16 @@ function loadSchemaMeta() {
 // prawdziwe int/decimal/date, nie surowe stringi z ekranu ERP.
 async function insertRows(pool, tableName, columnsMeta, rows) {
   if (!rows.length) return 0;
+  // Kolumny WYLICZANE (computed) — SQL Server liczy je sam, nie da się ich
+  // wprost wstawić (błąd "cannot be modified because it is ... a computed
+  // column"). Pomijamy je, resztę wstawiamy normalnie.
+  const insertableColumns = columnsMeta.filter(c => !c.IS_COMPUTED);
   let inserted = 0;
   for (const row of rows) {
     const request = pool.request();
     const colNames = [];
     const paramNames = [];
-    columnsMeta.forEach((col, i) => {
+    insertableColumns.forEach((col, i) => {
       const paramName = 'p' + i;
       const value = coerceValue(row[col.COLUMN_NAME], col);
       request.input(paramName, mssqlType(col), value);
@@ -330,7 +340,10 @@ async function main() {
   try {
     await login(page);
 
-    await page.goto(WZ_LIST_URL, { waitUntil: 'networkidle' });
+    await page.goto(WZ_LIST_URL, { waitUntil: 'domcontentloaded' });
+    // Tak samo jak w scrapeWzInPage: siatka ładuje się asynchronicznie, więc
+    // czekamy na realny sygnał (wiersz z DocNumber), nie na stan sieci.
+    await page.waitForSelector('td[data-datafield="DocNumber"]', { timeout: 30000 });
     console.log('[wz] Lista załadowana. Startuję zbieranie (max ' + MAX_DOCS + ' dok.)...');
 
     const result = await page.evaluate(scrapeWzInPage, {
