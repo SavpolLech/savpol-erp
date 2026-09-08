@@ -23,6 +23,7 @@ const path = require('path');
 const sql = require('mssql');
 const F = require('./lib/fields');
 const { mssqlType, coerceValue } = require('./lib/schema');
+const { loadState, saveState, appendRunLog } = require('./lib/state');
 
 // ---------- Konfiguracja ----------
 
@@ -94,7 +95,7 @@ async function login(page) {
 // liczb/dat, to robi Node po stronie, metadanymi ze schematu bazy.
 
 async function scrapeWzInPage(opts) {
-  const { maxDocs, headerFields, headerFieldsFromPositions, positionFields, maxSessionMs } = opts;
+  const { maxDocs, headerFields, headerFieldsFromPositions, positionFields, maxSessionMs, alreadyProcessed } = opts;
 
   const DOC_TYPES = ['WZ'];
   const MAX_PAGES = 100;
@@ -219,14 +220,18 @@ async function scrapeWzInPage(opts) {
 
   const headers = [];
   const positions = [];
-  const processedDocs = new Set();
+  const completedDocNumbers = [];
+  // Wznowienie: dokumenty z poprzedniego (przerwanego) przebiegu na ten sam
+  // zakres dat są od razu w processedDocs — pętla ich nie otworzy ponownie,
+  // tylko przewinie strony aż trafi na pierwszy, którego jeszcze nie ma.
+  const processedDocs = new Set(alreadyProcessed || []);
   let consecutiveFailures = 0;
   let processed = 0;
   let pageNum = 1;
 
   while (processed < maxDocs && pageNum <= MAX_PAGES) {
     if (sessionTimeUp()) {
-      return { headers, positions, docs: processed, partial: true, stoppedReason: 'session_time_limit' };
+      return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'session_time_limit' };
     }
     if (targetRows().length === 0) {
       await waitFor(() => targetRows().length > 0, 20, 300);
@@ -237,7 +242,7 @@ async function scrapeWzInPage(opts) {
     for (const targetDoc of docsOnPage) {
       if (processed >= maxDocs) break;
       if (sessionTimeUp()) {
-        return { headers, positions, docs: processed, partial: true, stoppedReason: 'session_time_limit' };
+        return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'session_time_limit' };
       }
 
       const row = targetRows().find(r => rowDocNumber(r) === targetDoc);
@@ -263,7 +268,7 @@ async function scrapeWzInPage(opts) {
         // człowieka (zawieszenie, ponowna próba), nie mechaniczne "bang bang bang".
         await sleep(jitter(DELAY_AFTER_CLOSE) * consecutiveFailures);
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-          return { headers, positions, docs: processed, partial: true };
+          return { headers, positions, completedDocNumbers, docs: processed, partial: true };
         }
         continue;
       }
@@ -283,6 +288,7 @@ async function scrapeWzInPage(opts) {
 
       headers.push(headerRec);
       positions.push(...posRows);
+      completedDocNumbers.push(targetDoc);
       processed++;
 
       const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
@@ -296,12 +302,12 @@ async function scrapeWzInPage(opts) {
     const pager = getVisiblePager();
     if (!pagerHasNextPage(pager)) break;
     if (!await goToNextPage(pager)) {
-      return { headers, positions, docs: processed, partial: true };
+      return { headers, positions, completedDocNumbers, docs: processed, partial: true };
     }
     pageNum++;
   }
 
-  return { headers, positions, docs: processed, partial: false };
+  return { headers, positions, completedDocNumbers, docs: processed, partial: false, allPagesExhausted: true };
 }
 
 // ---------- Zapis wyniku ----------
@@ -310,6 +316,25 @@ function loadSchemaMeta() {
   const p = path.join(__dirname, 'schema-test-tables.json');
   if (!fs.existsSync(p)) return null;
   return JSON.parse(fs.readFileSync(p, 'utf8'));
+}
+
+// Zabezpieczenie w SAMEJ BAZIE przed duplikatami — niezależnie od pliku
+// stanu (lib/state.js). Jeśli coś pójdzie nie tak z plikiem stanu (albo
+// ktoś odpali scraper ręcznie na ten sam zakres dwa razy), baza i tak nie
+// dostanie tego samego csDocsHeadersId drugi raz. Zwraca ID-ki, które JUŻ
+// są w tabeli — wywołujący filtruje nimi zarówno nagłówki, jak i pozycje
+// (pozycja bez swojego nagłówka w tym przebiegu też jest pomijana, bo
+// zakładamy, że trafiła do bazy razem z nim poprzednim razem).
+async function findExistingHeaderIds(pool, headerIdColMeta, rows) {
+  if (!rows.length) return new Set();
+  const ids = rows.map(r => coerceValue(r.csDocsHeadersId, headerIdColMeta)).filter(v => v !== null);
+  if (!ids.length) return new Set();
+  const request = pool.request();
+  const placeholders = ids.map((id, i) => { request.input('id' + i, mssqlType(headerIdColMeta), id); return '@id' + i; });
+  const result = await request.query(
+    'SELECT [csDocsHeadersId] AS id FROM dbo.' + F.TEST_TABLE_HEADERS + ' WHERE [csDocsHeadersId] IN (' + placeholders.join(', ') + ')'
+  );
+  return new Set(result.recordset.map(r => String(r.id)));
 }
 
 // Buduje jeden INSERT na tabelę + parametry otypowane wg metadanych kolumn
@@ -378,8 +403,18 @@ async function saveResult(result) {
   };
   const pool = await sql.connect(config);
   try {
-    const insertedHeaders = await insertRows(pool, F.TEST_TABLE_HEADERS, schema.headers, result.headers);
-    const insertedPositions = await insertRows(pool, F.TEST_TABLE_POSITIONS, schema.positions, result.positions);
+    const headerIdCol = schema.headers.find(c => c.COLUMN_NAME === 'csDocsHeadersId');
+    const existingIds = headerIdCol ? await findExistingHeaderIds(pool, headerIdCol, result.headers) : new Set();
+
+    const newHeaders = result.headers.filter(h => !existingIds.has(String(coerceValue(h.csDocsHeadersId, headerIdCol))));
+    const newPositions = result.positions.filter(p => !existingIds.has(String(coerceValue(p.csDocsHeadersId, headerIdCol))));
+
+    if (existingIds.size) {
+      console.log('[wynik] Pominięto ' + existingIds.size + ' dokumentów, które już były w bazie (ochrona przed duplikatem).');
+    }
+
+    const insertedHeaders = await insertRows(pool, F.TEST_TABLE_HEADERS, schema.headers, newHeaders);
+    const insertedPositions = await insertRows(pool, F.TEST_TABLE_POSITIONS, schema.positions, newPositions);
     console.log('[wynik] Zapisano do bazy "' + DB_NAME + '": ' + insertedHeaders + ' wierszy w ' +
       F.TEST_TABLE_HEADERS + ', ' + insertedPositions + ' wierszy w ' + F.TEST_TABLE_POSITIONS + '.');
   } finally {
@@ -536,12 +571,30 @@ function releaseLock() {
 
 async function main() {
   acquireLock();
+  const runStarted = Date.now();
+  const dateFrom = FILTER_DATE_FROM || FILTER_DATE_TO;
+  const dateTo = FILTER_DATE_TO || FILTER_DATE_FROM;
+
+  // Wznowienie: co już zebraliśmy dla TEGO SAMEGO zakresu dat w poprzednich
+  // (być może przerwanych) przebiegach — te numery WZ nie zostaną otwarte
+  // ponownie. Bez filtra dat nie ma sensownego "zakresu" do wznawiania —
+  // każdy przebieg bierze cokolwiek pokazuje bieżący widok.
+  const priorState = (dateFrom || dateTo) ? loadState(dateFrom, dateTo) : null;
+  if (priorState && priorState.processedDocNumbers.length) {
+    console.log('[wznowienie] Znaleziono stan dla ' + dateFrom + '..' + dateTo + ': ' +
+      priorState.processedDocNumbers.length + ' dok. już zebranych wcześniej' +
+      (priorState.complete ? ' (zakres oznaczony jako KOMPLETNY — ten przebieg nic nowego nie znajdzie).' : '.'));
+  }
+
   const browser = await chromium.launch({ headless: HEADLESS });
   const context = await browser.newContext();
   const page = await context.newPage();
 
   page.on('console', msg => console.log('[strona]', msg.text()));
   page.on('pageerror', err => console.error('[błąd strony]', err.message));
+
+  let result = null;
+  let errorMsg = null;
 
   try {
     await login(page);
@@ -555,24 +608,57 @@ async function main() {
       await setDocTypeFilter(page, 'WZ');
     }
 
-    if (FILTER_DATE_FROM || FILTER_DATE_TO) {
-      await setDateFilter(page, FILTER_DATE_FROM || FILTER_DATE_TO, FILTER_DATE_TO || FILTER_DATE_FROM);
+    if (dateFrom || dateTo) {
+      await setDateFilter(page, dateFrom, dateTo);
     }
 
     console.log('[wz] Lista załadowana. Startuję zbieranie (max ' + MAX_DOCS + ' dok.)...');
 
-    const result = await page.evaluate(scrapeWzInPage, {
+    result = await page.evaluate(scrapeWzInPage, {
       maxDocs: MAX_DOCS,
       headerFields: F.HEADER_FIELDS,
       headerFieldsFromPositions: F.HEADER_FIELDS_FROM_FIRST_POSITION,
       positionFields: F.POSITION_FIELDS,
-      maxSessionMs: MAX_SESSION_MINUTES * 60 * 1000
+      maxSessionMs: MAX_SESSION_MINUTES * 60 * 1000,
+      alreadyProcessed: priorState ? priorState.processedDocNumbers : []
     });
     console.log('[wz] Zebrano', result.headers.length, 'WZ,', result.positions.length, 'pozycji. partial=' + result.partial +
       (result.stoppedReason === 'session_time_limit' ? ' (koniec: limit czasu sesji ' + MAX_SESSION_MINUTES + ' min)' : ''));
 
     await saveResult(result);
+  } catch (err) {
+    errorMsg = err.message;
+    throw err;
   } finally {
+    if (dateFrom || dateTo) {
+      const newDocNumbers = result ? result.completedDocNumbers : [];
+      const nowComplete = !!(result && result.allPagesExhausted);
+      const saved = saveState(dateFrom, dateTo, {
+        newDocNumbers,
+        complete: nowComplete,
+        runSummary: {
+          ts: new Date().toISOString(),
+          docsNowe: newDocNumbers.length,
+          partial: result ? result.partial : null,
+          stoppedReason: result ? result.stoppedReason || null : null,
+          blad: errorMsg
+        }
+      });
+      console.log('[wznowienie] Stan dla ' + dateFrom + '..' + dateTo + ' zapisany: ' +
+        saved.processedDocNumbers.length + ' dok. łącznie, complete=' + saved.complete);
+    }
+
+    appendRunLog({
+      filterDateFrom: dateFrom, filterDateTo: dateTo,
+      maxDocs: MAX_DOCS, maxSessionMinutes: MAX_SESSION_MINUTES,
+      docsZebraneWTymPrzebiegu: result ? result.headers.length : 0,
+      pozycjeZebraneWTymPrzebiegu: result ? result.positions.length : 0,
+      partial: result ? result.partial : null,
+      stoppedReason: result ? result.stoppedReason || null : null,
+      czasTrwaniaMs: Date.now() - runStarted,
+      blad: errorMsg
+    });
+
     await browser.close();
     releaseLock();
   }

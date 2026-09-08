@@ -28,3 +28,8 @@ automatyzacje/**/.scrape.lock
 
 # Zrzuty ekranu do debugowania — mogą zawierać dane handlowe z ekranu ERP
 automatyzacje/**/debug-*.png
+
+# Stan postępu (które WZ już zebrane) i dziennik przebiegów — lokalny,
+# zawiera numery dokumentów; nie ma potrzeby wersjonować
+automatyzacje/**/state/
+automatyzacje/**/run-log.jsonl
