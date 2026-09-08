@@ -101,6 +101,22 @@ stronie danych z UI-scrapingu, czy są krytyczne i wymagają innego źródła
 (inny widok w ERP, którego jeszcze nie sprawdziliśmy, albo eksport/API tylko
 dla tych konkretnych pól).
 
+**Aktualizacja 2026-09-08 — `priceInfo` to XML z dodatkowymi polami.**
+Użytkownik znalazł, że kolumna `priceInfo` w pozycjach (już zbierana surowo,
+patrz wyżej) zawiera XML `<PriceInfoV04>` z polami, których nie widać jako
+osobne kolumny grida — m.in. `TermsFromPayer` (jedno z 17 "niedostępnych"
+pól nagłówka!). Świadoma decyzja: NIE parsujemy tego w scraperze — `priceInfo`
+i tak trafia do bazy jako surowy tekst, więc dane nie giną. Jeśli Michał
+będzie potrzebował `TermsFromPayer` (albo czegoś innego z tego XML-a), można
+go wyciągnąć po stronie SQL (`TRY_CAST`/`OPENXML`) z już zapisanej kolumny
+`priceInfo`, bez zmiany scrapera. Realnie więc z 17 "niedostępnych" pól
+nagłówka jedno (`TermsFromPayer`) jest technicznie odzyskiwalne downstream,
+reszta (`PaymentDay`, `csPaymentsTypesId`, `csPeriodsId`, `DocRecipientDate`,
+`csDocsHeadersStatusId`, `csVATPeriodsId`, `Cor`, `csEmployeesId`,
+`ShipmentType`, `IsOffInvoice`, `csB2BPortalsId`,
+`csB2BPortalsDeliveryMethodsId`, `csPayersId`, `anaKind`, `anaUse`,
+`anaDocDate`) nie pojawiła się w sprawdzonym przykładzie XML-a.
+
 ## Następny krok
 
 1. Włącz w ERP: 10 pól w gridzie pozycji (lista wyżej) + `ExchangeRate` też
