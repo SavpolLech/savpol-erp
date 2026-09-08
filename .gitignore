@@ -25,3 +25,6 @@ automatyzacje/**/schema-test-tables.json
 
 # Plik-blokada jednej aktywnej sesji scrapera — czysto lokalny stan procesu
 automatyzacje/**/.scrape.lock
+
+# Zrzuty ekranu do debugowania — mogą zawierać dane handlowe z ekranu ERP
+automatyzacje/**/debug-*.png
