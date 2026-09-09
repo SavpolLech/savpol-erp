@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.13.2
+// @version      3.14.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -109,6 +109,78 @@
     ENABLE: true,             // wyłącznik całej funkcji; false = zachowanie identyczne z v1.9
     REJECT_LOW_ROTATING: true // "Towar nisko rotujący" -> odrzuć (decyzja właściciela produktu)
   };
+
+  // ---------- Konfiguracja: spójność dziedziny anchora i kandydata ----------
+  //
+  // Problem, którego nie widać w statystyce. Dla „Polewy białej Cover Cream"
+  // analiza faktur zaproponowała, poprawnie liczbowo, „Sos do pizzy z farszem
+  // pieczarkowo-warzywnym" — bo piekarnie kupują jedno i drugie. Na stronie
+  // produktu taka propozycja wygląda jak pomyłka: to nie jest podpowiedź,
+  // tylko dowód, że nikt tego nie oglądał.
+  //
+  // Dlaczego nie po drzewie kategorii: struktura ERP tego nie rozstrzyga.
+  // Anchor to „Polewy / białe", trafne pary to „Mieszanki / Kremy cukiernicze",
+  // a nietrafiony sos to `Sosy i dodatki gastronomiczne\Sosy` — wszystkie trzy
+  // na tym samym poziomie. Reguła „ta sama gałąź" wycięłaby kremy razem
+  // z sosem. Podział na cukiernictwo i gastronomię istnieje w głowach ludzi,
+  // nie w katalogu, więc zapisujemy go tutaj — raz, jawnie.
+  //
+  // Dlaczego nie po SKU: wykluczanie pojedynczych produktów to gra w chowanego.
+  // Za tydzień wejdzie inny sos, potem frytura, i za każdym razem ktoś musi to
+  // wychwycić okiem.
+  const DZIEDZINY = {
+    ENABLE: true,
+
+    // Pierwszy segment ścieżki grupy → dziedzina. Segment `B2B\Kategorie\`
+    // jest wcześniej obcinany, jeśli występuje.
+    //
+    // Lista jest ŚWIADOMIE niepełna. Kategoria nieznana NIE odrzuca kandydata
+    // (patrz niżej), a każda napotkana i nieopisana trafia do konsoli — więc
+    // uzupełnia się przez używanie, a nie przez zgadywanie całego katalogu.
+    MAPA: {
+      'Polewy': 'cukiernictwo',
+      'Mieszanki': 'cukiernictwo',
+      'Koncentraty i mieszanki': 'cukiernictwo',
+      'Dekorowanie': 'cukiernictwo',
+      'Nadzienia': 'cukiernictwo',
+      'Lodziarskie produkty': 'cukiernictwo',
+      'Dodatki spożywcze': 'cukiernictwo',
+      'Sosy i dodatki gastronomiczne': 'gastronomia',
+      'Gastronomiczne produkty': 'gastronomia',
+      'Majonezy': 'gastronomia',
+      'Mięso, wędliny, ryby': 'gastronomia',
+      'Formy, ranty i wykrojniki': 'wyposażenie'
+    }
+  };
+
+  function dziedzinaGrupy(sciezka) {
+    if (!sciezka) return null;
+    const czysta = String(sciezka).replace(/^B2B[\\/]+Kategorie[\\/]+/i, '');
+    const pierwszy = czysta.split(/[\\/]/)[0].trim();
+    if (!pierwszy) return null;
+    const d = DZIEDZINY.MAPA[pierwszy];
+    if (!d) {
+      // Nie odrzucamy, ale meldujemy — inaczej luka w tabeli byłaby niewidoczna.
+      console.log('[Cross-sell] Kategoria „' + pierwszy + '" nie ma przypisanej '
+        + 'dziedziny — kandydatów z niej nie odsiewam. Warto ją dopisać do DZIEDZINY.MAPA.');
+      return null;
+    }
+    return d;
+  }
+
+  // Kandydat pasuje, dopóki nie ma DOWODU, że nie pasuje.
+  //
+  // Odrzucamy wyłącznie wtedy, gdy znamy obie dziedziny i są różne. Nieznana
+  // kategoria po którejkolwiek stronie oznacza „nie wiem", a nie „nie pasuje":
+  // awaria odczytu katalogu albo dziura w tabeli nie powinna kasować trafnej
+  // rekomendacji.
+  function dziedzinaSieKloci(grupaAnchora, grupaKandydata) {
+    if (!DZIEDZINY.ENABLE) return null;
+    const a = dziedzinaGrupy(grupaAnchora);
+    const k = dziedzinaGrupy(grupaKandydata);
+    if (!a || !k || a === k) return null;
+    return { anchora: a, kandydata: k };
+  }
 
   // ---------- Konfiguracja: wykluczenie po grupie katalogowej (Zadanie 3) ----------
   // Grupa jest dostępna tylko przez ten sam odczyt katalogu co filtr dostępności
@@ -1767,7 +1839,7 @@
 
   // Przechodzi po pełnym (zdeduplikowanym po rodzinie) rankingu i dobiera
   // kolejnych kandydatów z rankingu, gdy poprzedni odpada na dostępności.
-  async function applyAvailabilityFilter(dedupedRanked, topN, onProgress) {
+  async function applyAvailabilityFilter(dedupedRanked, topN, onProgress, grupaAnchora) {
     const kept = [];
     const rejected = [];
     let checked = 0; // ilu kandydatów faktycznie odpytaliśmy w katalogu
@@ -1806,6 +1878,17 @@
         const groupRule = findGroupExclusion(info.group);
         if (groupRule) {
           rejected.push({ ...entry, group: info.group, reason: `grupa:${groupRule}` });
+          continue;
+        }
+      }
+
+      // Dziedzina — po grupach, przed stanem magazynowym: nie ma sensu
+      // sprawdzać dostępności czegoś, czego i tak nie pokażemy.
+      if (!hasSkuAllow) {
+        const kolizja = dziedzinaSieKloci(grupaAnchora, info.group);
+        if (kolizja) {
+          rejected.push({ ...entry, group: info.group,
+            reason: 'inna dziedzina (' + kolizja.kandydata + ' vs ' + kolizja.anchora + ')' });
           continue;
         }
       }
@@ -4066,10 +4149,24 @@
             'zwracam wynik BEZ weryfikacji stanu magazynowego i grupy.');
           analysis.unverified = true;
         } else {
+          // Grupa ANCHORA, odczytana przed sprawdzaniem kandydatów — bez niej
+          // nie ma z czym porównywać ich dziedziny. Jedno dodatkowe wyszukanie
+          // w katalogu, w którym i tak już jesteśmy.
+          try {
+            const anchorItem = await lookupCatalogItem(mainSku);
+            anchorGroup = anchorItem ? anchorItem.group : null;
+          } catch (err) {
+            if (err && err.isAbort) throw err;
+            console.warn('[Cross-sell] Nie odczytałem grupy anchora:',
+              err && err.message || err);
+          }
+          console.log('[Cross-sell] Grupa anchora: ' + (anchorGroup || 'nieodczytana')
+            + ' → dziedzina: ' + (dziedzinaGrupy(anchorGroup) || 'nieznana'));
+
           const avail = await applyAvailabilityFilter(analysis.dedupedRanked, CROSS_SELL.TOP_N, (msg) => {
             button.textContent = msg;
             ui.detail(msg);
-          });
+          }, anchorGroup);
           logAvailability(avail);
           analysis.candidates = avail.kept;
           analysis.weakSignal = analysis.weakSignal || avail.kept.length === 0;
