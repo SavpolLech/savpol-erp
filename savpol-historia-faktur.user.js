@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.14.0
+// @version      3.14.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -137,35 +137,57 @@
     // Lista jest ŚWIADOMIE niepełna. Kategoria nieznana NIE odrzuca kandydata
     // (patrz niżej), a każda napotkana i nieopisana trafia do konsoli — więc
     // uzupełnia się przez używanie, a nie przez zgadywanie całego katalogu.
+    // Segment ścieżki → dziedzina. Sprawdzamy KAŻDY segment, nie tylko
+    // pierwszy: głębokość ścieżek bywa różna (`…\Dekorowanie\Dekoracje cukrowe`
+    // obok `…\Cukiernicze produkty\Mieszanki\Kremy cukiernicze`), więc
+    // przywiązanie się do jednego poziomu byłoby kruche.
+    //
+    // Uwaga: sam pierwszy poziom katalogu NIE wystarcza jako kryterium. Anchor
+    // „Polewa biała" leży w `Czekolady, Kakao`, a trafne pary w `Cukiernicze
+    // produkty` — dla katalogu to osobne gałęzie, dla człowieka jedna
+    // dziedzina. Właśnie dlatego to przypisanie musi być ręczne.
     MAPA: {
+      // pierwszy poziom katalogu
+      'Czekolady, Kakao': 'cukiernictwo',
+      'Cukiernicze produkty': 'cukiernictwo',
+      'Lodziarskie produkty': 'cukiernictwo',
+      'Piekarnicze produkty': 'piekarnictwo',
+      'Gastronomiczne produkty': 'gastronomia',
+
+      // poziomy niżej — na wypadek krótszej ścieżki albo pierwszego poziomu,
+      // którego nie ma jeszcze w tabeli
       'Polewy': 'cukiernictwo',
       'Mieszanki': 'cukiernictwo',
       'Koncentraty i mieszanki': 'cukiernictwo',
       'Dekorowanie': 'cukiernictwo',
       'Nadzienia': 'cukiernictwo',
-      'Lodziarskie produkty': 'cukiernictwo',
-      'Dodatki spożywcze': 'cukiernictwo',
       'Sosy i dodatki gastronomiczne': 'gastronomia',
-      'Gastronomiczne produkty': 'gastronomia',
       'Majonezy': 'gastronomia',
       'Mięso, wędliny, ryby': 'gastronomia',
       'Formy, ranty i wykrojniki': 'wyposażenie'
     }
   };
 
+  function segmentyGrupy(sciezka) {
+    if (!sciezka) return [];
+    return String(sciezka)
+      .replace(/^B2B[\\/]+Kategorie[\\/]+/i, '')
+      .split(/[\\/]/)
+      .map(x => x.trim())
+      .filter(Boolean);
+  }
+
   function dziedzinaGrupy(sciezka) {
-    if (!sciezka) return null;
-    const czysta = String(sciezka).replace(/^B2B[\\/]+Kategorie[\\/]+/i, '');
-    const pierwszy = czysta.split(/[\\/]/)[0].trim();
-    if (!pierwszy) return null;
-    const d = DZIEDZINY.MAPA[pierwszy];
-    if (!d) {
-      // Nie odrzucamy, ale meldujemy — inaczej luka w tabeli byłaby niewidoczna.
-      console.log('[Cross-sell] Kategoria „' + pierwszy + '" nie ma przypisanej '
-        + 'dziedziny — kandydatów z niej nie odsiewam. Warto ją dopisać do DZIEDZINY.MAPA.');
-      return null;
+    const segmenty = segmentyGrupy(sciezka);
+    if (!segmenty.length) return null;
+    for (const seg of segmenty) {
+      if (DZIEDZINY.MAPA[seg]) return DZIEDZINY.MAPA[seg];
     }
-    return d;
+    // Nie odrzucamy, ale meldujemy — inaczej luka w tabeli byłaby niewidoczna.
+    console.log('[Cross-sell] Grupa „' + segmenty.join(' > ') + '" nie ma '
+      + 'przypisanej dziedziny — kandydatów z niej nie odsiewam. '
+      + 'Warto dopisać do DZIEDZINY.MAPA.');
+    return null;
   }
 
   // Kandydat pasuje, dopóki nie ma DOWODU, że nie pasuje.
