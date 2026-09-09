@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.12.0
+// @version      3.13.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -523,7 +523,20 @@
 
     // Zawsze wykluczaj te SKU (chłodnia/mrożonka/wycofane, czego nazwa nie zdradza).
     // Format: '0005261': 'Serowe prod. Wykwintny — chłodnia'
-    skuDeny: {},
+    //
+    // Osobna kategoria wpisów: PRODUKTY WYPEŁNIACZOWE. Tani, uniwersalny towar
+    // dokupowany niemal do każdego zamówienia — olej, cukier puder — trafia na
+    // szczyt rankingu współwystępowania, bo faktycznie leży na większości
+    // faktur. Statystycznie to prawda, a jako rekomendacja jest bezwartościowe:
+    // nie mówi nic o tym produkcie i zajmuje miejsce, w którym mogłoby stać coś
+    // trafnego. Do tego niska marża, więc i sprzedażowo nie ma czego bronić.
+    //
+    // Nie da się ich odsiać progiem: one mają NAJWYŻSZE wskaźniki. Rozstrzyga
+    // decyzja handlowa, czyli lista.
+    skuDeny: {
+      '0020669': 'wypełniacz — olej, w prawie każdym koszyku, niska marża',
+      '0006418': 'wypełniacz — cukier puder, w prawie każdym koszyku, niska marża'
+    },
 
     // Nigdy nie wykluczaj tych SKU — ratunek na fałszywe trafienia reguł.
     // Wygrywa z regułami nazwowymi ORAZ z progiem gramatury.
@@ -2883,6 +2896,76 @@
   // uruchomić dwóch pętli odpytujących ten sam produkt.
   const pilnowane = {};
 
+  // ---------- Ile razy który produkt trafił do rekomendacji ----------
+  //
+  // Produkty wypełniaczowe (tani, uniwersalny towar dokupowany do wszystkiego)
+  // wchodzą na szczyt rankingu, bo naprawdę leżą na większości faktur — i tym
+  // samym są bezwartościową rekomendacją. Dwa takie znamy z obserwacji: olej
+  // i cukier puder. Reszty nie da się wskazać z pamięci, bo nikt nie ogląda
+  // trzydziestu przebiegów naraz.
+  //
+  // Więc liczymy. Po kilkunastu przebiegach lista sama pokaże, co wraca zawsze,
+  // niezależnie od tego, jaki produkt był anchorem — a to jest właśnie definicja
+  // wypełniacza. Decyzja o wpisaniu na listę wykluczeń zostaje przy człowieku:
+  // niektóre produkty wracają często, bo naprawdę do siebie pasują.
+  const LICZNIK_KLUCZ = 'savpol_licznik_polecen';
+
+  function policzPolecenia(anchorSku, kandydaci) {
+    if (typeof GM_setValue !== 'function' || !kandydaci || !kandydaci.length) return;
+    try {
+      const dane = JSON.parse(GM_getValue(LICZNIK_KLUCZ, '{}')) || {};
+      dane.__przebiegow__ = (dane.__przebiegow__ || 0) + 1;
+      kandydaci.forEach(k => {
+        const sku = String(k.sku || '').trim();
+        if (!sku) return;
+        const w = dane[sku] || { ile: 0, nazwa: '', anchory: [] };
+        w.ile += 1;
+        w.nazwa = k.name || w.nazwa;
+        // Trzymamy tylko kilka ostatnich anchorów — do oceny wystarczy wiedzieć,
+        // czy są różnorodne, a nie mieć ich komplet.
+        if (w.anchory.indexOf(anchorSku) < 0) w.anchory = w.anchory.concat(anchorSku).slice(-8);
+        dane[sku] = w;
+      });
+      GM_setValue(LICZNIK_KLUCZ, JSON.stringify(dane));
+    } catch (e) { /* statystyka to nie powód, żeby psuć przebieg */ }
+  }
+
+  function pokazCzestoPolecane() {
+    let dane = {};
+    try { dane = JSON.parse(GM_getValue(LICZNIK_KLUCZ, '{}')) || {}; } catch (e) { dane = {}; }
+    const przebiegow = dane.__przebiegow__ || 0;
+    const lista = Object.keys(dane)
+      .filter(k => k !== '__przebiegow__')
+      .map(sku => ({ sku: sku, ...dane[sku] }))
+      .sort((a, b) => b.ile - a.ile);
+
+    if (!lista.length) {
+      console.log('[Cross-sell] Nie mam jeszcze żadnych zliczeń. Policzą się '
+        + 'przy kolejnych przebiegach.');
+      return '';
+    }
+    const linie = [];
+    linie.push('Jak często produkty wracają w rekomendacjach');
+    linie.push('Przebiegów policzonych: ' + przebiegow);
+    linie.push('Data: ' + new Date().toISOString());
+    linie.push('');
+    linie.push('Im wyższy udział, tym bardziej produkt wygląda na wypełniacz —');
+    linie.push('czyli towar dokupowany do wszystkiego, niezależnie od anchora.');
+    linie.push('');
+    lista.forEach(w => {
+      const udzial = przebiegow ? Math.round((w.ile / przebiegow) * 100) : 0;
+      linie.push(String(w.sku).padEnd(10) + String(w.ile).padStart(3) + ' z ' + przebiegow
+        + '  (' + udzial + '%)  ' + String(w.nazwa || '').slice(0, 50)
+        + '   anchory: ' + (w.anchory || []).join(' '));
+    });
+    const txt = linie.join('\n');
+    console.log(txt);
+    ostatniZrzut = txt;
+    skopiujDoSchowka(txt);
+    console.log('[Cross-sell] Zestawienie jest w schowku.');
+    return txt;
+  }
+
   // ---------- Zapamiętane wyniki analizy ----------
   //
   // Analiza faktur trwa około trzech minut. Gdy ktoś zamknie przeglądarkę
@@ -4123,6 +4206,7 @@
           invoices: analysis.N,
           group: anchorGroup
         });
+        policzPolecenia(mainSku, analysis.candidates);
         zapiszWynikPrzebiegu(mainSku, {
           skusText: skusText,
           invoices: analysis.N,
@@ -6494,6 +6578,12 @@
     unsafeWindow.savpolKopia = function (path) {
       if (!path) { console.warn('[Kopie] Podaj ścieżkę z savpolKopie().'); return; }
       return pokazKopie1(String(path));
+    };
+
+    // Które produkty wracają w rekomendacjach najczęściej — materiał do
+    // decyzji, co dopisać do listy wykluczeń.
+    unsafeWindow.savpolCzestoPolecane = function () {
+      return pokazCzestoPolecane();
     };
 
     unsafeWindow.savpolOstatniZrzut = function () {
