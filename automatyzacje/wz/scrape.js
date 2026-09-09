@@ -38,6 +38,7 @@ function applyFixedValues(batch) {
   });
 }
 const { loadState, saveState, appendRunLog } = require('./lib/state');
+const { pushLogs } = require('./lib/git-log-push');
 
 // ---------- Konfiguracja ----------
 
@@ -778,8 +779,12 @@ async function main() {
       blad: errorMsg
     });
 
+    // Widoczność bez dostępu do maszyny, na której to leci (docelowo: serwer
+    // firmowy) — dziennik i stan idą do repo. Po zamknięciu przeglądarki, nie
+    // przed — nie ma sensu ryzykować, że commit/push zablokuje sprzątanie.
     await browser.close();
     releaseLock();
+    pushLogs(dateFrom ? (dateFrom + '..' + dateTo) : null);
   }
 }
 

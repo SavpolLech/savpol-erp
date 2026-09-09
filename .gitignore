@@ -29,7 +29,8 @@ automatyzacje/**/.scrape.lock
 # Zrzuty ekranu do debugowania — mogą zawierać dane handlowe z ekranu ERP
 automatyzacje/**/debug-*.png
 
-# Stan postępu (które WZ już zebrane) i dziennik przebiegów — lokalny,
-# zawiera numery dokumentów; nie ma potrzeby wersjonować
-automatyzacje/**/state/
-automatyzacje/**/run-log.jsonl
+# Stan postępu i dziennik przebiegów CELOWO WERSJONOWANE (od 2026-09-10) —
+# automatyzacja na serwerze sama je commituje/pushuje po każdym przebiegu
+# (lib/git-log-push.js), żeby było widać co się dzieje bez dostępu do
+# serwera. Zawierają tylko numery dokumentów i liczniki, nie dane handlowe
+# (kwoty, kontrahenci) — te zostają wyłącznie w CSV, dalej ignorowanym wyżej.
