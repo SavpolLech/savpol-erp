@@ -45,9 +45,10 @@ async function main() {
   };
   const pool = await sql.connect(config);
 
-  const headerFieldsAll = F.HEADER_FIELDS.concat(F.HEADER_FIELDS_FROM_FIRST_POSITION);
+  const headerFieldsAll = F.HEADER_FIELDS.concat(F.HEADER_FIELDS_FROM_FIRST_POSITION, F.HEADER_FIXED_FIELDS);
+  const positionFieldsAll = F.POSITION_FIELDS.concat(F.POSITION_FIXED_FIELDS);
   await checkTable(pool, F.TEST_TABLE_HEADERS, headerFieldsAll);
-  await checkTable(pool, F.TEST_TABLE_POSITIONS, F.POSITION_FIELDS);
+  await checkTable(pool, F.TEST_TABLE_POSITIONS, positionFieldsAll);
 
   await pool.close();
 }

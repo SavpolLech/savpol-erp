@@ -41,6 +41,10 @@ const POSITION_FIELDS = [
   'priceInfo', 'CUnitPriceSuggested', 'CUnitPriceSuggestedSalesAgr', 'paramsJSON'
 ];
 
+// Kolumny NOT NULL bez wartości ze scrapowania — wypełniane stałymi z
+// lib/fixed-values.js (wartości od Michała, 2026-09-09, per typ dokumentu).
+const { HEADER_FIXED_FIELDS, POSITION_FIXED_FIELDS } = require('./fixed-values');
+
 const TEST_TABLE_HEADERS = 'csDocsHeaders_test';
 const TEST_TABLE_POSITIONS = 'csDocsItemsPositions_test';
 const PROD_TABLE_HEADERS = 'csDocsHeaders';
@@ -49,7 +53,9 @@ const PROD_TABLE_POSITIONS = 'csDocsItemsPositions';
 module.exports = {
   HEADER_FIELDS,
   HEADER_FIELDS_FROM_FIRST_POSITION,
+  HEADER_FIXED_FIELDS,
   POSITION_FIELDS,
+  POSITION_FIXED_FIELDS,
   TEST_TABLE_HEADERS,
   TEST_TABLE_POSITIONS,
   PROD_TABLE_HEADERS,

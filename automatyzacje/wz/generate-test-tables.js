@@ -31,9 +31,10 @@ async function main() {
   console.log('[schema] Czytam typy kolumn z "' + DB_NAME + '" (tabele testowe Michała)...');
   const pool = await sql.connect(config);
 
-  const headerFieldsAll = F.HEADER_FIELDS.concat(F.HEADER_FIELDS_FROM_FIRST_POSITION);
+  const headerFieldsAll = F.HEADER_FIELDS.concat(F.HEADER_FIELDS_FROM_FIRST_POSITION, F.HEADER_FIXED_FIELDS);
+  const positionFieldsAll = F.POSITION_FIELDS.concat(F.POSITION_FIXED_FIELDS);
   const headers = await fetchColumnsMeta(pool, 'dbo', F.TEST_TABLE_HEADERS, headerFieldsAll);
-  const positions = await fetchColumnsMeta(pool, 'dbo', F.TEST_TABLE_POSITIONS, F.POSITION_FIELDS);
+  const positions = await fetchColumnsMeta(pool, 'dbo', F.TEST_TABLE_POSITIONS, positionFieldsAll);
 
   await pool.close();
 
@@ -44,7 +45,7 @@ async function main() {
     console.warn('[schema] UWAGA: brak w ' + F.TEST_TABLE_POSITIONS + ': ' + positions.missing.join(', '));
   }
   console.log('[schema] Nagłówek: ' + headers.found.length + '/' + headerFieldsAll.length + ' pól znalezionych.');
-  console.log('[schema] Pozycje: ' + positions.found.length + '/' + F.POSITION_FIELDS.length + ' pól znalezionych.');
+  console.log('[schema] Pozycje: ' + positions.found.length + '/' + positionFieldsAll.length + ' pól znalezionych.');
 
   fs.writeFileSync(path.join(__dirname, 'schema-test-tables.json'), JSON.stringify({
     headers: headers.found,

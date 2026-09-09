@@ -23,6 +23,20 @@ const path = require('path');
 const sql = require('mssql');
 const F = require('./lib/fields');
 const { mssqlType, coerceValue } = require('./lib/schema');
+const { HEADER_FIXED_VALUES, POSITION_FIXED_VALUES } = require('./lib/fixed-values');
+
+// Dopisuje stałe wartości (Michał, 2026-09-09) do rekordów paczki PRZED
+// zapisem — te pola nie są scrapowane z ERP, to wewnętrzne flagi zależne od
+// typu dokumentu (dla WZ zawsze te same). createdDate pozycji = DocDate jej
+// nagłówka (reguła, nie stała — stąd osobna obsługa).
+function applyFixedValues(batch) {
+  const docDateByHeaderId = new Map(batch.headers.map(h => [h.csDocsHeadersId, h.DocDate]));
+  batch.headers.forEach(h => Object.assign(h, HEADER_FIXED_VALUES));
+  batch.positions.forEach(p => {
+    Object.assign(p, POSITION_FIXED_VALUES);
+    p.createdDate = docDateByHeaderId.get(p.csDocsHeadersId) || null;
+  });
+}
 const { loadState, saveState, appendRunLog } = require('./lib/state');
 
 // ---------- Konfiguracja ----------
@@ -698,6 +712,8 @@ async function main() {
         maxSessionMs: remainingMs,
         alreadyProcessed: Array.from(processedThisRun)
       });
+
+      applyFixedValues(batch);
 
       // ZAPIS OD RAZU — nie czekamy do końca sesji. Padnięcie procesu teraz
       // kosztuje najwyżej tę jedną paczkę, nie cały przebieg.

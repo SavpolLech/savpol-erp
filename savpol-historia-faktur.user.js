@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.14.3
+// @version      3.14.4
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -169,7 +169,6 @@
       'Gastronomiczne produkty': 'gastronomia',
       'Mięso, wędliny, ryby': 'gastronomia',
       'Przyprawy, marynaty': 'gastronomia',
-      'Pieczywo, ciasta': 'gastronomia',
 
       'Kawa, herbata': 'napoje',
       'Polewy, syropy, napoje': 'napoje',
@@ -184,6 +183,12 @@
       'Tace, podkładki i monoporcje': 'wszystkie',
       'Foremki jednorazowe': 'wszystkie',
       'Opakowania i sztućce jednorazowe': 'wszystkie',
+
+      // Wyroby gotowe i mrożone. Cała ta gałąź jest na `groupDeny`, więc jako
+      // KANDYDAT nie przechodzi tak czy tak. Liczy się tylko wtedy, gdy taki
+      // produkt jest ANCHOREM — a wówczas każde przypisanie mogłoby jedynie
+      // zaszkodzić: do mrożonego ciasta pasują i polewy, i dekoracje.
+      'Pieczywo, ciasta': 'wszystkie',
 
       // Surowce wspólne — nie rozstrzygają dziedziny w żadną stronę.
       'Dodatki spożywcze': 'wszystkie',
