@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.14.2
+// @version      3.14.3
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -178,6 +178,13 @@
       'Non food': 'wyposażenie',
       'Opakowania': 'wyposażenie',
 
+      // Wyjątki wewnątrz `Non food` — akcesoria kupowane RAZEM z wyrobem,
+      // nie zaopatrzenie zakładu. Dzięki skanowaniu od najgłębszego segmentu
+      // te wpisy wygrywają z `Non food` powyżej.
+      'Tace, podkładki i monoporcje': 'wszystkie',
+      'Foremki jednorazowe': 'wszystkie',
+      'Opakowania i sztućce jednorazowe': 'wszystkie',
+
       // Surowce wspólne — nie rozstrzygają dziedziny w żadną stronę.
       'Dodatki spożywcze': 'wszystkie',
       'Nabiał': 'wszystkie',
@@ -196,11 +203,20 @@
       .filter(Boolean);
   }
 
+  // Szukamy od NAJGŁĘBSZEGO segmentu w stronę korzenia, żeby wpis dla
+  // podkategorii mógł nadpisać wpis dla całej gałęzi. Tak działa już lista
+  // groupAllow wobec groupDeny — dłuższa ścieżka wygrywa — więc reguła jest
+  // ta sama, a nie druga, konkurencyjna.
+  //
+  // Po co: `Non food` to jako całość wyposażenie, ale `Tace, podkładki
+  // i monoporcje` czy `Foremki jednorazowe` kupuje się razem z konkretnym
+  // wyrobem, więc nie mogą wypadać razem z chemią i odzieżą.
   function dziedzinaGrupy(sciezka) {
     const segmenty = segmentyGrupy(sciezka);
     if (!segmenty.length) return null;
-    for (const seg of segmenty) {
-      if (DZIEDZINY.MAPA[seg]) return DZIEDZINY.MAPA[seg];
+    for (let i = segmenty.length - 1; i >= 0; i--) {
+      const d = DZIEDZINY.MAPA[segmenty[i]];
+      if (d) return d;
     }
     // Nie odrzucamy, ale meldujemy — inaczej luka w tabeli byłaby niewidoczna.
     console.log('[Cross-sell] Grupa „' + segmenty.join(' > ') + '" nie ma '
