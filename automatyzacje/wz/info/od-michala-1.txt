@@ -1,0 +1,381 @@
+﻿ Re: Rozszerzony zestaw pól do pobierania dokumentów z CS
+Temat:
+Re: Rozszerzony zestaw pól do pobierania dokumentów z CS
+Nadawca:
+Michał <michal.jankowski03@gmail.com>
+Data:
+9.09.2026, 15:03
+Adresat:
+Lech Dutkiewicz <l.dutkiewicz@savpol.pl>
+
+Dla dokumentów WZ przypiszemy takie wartości dla csDocsHeaders:
+
+anaKind 	anaUse 	CAddressType 	csDocumentsGenType 	CUnitPriceGetMethod 	CVATMethod 	DAddressType 	DiscountGetMethod 	DocsHeadersPaymentsPaymentBalance 	DocsHeadersPaymentsPositionsPaymentBalance 	doNotAutoCalcByKSeF 	FVATMethod 	IsAcceptanceRequired 	IsAssetsDim 	IsCompanyCustomer 	IsConfidential 	IsCustomerOwnsStocks 	IsCustomerVisible 	IsDocNumberExtAdd2Visible 	IsDocNumberExtVisible 	IsDuplicate 	IsHeaderDimensionsRequired 	IsIncomeSettled 	IsManySettlements 	IsNot4TimeAndAttendance 	IsOfficeDoc 	IsOffInvoice 	IsPaidFull 	IsPaidFullDocsHeadersPaymentsPositions 	IsPositionDimensionsRequired 	IsProcessingPersonalDataByCeneoAccepted 	IsRelatedTransactionsDim 	IsRequestsDim 	isSplitPaymentRequired 	IsThreeWayTransaction 	IsTransactionWithinUE 	IsVATOnlyAccounting 	IsVerified 	NoCheckVATRate 	noSettlementGen 	PricesPrecision 	RAddressType 	ResStatus 	SAddressType 	updCount 	UseRecyclingFee 	Warehousing
+2 	1 	0 	1 	0 	0 	0 	0 	0.000000 	0.000000 	0 	0 	0 	1 	0 	0 	0 	1 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	0 	2 	2 	0 	0 	0 	0 	0
+
+Dla csDocsItemsPositions:
+
+IsFromDiscountCodes 	IsPosVat 	OperationKind 	SEZKind 	ShowAddInfo
+0 	1 	0 	0 	0
+
+csDocsItemsPositions.createdDate ustawmy na taką samą wartość jak csDocsHeaders.DocDate, chyba że mamy wartość csDocsHeaders.lastModifiedDate to wtedy na nią
+
+Z wyrazami szacunku,
+Michał Jankowski
+
+
+śr., 9 wrz 2026 o 13:45 Michał <michal.jankowski03@gmail.com> napisał(a):
+
+    Zestawienie flag per dokument:
+
+    anaKindMin 	anaKindMax 	anaUseMin 	anaUseMax 	TypDok
+    0 	0 	0 	0 	BZFK
+    1 	1 	1 	1 	FAKR
+    1 	1 	1 	1 	FUINK
+    0 	0 	0 	0 	FZ
+    0 	0 	0 	0 	FZUEK
+    0 	0 	0 	0 	KSeF_IMP
+    0 	0 	0 	0 	KW
+    1 	1 	1 	1 	PAR
+    0 	0 	0 	0 	PZW
+    0 	0 	0 	0 	RD
+    0 	0 	0 	0 	RKUR
+    0 	0 	0 	0 	SOFT
+    0 	0 	0 	0 	VAT-7
+    0 	0 	0 	0 	WBUSD
+    2 	2 	1 	1 	WZ
+    2 	2 	0 	1 	WZZ
+    0 	0 	0 	0 	ZBRW
+    0 	0 	0 	0 	ZK
+    0 	0 	0 	0 	ZOUE
+    0 	0 	0 	0 	ZPR
+    1 	1 	1 	1 	FAEK
+    0 	0 	0 	0 	FPAR
+    1 	1 	1 	1 	FUINW
+    0 	0 	0 	0 	FZI
+    0 	0 	0 	0 	KWP
+    0 	0 	0 	0 	LP
+    0 	0 	0 	0 	LS
+    0 	0 	0 	0 	PK
+    0 	0 	0 	0 	PZZk
+    0 	0 	0 	0 	RAPKAS
+    0 	0 	0 	0 	RWT
+    0 	0 	0 	0 	SAD
+    0 	0 	0 	0 	UMRZ
+    0 	0 	0 	0 	VS_SAD(art.33a)
+    0 	0 	0 	0 	VSU
+    0 	0 	0 	0 	VZU
+    0 	0 	0 	0 	ZALZK
+    0 	0 	0 	0 	ZD
+    0 	0 	0 	0 	ZDUE
+    0 	0 	0 	0 	ZKPro
+    0 	0 	0 	0 	ZOID
+    0 	0 	0 	0 	ZOP
+    1 	1 	0 	1 	FA
+    1 	1 	1 	1 	FAE
+    1 	1 	1 	1 	FM
+    0 	0 	0 	0 	FPro
+    0 	0 	0 	0 	FZ_KSEF
+    0 	0 	0 	0 	KP
+    0 	0 	0 	0 	KPP
+    0 	0 	0 	0 	NOT
+    1 	1 	1 	1 	Nota
+    0 	0 	0 	0 	Pg
+    0 	0 	0 	0 	PZ
+    0 	0 	0 	0 	PZI
+    0 	0 	0 	0 	PZUEK
+    0 	0 	0 	0 	RMKS
+    0 	0 	0 	0 	RWO
+    0 	0 	0 	0 	WbFr
+    2 	2 	0 	0 	WZZRk
+    0 	0 	0 	0 	ZALSK
+    0 	0 	0 	0 	ZBPW
+    0 	0 	0 	0 	ZOE
+    0 	0 	0 	0 	BLOCK
+    1 	1 	0 	1 	FAK
+    0 	0 	0 	0 	FAKD
+    0 	0 	0 	0 	FZK_KSeF
+    0 	0 	0 	0 	IMPO
+    0 	0 	0 	0 	KPM
+    0 	0 	0 	0 	LPD
+    0 	0 	0 	0 	PWB
+    0 	0 	0 	0 	PWK
+    0 	0 	0 	0 	PWO
+    0 	0 	0 	0 	RACHZ
+    0 	0 	0 	0 	RO
+    0 	0 	0 	0 	RW
+    0 	0 	0 	0 	SAD(art.33a)
+    0 	0 	0 	0 	WdZ
+    0 	0 	0 	0 	ZALS
+    0 	0 	0 	0 	ZB
+    0 	0 	0 	0 	ZBK
+    0 	0 	0 	0 	ZN
+    1 	1 	1 	1 	FUIN
+    0 	0 	0 	0 	FZK
+    0 	0 	0 	0 	FZKD_KSeF
+    0 	0 	0 	0 	KWM
+    0 	0 	0 	0 	MMz
+    0 	0 	0 	0 	OFTUE
+    0 	0 	0 	0 	PZIK
+    0 	0 	0 	0 	PZUE
+    0 	0 	0 	0 	PZZ
+    0 	0 	0 	0 	VAT-UE
+    0 	0 	0 	0 	VZ
+    0 	0 	0 	0 	WBEUR
+    0 	0 	0 	0 	ZOM
+    0 	0 	0 	0 	AMO
+    0 	0 	0 	0 	BPP
+    0 	0 	0 	0 	COI
+    1 	1 	1 	1 	FUMA
+    1 	1 	1 	1 	FUMAUE
+    0 	0 	0 	0 	KO
+    0 	0 	0 	0 	PARM
+    0 	0 	0 	0 	PR
+    0 	0 	0 	0 	RMPK
+    0 	0 	0 	0 	VS
+    0 	0 	0 	0 	WBVAT
+    0 	0 	0 	0 	WI
+    0 	0 	0 	0 	ZALZ
+    0 	0 	0 	0 	ZAP
+    0 	0 	0 	0 	ZK_KSeF
+    1 	1 	1 	1 	FMK
+    1 	1 	1 	1 	FUMAk
+    0 	0 	0 	0 	FZE
+    0 	0 	0 	0 	FZT
+    0 	0 	0 	0 	FZUE
+    0 	0 	0 	0 	INWE
+    0 	0 	0 	0 	MM
+    0 	0 	0 	0 	NotKor
+    0 	0 	0 	0 	OT
+    0 	0 	0 	0 	PrZW
+    0 	0 	0 	0 	PZK
+    0 	0 	0 	0 	PZT
+    0 	0 	0 	0 	ROZK
+    2 	2 	0 	1 	WZK
+    2 	2 	1 	1 	WZZR
+    0 	0 	0 	0 	ZO
+    0 	0 	0 	0 	ZOIH
+    0 	0 	0 	0 	ZZD
+    0 	0 	0 	0 	CEN
+    1 	1 	1 	1 	FAUE
+    1 	1 	1 	1 	FAUEK
+    0 	0 	0 	0 	FWTp
+    0 	0 	0 	0 	IST
+    0 	0 	0 	0 	LSW
+    0 	0 	0 	0 	NRKUR
+    0 	0 	0 	0 	OFT
+    1 	1 	0 	1 	PARK
+    0 	0 	0 	0 	Polisa
+    0 	0 	0 	0 	PW
+    0 	0 	0 	0 	PZZR
+    0 	0 	0 	0 	UMRS
+    0 	0 	0 	0 	UNBLOCK
+    0 	0 	0 	0 	VZ_SAD(art.33a)
+    0 	0 	0 	0 	ZDI
+    0 	0 	0 	0 	ZKK
+    0 	0 	0 	0 	ZKK_KSeF
+
+    Z wyrazami szacunku,
+    Michał Jankowski
+
+
+    śr., 9 wrz 2026 o 08:52 Lech Dutkiewicz <l.dutkiewicz@savpol.pl> napisał(a):
+
+        Już wyciągam z tego widoku. W nim namierzyłem:
+
+        Numer MWS
+        csDocsHeadersId
+        cdDocsHeadersG
+        csCompaniesId
+        cdDocsTypesId
+        docNo
+        docNumberExt
+        CGAmount
+        CNAmount
+        CTAmount
+        FGAmount
+        docDate
+        docDateExt
+        paymentDate
+        docSaleDate
+        docVatDate
+        cdWarehousesId
+        cdCustomersId
+        stock
+        WarehouseDesc_PL
+        WarehouseTranslatedDesc
+
+        Nic więcej w kolumnach dostępnych w ERP dla tego widoku nie znalazłem, co pasuje do kolumn, o których pisałeś.
+
+
+        Pozdrawiam,
+        Lechu
+
+
+        W dniu 8.09.2026 o 16:18, Michał pisze:
+>         Cześć, dzięki spróbuj jeszcze wyciągnąć dane z głównego widoku gdzie widzisz listę dokumentów np. Wydania zewnętrzne:
+>
+>         image.png
+>
+>         Z wyrazami szacunku,
+>         Michał Jankowski
+>
+>
+>         wt., 8 wrz 2026 o 09:31 Lech Dutkiewicz <l.dutkiewicz@savpol.pl> napisał(a):
+>
+>             Hej Michał,
+>
+>             Przekazuję Ci jeszcze pola z Twojej listy, których nie udało mi się namierzyć w ERP. Szukałem w widoku wszystkich WZ, pojedynczej WZ i w zakładkach pojedynczej WZ pozycje, wycena, księgowanie. Nigdzie ich nie znalazłem. Ale może muszę jeszcze gdzieś lepiej zajrzeć, tylko nie wiem, gdzie :)
+>
+>             PaymentDay,
+>             csPaymentsTypesId,
+>             csPeriodsId,
+>             DocRecipientDate,
+>             csDocsHeadersStatusId,
+>             csVATPeriodsId,
+>             Cor,
+>             csEmployeesId,
+>             ShipmentType,
+>             IsOffInvoice,
+>             csB2BPortalsId,
+>             csB2BPortalsDeliveryMethodsId,
+>             csPayersId,
+>             TermsFromPayer,
+>             anaKind,
+>             anaUse,
+>             anaDocDate
+>
+>
+>             Pozdrawiam,
+>             Lechu
+>             W dniu 8.09.2026 o 08:53, Lech Dutkiewicz pisze:
+>>
+>>             Hej Michał,
+>>
+>>             Udało się pobrać dane z ERP i mam gotowy zapis do bazy. Ale natknąłem na problem - w tabelach są kolumny z wartościami NOT NULL, których nie scrapuję i blokują mnie przed zapisem danych, które zescrapowałem.
+>>
+>>             W załączniku SQLka, którą mi zwróciło AI z listą kolumn, które odczytał jako NOT NULL.
+>>
+>>             Da się coś z tym zrobić?
+>>
+>>
+>>             Pozdrawiam,
+>>             Lechu
+>>             W dniu 7.09.2026 o 14:20, Michał pisze:
+>>>             Cześć, zgodnie z rozmową przesyłam rozszerzony zestaw pól do ładowania:
+>>>
+>>>             Testowo do tabeli dbo.csDocsHeaders_test a docelowo do tabeli dbo.csDocsHeaders potrzebujemy:
+>>>
+>>>             csDocsHeadersId,
+>>>             csDocsHeadersG,
+>>>             csCompaniesId,
+>>>             csDocsTypesId,
+>>>             DocNo,
+>>>             DocNumber,
+>>>             DocNumberExt,
+>>>             ExchangeRate,
+>>>             CGAmount,
+>>>             CNAmount,
+>>>             CTAmount,
+>>>             FGAmount,
+>>>             FNAmount,
+>>>             FTAmount,
+>>>             DocDate,
+>>>             DocDateExt,
+>>>             csCustomersId,
+>>>             PaymentDate,
+>>>             PaymentDay,
+>>>             csPaymentsTypesId,
+>>>             csPeriodsId,
+>>>             DocSaleDate,
+>>>             DocRecipientDate,
+>>>             csCurrenciesId,
+>>>             DocVATDate,
+>>>             csDocsHeadersStatusId,
+>>>             csVATPeriodsId,
+>>>             Cor,
+>>>             csEmployeesId,
+>>>             ShipmentType,
+>>>             Stock,
+>>>             csWarehousesId,
+>>>             FStock,
+>>>             DocNumberExtAdd2,
+>>>             IsOffInvoice,
+>>>             csB2BPortalsId,
+>>>             csB2BPortalsDeliveryMethodsId,
+>>>             S01Amount,
+>>>             S02Amount,
+>>>             csPayersId,
+>>>             TermsFromPayer,
+>>>             DocWeight,
+>>>             DocGrossWeight,
+>>>             anaKind,
+>>>             anaUse,
+>>>             anaDocDate.
+>>>
+>>>             Testowo do tabeli dbo.csDocsItemsPositions_test a docelowo do tabeli dbo.csDocsItemsPositions potrzebujemy:
+>>>
+>>>             csCompaniesId,
+>>>             csDocsHeadersId,
+>>>             csDocsItemsPositionsId,
+>>>             csDocsItemsPositionsG,
+>>>             Id,
+>>>             csItemsId,
+>>>             csItemsUnitsId,
+>>>             csVATRatesId,
+>>>             QuantityUnits,
+>>>             Quantity,
+>>>             Discount,
+>>>             CUnitPrice,
+>>>             CUnitNetPrice,
+>>>             FUnitNetPrice,
+>>>             CUnitGrossPrice,
+>>>             FUnitGrossPrice,
+>>>             CNetPrice,
+>>>             FNetPrice,
+>>>             CGrossPrice,
+>>>             FGrossPrice,
+>>>             CGAmount,
+>>>             CNAmount,
+>>>             CTAmount,
+>>>             FGAmount,
+>>>             FNAmount,
+>>>             FTAmount,
+>>>             csCurrenciesId,
+>>>             PositionDesc,
+>>>             Rate,
+>>>             FStock,
+>>>             QStock,
+>>>             dCGAmount,
+>>>             dCNAmount,
+>>>             dCTAmount,
+>>>             dFGAmount,
+>>>             dFNAmount,
+>>>             dFTAmount,
+>>>             dQuantity,
+>>>             PStock,
+>>>             csWarehousesId,
+>>>             csWarehousesIdDel,
+>>>             S01Amount,
+>>>             S01Quantity,
+>>>             S02Amount,
+>>>             S02Quantity,
+>>>             CUnitListPrice,
+>>>             CUnitListPriceLimit,
+>>>             CUnitListPriceMin,
+>>>             DocPackageWeight,
+>>>             DocWeight,
+>>>             QuantityPallets,
+>>>             DocGrossWeight,
+>>>             priceInfo,
+>>>             CUnitPriceSuggested,
+>>>             CUnitPriceSuggestedSalesAgr,
+>>>             paramsJSON.
+>>>
+>>>             Powyższy zestaw pól pozwoli nam na pracę z różnymi dokumentami, nie tylko z WZ jak dotychczas.
+>>>
+>>>             W razie pytań/problemów dzwoń lub pisz jak będziesz miał do prezentacji screeny.
+>>>
+>>>             Z wyrazami szacunku,
+>>>             Michał Jankowski
+>

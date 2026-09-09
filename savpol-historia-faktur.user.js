@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.14.1
+// @version      3.14.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -138,33 +138,52 @@
     // (patrz niżej), a każda napotkana i nieopisana trafia do konsoli — więc
     // uzupełnia się przez używanie, a nie przez zgadywanie całego katalogu.
     // Segment ścieżki → dziedzina. Sprawdzamy KAŻDY segment, nie tylko
-    // pierwszy: głębokość ścieżek bywa różna (`…\Dekorowanie\Dekoracje cukrowe`
-    // obok `…\Cukiernicze produkty\Mieszanki\Kremy cukiernicze`), więc
-    // przywiązanie się do jednego poziomu byłoby kruche.
+    // pierwszy: głębokość ścieżek bywa różna, a `groupDeny` obok siebie ma
+    // wpisy dwu- i trzypoziomowe.
     //
-    // Uwaga: sam pierwszy poziom katalogu NIE wystarcza jako kryterium. Anchor
-    // „Polewa biała" leży w `Czekolady, Kakao`, a trafne pary w `Cukiernicze
-    // produkty` — dla katalogu to osobne gałęzie, dla człowieka jedna
-    // dziedzina. Właśnie dlatego to przypisanie musi być ręczne.
+    // Pełne drzewo: `diagnostyka/drzewo-kategorii.csv` — 19 gałęzi pierwszego
+    // poziomu pod `B2B\Kategorie`. Wszystkie są tu opisane, więc konsola nie
+    // powinna już meldować nieznanych kategorii; jeśli zamelduje, znaczy że
+    // ktoś dodał gałąź w ERP.
+    //
+    // Dlaczego to musi być tabela, a nie reguła na drzewie: anchor „Polewa
+    // biała" leży w `Czekolady, Kakao`, a jego trafne pary w `Cukiernicze
+    // produkty`. Dla katalogu osobne gałęzie, dla człowieka jedna dziedzina.
+    //
+    // `wszystkie` to NIE to samo co brak wpisu. Tak oznaczamy surowce, których
+    // używa i cukiernik, i kuchnia — nabiał, tłuszcze, owoce, mąka, bakalie.
+    // Nigdy nie powodują odrzucenia w żadną stronę, ale są opisane świadomie,
+    // więc nie zaśmiecają konsoli komunikatem o brakującym przypisaniu.
     MAPA: {
-      // pierwszy poziom katalogu
-      'Czekolady, Kakao': 'cukiernictwo',
-      'Cukiernicze produkty': 'cukiernictwo',
-      'Lodziarskie produkty': 'cukiernictwo',
-      'Piekarnicze produkty': 'piekarnictwo',
-      'Gastronomiczne produkty': 'gastronomia',
+      // Wytwórstwo słodkie — cukiernia, piekarnia, lodziarnia. Świadomie
+      // JEDNA dziedzina: te produkty krążą między sobą (polewa do lodów,
+      // nadzienie do drożdżówki), a rozbicie ich groziłoby odrzucaniem
+      // trafnych par.
+      'Cukiernicze produkty': 'wypiek',
+      'Czekolady, Kakao': 'wypiek',
+      'Dekorowanie': 'wypiek',
+      'Piekarskie produkty': 'wypiek',
+      'Lodziarskie produkty': 'wypiek',
 
-      // poziomy niżej — na wypadek krótszej ścieżki albo pierwszego poziomu,
-      // którego nie ma jeszcze w tabeli
-      'Polewy': 'cukiernictwo',
-      'Mieszanki': 'cukiernictwo',
-      'Koncentraty i mieszanki': 'cukiernictwo',
-      'Dekorowanie': 'cukiernictwo',
-      'Nadzienia': 'cukiernictwo',
-      'Sosy i dodatki gastronomiczne': 'gastronomia',
-      'Majonezy': 'gastronomia',
+      // Kuchnia. To tu leżał sos do pizzy proponowany do polewy czekoladowej.
+      'Gastronomiczne produkty': 'gastronomia',
       'Mięso, wędliny, ryby': 'gastronomia',
-      'Formy, ranty i wykrojniki': 'wyposażenie'
+      'Przyprawy, marynaty': 'gastronomia',
+      'Pieczywo, ciasta': 'gastronomia',
+
+      'Kawa, herbata': 'napoje',
+      'Polewy, syropy, napoje': 'napoje',
+
+      'Maszyny, urządzenia': 'wyposażenie',
+      'Non food': 'wyposażenie',
+      'Opakowania': 'wyposażenie',
+
+      // Surowce wspólne — nie rozstrzygają dziedziny w żadną stronę.
+      'Dodatki spożywcze': 'wszystkie',
+      'Nabiał': 'wszystkie',
+      'Tłuszcze': 'wszystkie',
+      'Owoce, warzywa, grzyby': 'wszystkie',
+      'Ziarna, bakalie': 'wszystkie'
     }
   };
 
@@ -201,6 +220,8 @@
     const a = dziedzinaGrupy(grupaAnchora);
     const k = dziedzinaGrupy(grupaKandydata);
     if (!a || !k || a === k) return null;
+    // Surowiec wspólny pasuje do wszystkiego — po obu stronach.
+    if (a === 'wszystkie' || k === 'wszystkie') return null;
     return { anchora: a, kandydata: k };
   }
 
