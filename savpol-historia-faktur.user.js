@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.14.4
+// @version      3.15.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3030,14 +3030,14 @@
         techniczne: d.short || '',
         seoTytul: d.metaTitle || '',
         seoOpis: d.metaDescription || '',
-        info: 'Opisy z apki, wygenerowane ' + (d.wygenerowano || '?') + '.' + '\n' + '\n'
+        infoTytul: 'Opisy gotowe — sprawdź i zatwierdź',
+        info: 'Wygenerowane ' + (d.wygenerowano || '?') + '.' + '\n' + '\n'
           + '• Nazwa produktu: ' + ile(d.h1) + '\n'
           + '• Opis produktu: ' + ile(d.long) + '\n'
           + '• Dane techniczne: ' + ile(d.short) + '\n'
           + '• Meta tytuł: ' + ile(d.metaTitle) + '\n'
           + '• Meta opis: ' + ile(d.metaDescription) + '\n' + '\n'
-          + 'NIC JESZCZE NIE ZAPISAŁEM. Sprawdź treści, potem „Sprawdź, nie zapisuj"'
-          + ' albo od razu „Zapisz do ERP".'
+          + 'Nic jeszcze nie zapisałem.'
       });
       // Okienko przebiegu zrobiło swoje, a od tej chwili tylko zasłania —
       // siedzi w prawym dolnym rogu, dokładnie tam, gdzie ERP trzyma „Zapisz".
@@ -5886,248 +5886,355 @@
     const stary = document.getElementById(PANEL_OPISOW_ID);
     if (stary) stary.remove();
 
+    // Kolumna z NIEPRZEWIJALNĄ stopką.
+    //
+    // Na laptopie po wczytaniu opisów przyciski wyjeżdżały poza ekran i trzeba
+    // było szukać ich przewijaniem — czyli najważniejsza część panelu była
+    // najtrudniej dostępna. Teraz treść przewija się w środku, a stopka
+    // z przyciskami zostaje na miejscu niezależnie od tego, ile jest treści.
     const box = document.createElement('div');
     box.id = PANEL_OPISOW_ID;
     box.style.cssText = [
       'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483000',
-      'width:520px', 'max-height:90vh', 'overflow:auto',
-      'padding:14px 16px', 'box-sizing:border-box',
+      'width:460px', 'max-height:82vh',
+      'display:flex', 'flex-direction:column',
+      'box-sizing:border-box',
       'background:#1f2933', 'color:#f5f7fa', 'border-radius:8px',
       'box-shadow:0 6px 24px rgba(0,0,0,.35)',
       'font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif'
     ].join(';');
 
-    const pole = 'width:100%;box-sizing:border-box;font:12px ui-monospace,Consolas,monospace;' +
-      'padding:6px 8px;border:1px solid rgba(255,255,255,.2);border-radius:4px;' +
-      'background:rgba(0,0,0,.25);color:#f5f7fa;resize:vertical';
-    const guzik = 'cursor:pointer;font:inherit;font-size:12px;padding:6px 10px;border:0;' +
-      'border-radius:4px;font-weight:600';
+    const pole = 'width:100%;box-sizing:border-box;font:12px ui-monospace,Consolas,monospace;'
+      + 'padding:5px 7px;border:1px solid rgba(255,255,255,.2);border-radius:4px;'
+      + 'background:rgba(0,0,0,.25);color:#f5f7fa;resize:vertical';
+    const guzik = 'cursor:pointer;font:inherit;font-size:12px;padding:7px 11px;border:0;'
+      + 'border-radius:4px;font-weight:600';
+    const etykieta = 'font-size:11px;text-transform:uppercase;letter-spacing:.04em;'
+      + 'opacity:.7;margin:0 0 3px';
 
     box.innerHTML = [
-      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
+      '<div style="display:flex;align-items:center;gap:8px;padding:12px 14px 8px">',
       '  <strong style="flex:1;font-size:13px">Zapis opisów do ERP</strong>',
-      '  <span data-role="min" title="Zwiń — zostaną same przyciski" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">–</span>',
+      '  <span data-role="min" title="Zwiń" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">–</span>',
       '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
       '</div>',
 
-      // Pasek tożsamości. ZOSTAJE widoczny także po zwinięciu — po to, żeby
-      // przy klikaniu „Zapisz" w ERP dało się jednym spojrzeniem potwierdzić,
-      // że to wciąż ten produkt.
-      '<div data-role="glowka" style="margin-bottom:8px">',
-      '  <div style="font-size:12px;margin-bottom:3px">SKU produktu</div>',
-      '  <input data-role="sku" spellcheck="false" style="' + pole + '" placeholder="np. 0009905">',
-      '  <div data-role="ktoTo" style="font-size:12px;opacity:.8;margin-top:4px"></div>',
+      // Tożsamość produktu — zostaje widoczna także po zwinięciu.
+      '<div data-role="glowka" style="padding:0 14px 8px">',
+      '  <div style="display:flex;gap:8px;align-items:center">',
+      '    <input data-role="sku" spellcheck="false" placeholder="SKU"',
+      '           style="' + pole + ';width:110px;flex:0 0 auto">',
+      '    <div data-role="ktoTo" style="flex:1;min-width:0;font-size:12px;opacity:.85;',
+      '         overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>',
+      '  </div>',
       '</div>',
 
-      '<div data-role="pelne">',
-      '  <div style="font-size:12px;opacity:.75;margin-bottom:8px">',
-      '    Zapisuje <b>Nazwę produktu</b>, <b>Opis produktu</b> i <b>Dane techniczne</b>.',
-      '    Skład, przechowywanie i opis skrócony zostają nietknięte.</div>',
-      '  <div style="margin-bottom:8px">',
-      '    <div style="font-size:12px;margin-bottom:3px">Nazwa produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
+      // Środek — jedyna część, która się przewija.
+      '<div data-role="pelne" style="flex:1;min-height:0;overflow:auto;padding:0 14px">',
+      '  <div style="margin-bottom:10px">',
+      '    <div style="' + etykieta + '">Nazwa produktu</div>',
       '    <textarea data-role="nazwa" rows="2" spellcheck="false" style="' + pole + '"></textarea>',
       '  </div>',
-      '  <div style="margin-bottom:8px">',
-      '    <div style="font-size:12px;margin-bottom:3px">Opis produktu <span style="opacity:.6">(puste = nie ruszam)</span></div>',
-      '    <textarea data-role="opis" rows="7" spellcheck="false" style="' + pole + '"></textarea>',
-      '  </div>',
-      '  <div style="margin-bottom:8px">',
-      '    <div style="font-size:12px;margin-bottom:3px">Dane techniczne <span style="opacity:.6">(puste = nie ruszam)</span></div>',
-      '    <textarea data-role="techniczne" rows="3" spellcheck="false" style="' + pole + '"></textarea>',
-      '  </div>',
-      '  <div style="border-top:1px solid rgba(255,255,255,.15);margin:10px 0 8px;padding-top:8px">',
-      '    <div style="font-size:12px;opacity:.75;margin-bottom:6px">',
-      '      SEO wpisuję tylko w formularz karty — <b>zapis klikasz sam w ERP</b>.</div>',
-      '    <div style="font-size:12px;margin-bottom:3px">Meta tytuł</div>',
+
+      // Opis i dane techniczne: TYLKO potwierdzenie, że treść jest.
+      //
+      // To HTML z blokiem <style>, ponad 20 000 znaków. Podglądu w tym oknie
+      // nikt nie czyta i nie ma z niego pożytku — liczy się jedno: czy coś
+      // przyszło i ile tego jest. Treść zostaje dostępna pod „pokaż", bo przy
+      // przywracaniu starej wersji trzeba ją czasem obejrzeć albo poprawić.
+      '  <div data-role="blokOpis" style="margin-bottom:10px"></div>',
+      '  <div data-role="blokTech" style="margin-bottom:10px"></div>',
+
+      '  <div style="border-top:1px solid rgba(255,255,255,.15);margin:12px 0 10px;padding-top:10px">',
+      '    <div style="font-size:12px;opacity:.7;margin-bottom:8px">',
+      '      SEO wpisuję w formularz karty — <b>zapis klikasz sam w ERP</b>.</div>',
+      '    <div style="' + etykieta + '">Meta tytuł</div>',
       '    <textarea data-role="seoTytul" rows="2" spellcheck="false" style="' + pole + '"></textarea>',
-      '    <div style="font-size:12px;margin:6px 0 3px">Meta opis</div>',
+      '    <div style="' + etykieta + ';margin-top:8px">Meta opis</div>',
       '    <textarea data-role="seoOpis" rows="3" spellcheck="false" style="' + pole + '"></textarea>',
       '  </div>',
+      '  <div data-role="stopka" style="margin-bottom:10px;font-size:12px;opacity:.7">',
+      '    <span data-role="kopie" style="cursor:pointer;text-decoration:underline">Przywróć poprzednią wersję…</span>',
+      '  </div>',
       '</div>',
 
-      // Dwa kroki, w kolejności, w jakiej się je wykonuje. Numery są tu po to,
-      // żeby po zwinięciu panelu nadal było wiadomo, co jest dalej.
-      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">',
-      '  <button data-role="zapisz" style="' + guzik + ';background:#b44d12;color:#fff">1. Zapisz opisy do ERP</button>',
-      '  <button data-role="seo" style="' + guzik + ';background:#2c5f8a;color:#fff">2. Wpisz SEO w kartotekę</button>',
-      '  <span data-role="stan" style="font-size:12px;opacity:.8"></span>',
-      '</div>',
-      '<div data-role="wynik" style="font:12px ui-monospace,Consolas,monospace;white-space:pre-wrap;' +
-      'background:rgba(0,0,0,.25);border-radius:4px;padding:8px;max-height:220px;overflow:auto"></div>',
-
-      // Przywracanie to inny przebieg niż zapis — więc i inne miejsce.
-      '<div data-role="stopka" style="margin-top:8px;font-size:12px;opacity:.7">',
-      '  <span data-role="kopie" style="cursor:pointer;text-decoration:underline">Przywróć poprzednią wersję…</span>',
+      // Stopka — nie przewija się.
+      '<div style="flex:0 0 auto;padding:10px 14px 12px;border-top:1px solid rgba(255,255,255,.12)">',
+      '  <div data-role="notice" style="display:none;margin-bottom:10px;padding:9px 11px;',
+      '       border-radius:4px;border-left:3px solid transparent;font-size:12px;',
+      '       white-space:pre-wrap;max-height:170px;overflow:auto"></div>',
+      '  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">',
+      '    <button data-role="zapisz" style="' + guzik + ';background:#b44d12;color:#fff">1. Zapisz opisy do ERP</button>',
+      '    <button data-role="seo" style="' + guzik + ';background:#2c5f8a;color:#fff">2. Wpisz SEO w kartotekę</button>',
+      '    <span data-role="stan" style="font-size:12px;opacity:.8"></span>',
+      '  </div>',
       '</div>'
     ].join('\n');
 
     document.body.appendChild(box);
 
     const el = r => box.querySelector('[data-role="' + r + '"]');
-    const pisz = t => { el('wynik').textContent = t; };
 
-    // Zwinięcie, nie zamknięcie.
+    // ---------- komunikaty ----------
     //
-    // Panel w prawym dolnym rogu zasłaniał w ERP przycisk „Zapisz", a
-    // zamknięcie go kasowało wszystkie wczytane treści — czyli jedyne wyjście
-    // niszczyło pracę. Zwinięty panel przenosi się do prawego GÓRNEGO rogu,
-    // bo na dole jest właśnie pasek zapisu karty.
-    //
-    // Zostają: numer i nazwa produktu (żeby dało się jednym spojrzeniem
-    // potwierdzić, że to wciąż ten sam) oraz przyciski.
+    // Wcześniej wynik był szarym prostokątem monospace, niczym nieodróżnialnym
+    // od reszty panelu — użytkownik nie zauważał, że cokolwiek się zmieniło.
+    // Kolor i tytuł mają odpowiadać na pytanie „udało się czy nie" z odległości
+    // pół metra, bez czytania.
+    const STANY = {
+      success: { tlo: 'rgba(54,179,126,.15)', ramka: '#36b37e', tytul: 'Gotowe' },
+      error: { tlo: 'rgba(255,86,48,.15)', ramka: '#ff5630', tytul: 'Nie udało się' },
+      warning: { tlo: 'rgba(255,171,0,.15)', ramka: '#ffab00', tytul: 'Uwaga' },
+      info: { tlo: 'rgba(76,154,255,.13)', ramka: '#4c9aff', tytul: '' },
+      busy: { tlo: 'rgba(255,255,255,.07)', ramka: 'rgba(255,255,255,.35)', tytul: '' }
+    };
+
+    function notice(rodzaj, tekst, tytulWlasny) {
+      const s = STANY[rodzaj] || STANY.info;
+      const n = el('notice');
+      const tytul = tytulWlasny !== undefined ? tytulWlasny : s.tytul;
+      n.style.display = 'block';
+      n.style.background = s.tlo;
+      n.style.borderLeftColor = s.ramka;
+      n.innerHTML = '';
+      if (tytul) {
+        const h = document.createElement('div');
+        h.style.cssText = 'font-weight:700;margin-bottom:4px;color:' + s.ramka;
+        h.textContent = tytul;
+        n.appendChild(h);
+      }
+      const t = document.createElement('div');
+      t.textContent = tekst;
+      n.appendChild(t);
+    }
+
+    // ---------- pola tylko-do-potwierdzenia ----------
+
+    function odswiezBlok(rola, tytul) {
+      const host = el(rola === 'opis' ? 'blokOpis' : 'blokTech');
+      const wartosc = String(el(rola) ? el(rola).value : (schowaneWartosci[rola] || ''));
+      host.innerHTML = '';
+
+      const naglowek = document.createElement('div');
+      naglowek.style.cssText = etykieta;
+      naglowek.textContent = tytul;
+      host.appendChild(naglowek);
+
+      const linia = document.createElement('div');
+      linia.style.cssText = 'display:flex;gap:8px;align-items:center;font-size:12px;'
+        + 'padding:6px 8px;border-radius:4px;background:rgba(0,0,0,.25);'
+        + 'border:1px solid rgba(255,255,255,.15)';
+      const stan = document.createElement('span');
+      stan.style.flex = '1';
+      if (wartosc.trim()) {
+        stan.innerHTML = '<span style="color:#36b37e">&#10003;</span> '
+          + wartosc.length.toLocaleString('pl-PL') + ' znaków';
+      } else {
+        stan.innerHTML = '<span style="opacity:.6">puste — nie ruszam tego pola</span>';
+      }
+      linia.appendChild(stan);
+
+      const przelacz = document.createElement('span');
+      przelacz.style.cssText = 'cursor:pointer;text-decoration:underline;opacity:.75';
+      przelacz.textContent = otwarte[rola] ? 'ukryj' : 'pokaż';
+      przelacz.addEventListener('click', () => {
+        otwarte[rola] = !otwarte[rola];
+        odswiezBlok(rola, tytul);
+      });
+      linia.appendChild(przelacz);
+      host.appendChild(linia);
+
+      if (otwarte[rola]) {
+        const ta = document.createElement('textarea');
+        ta.setAttribute('data-role', rola);
+        ta.rows = 6;
+        ta.spellcheck = false;
+        ta.style.cssText = pole + ';margin-top:6px';
+        ta.value = wartosc;
+        ta.addEventListener('input', () => { schowaneWartosci[rola] = ta.value; });
+        host.appendChild(ta);
+      } else {
+        schowaneWartosci[rola] = wartosc;
+      }
+    }
+
+    // Treść musi przeżyć zwinięcie pola, więc trzymamy ją poza DOM-em.
+    const schowaneWartosci = { opis: '', techniczne: '' };
+    const otwarte = { opis: false, techniczne: false };
+    const wartoscPola = rola => {
+      const e = el(rola);
+      return e ? String(e.value) : String(schowaneWartosci[rola] || '');
+    };
+
+    odswiezBlok('opis', 'Opis produktu');
+    odswiezBlok('techniczne', 'Dane techniczne');
+
+    // ---------- zwijanie ----------
     let zwiniety = false;
     function ustawZwiniecie(tak) {
       zwiniety = tak;
       el('pelne').style.display = tak ? 'none' : '';
-      el('stopka').style.display = tak ? 'none' : '';
       el('min').textContent = tak ? '+' : '–';
-      el('min').title = tak ? 'Rozwiń' : 'Zwiń — zostaną same przyciski';
+      el('min').title = tak ? 'Rozwiń' : 'Zwiń';
       el('sku').readOnly = tak;
-      el('ktoTo').textContent = tak ? (el('nazwa').value.trim().slice(0, 90) || '') : '';
-      box.style.width = tak ? '380px' : '520px';
-      box.style.maxHeight = tak ? '40vh' : '90vh';
-      if (tak) {
-        box.style.top = '16px';
-        box.style.bottom = 'auto';
-      } else {
-        box.style.top = 'auto';
-        box.style.bottom = '16px';
-      }
+      box.style.width = tak ? '380px' : '460px';
+      if (tak) { box.style.top = '16px'; box.style.bottom = 'auto'; }
+      else { box.style.top = 'auto'; box.style.bottom = '16px'; }
+    }
+
+    // ---------- blokada równoległej pracy ----------
+    //
+    // Oba przyciski otwierają kartę produktu w ERP i klikają po jej zakładkach.
+    // Uruchomione naraz przeszkadzałyby sobie: jeden przełączałby zakładkę
+    // w trakcie pracy drugiego, a błąd byłby niezrozumiały. Blokujemy więc
+    // OBA na czas dowolnej z tych operacji, nie każdy osobno.
+    let pracuje = false;
+    function zajete(tak, opis) {
+      pracuje = tak;
+      el('zapisz').disabled = tak;
+      el('seo').disabled = tak;
+      el('zapisz').style.opacity = tak ? '.5' : '1';
+      el('seo').style.opacity = tak ? '.5' : '1';
+      el('zapisz').style.cursor = tak ? 'default' : 'pointer';
+      el('seo').style.cursor = tak ? 'default' : 'pointer';
+      el('stan').textContent = tak ? (opis || 'Pracuję…') : '';
     }
 
     function zebrane() {
       const tresci = {};
       const n = el('nazwa').value.trim();
-      const o = el('opis').value;
-      const t = el('techniczne').value;
+      const o = wartoscPola('opis');
+      const t = wartoscPola('techniczne');
       if (n) tresci.nazwa = n;
       if (String(o).trim()) tresci.opis = o;
       if (String(t).trim()) tresci.techniczne = t;
       return tresci;
     }
 
-    async function uruchom(naprawde) {
+    async function uruchom() {
+      if (pracuje) return;
       const sku = el('sku').value.trim();
-      if (!sku) { pisz('Podaj SKU.'); return; }
+      if (!sku) { notice('error', 'Podaj numer produktu.'); return; }
       const tresci = zebrane();
       if (!Object.keys(tresci).length) {
-        pisz('Oba pola są puste — nie ma czego zapisać.');
+        notice('warning', 'Wszystkie pola opisów są puste — nie ma czego zapisać.');
         return;
       }
-      // Świadomie NIE pytamy o potwierdzenie przy przymiarce, ale przy
-      // prawdziwym zapisie pytamy zawsze: to jedyny moment, w którym da się
-      // jeszcze zawrócić, bo ERP nie ma cofania.
-      if (naprawde) {
-        const co = Object.keys(tresci).map(k => etykietaTypu(k)).join(', ');
-        if (!confirm('Nadpisać w ERP ' + co + ' dla produktu ' + sku + '?\n\n'
-          + 'ERP nie ma cofania. Kopia obecnej treści trafi do repozytorium — '
-          + 'wrócisz do niej przez „Przywróć poprzednią wersję".')) {
-          pisz('Anulowane.');
-          return;
-        }
+      const co = Object.keys(tresci).map(k => etykietaTypu(k)).join(', ');
+      if (!confirm('Nadpisać w ERP: ' + co + '\ndla produktu ' + sku + '?\n\n'
+        + 'ERP nie ma cofania. Kopia obecnej treści trafi do repozytorium — '
+        + 'wrócisz do niej przez „Przywróć poprzednią wersję".')) {
+        notice('info', 'Anulowane. Nic nie zapisałem.', '');
+        return;
       }
-      el('zapisz').disabled = true;
-      el('stan').textContent = naprawde ? 'Zapisuję…' : 'Sprawdzam…';
-      pisz('Pracuję. Skrypt sam wejdzie w kartę produktu — nie klikaj w ERP.');
+      zajete(true, 'Zapisuję…');
+      notice('busy', 'Otwieram kartę produktu i zapisuję. Nie klikaj w ERP.', '');
       try {
-        const w = await zapiszOpisy(sku, tresci, { zapisz: naprawde });
+        const w = await zapiszOpisy(sku, tresci, { zapisz: true });
         if (!w.ok) {
-          pisz('NIE UDAŁO SIĘ:\n' + w.blad);
-        } else if (w.naSucho) {
-          pisz('Przymiarka — nic nie zapisano:\n\n'
-            + w.plan.map(p => '• ' + etykietaTypu(p.klucz)
-              + ': ' + p.czynnosc + '  (' + p.bylo + ' → ' + p.bedzie + ' znaków)'
-              + (p.zewnEdytor === 0 ? '\n    UWAGA: to pole jest w ERP w trybie WYSIWYG — '
-                + 'HTML może zostać przez ERP zmieniony' : '')).join('\n')
-            + '\n\nJeśli to się zgadza, kliknij „Zapisz do ERP".');
+          notice('error', w.blad);
         } else {
-          pisz('ZAPISANE i potwierdzone odczytem z ERP:\n\n'
-            + w.plan.map(p => '• ' + (p.klucz === 'nazwa' ? 'Nazwa produktu' : 'Opis produktu')
-              + ': ' + p.bedzie + ' znaków').join('\n')
-            + (w.ostrzezenie ? '\n\nUwaga: ' + w.ostrzezenie : ''));
+          notice('success', w.plan.map(p => '• ' + etykietaTypu(p.klucz)
+            + ': ' + p.bedzie.toLocaleString('pl-PL') + ' znaków').join('\n')
+            + (w.ostrzezenie ? '\n\nUwaga: ' + w.ostrzezenie : '')
+            + '\n\nTreść odczytana z ERP zgadza się z zapisaną.',
+            'Zapisane w ERP');
         }
       } catch (e) {
-        pisz('Błąd: ' + (e && e.message));
+        notice('error', String(e && e.message || e));
       } finally {
-        el('zapisz').disabled = false;
-        el('stan').textContent = '';
+        zajete(false);
       }
     }
 
-    // Przywrócenie poprzedniej wersji. Wpisujemy treść w pola panelu, a NIE
-    // zapisujemy od razu — cofanie zmiany jest też zmianą i zasługuje na te
-    // same dwa kroki: obejrzyj, potem zatwierdź.
-    async function pokazPoprzednie() {
-      const sku = el('sku').value.trim();
-      if (!sku) { pisz('Podaj SKU.'); return; }
-      el('stan').textContent = 'Szukam kopii…';
-      const r = await apkaZadanie('GET', KOPIE.ENDPOINT + '?sku=' + encodeURIComponent(sku));
-      el('stan').textContent = '';
-      const kopie = r.body && r.body.kopie;
-      if (r.status < 200 || r.status >= 300 || !kopie) {
-        pisz('Nie udało się pobrać listy kopii (HTTP ' + r.status + ').');
-        return;
-      }
-      if (!kopie.length) { pisz('Dla ' + sku + ' nie ma jeszcze żadnej kopii.'); return; }
-
-      const lista = kopie.slice(0, 10)
-        .map((k, i) => (i + 1) + '. ' + k.kiedy + '  ' + k.kto).join('\n');
-      const wybor = prompt('Kopie dla ' + sku + ' — od najnowszej.\n'
-        + 'Podaj numer, żeby wpisać jej treść do pól panelu:\n\n' + lista, '1');
-      const nr = parseInt(wybor, 10);
-      if (!nr || nr < 1 || nr > kopie.length) { pisz('Anulowane.'); return; }
-
-      el('stan').textContent = 'Wczytuję kopię…';
-      const jedna = await apkaZadanie('GET',
-        KOPIE.ENDPOINT + '?path=' + encodeURIComponent(kopie[nr - 1].path));
-      el('stan').textContent = '';
-      const tresc = jedna.body && jedna.body.tresc;
-      if (jedna.status < 200 || jedna.status >= 300 || !tresc) {
-        pisz('Nie udało się wczytać kopii (HTTP ' + jedna.status + ').');
-        return;
-      }
-      const wez = rodzaj => {
-        const w = tresc[rodzaj];
-        if (w == null) return '';
-        return typeof w === 'string' ? w : String(w.tekst || '');
-      };
-      el('nazwa').value = wez('Nazwa produktu');
-      el('opis').value = wez('Opis produktu');
-      el('techniczne').value = wez('Dane techniczne');
-      pisz('Wczytałem kopię z ' + kopie[nr - 1].kiedy + ' (' + kopie[nr - 1].kto + ').\n'
-        + 'Treść jest w polach powyżej — NIC jeszcze nie zapisałem.\n'
-        + 'Sprawdź ją i kliknij „Zapisz do ERP", żeby przywrócić.');
-    }
-
-    // SEO idzie osobnym przyciskiem, bo kończy się inaczej niż zapis opisów:
-    // nie zapisem, a zostawieniem otwartej karty do zatwierdzenia.
+    // SEO kończy się inaczej niż zapis opisów: nie zapisem, a zostawieniem
+    // otwartej karty do zatwierdzenia przez człowieka.
     async function wpiszSeoZPanelu() {
+      if (pracuje) return;
       const sku = el('sku').value.trim();
-      if (!sku) { pisz('Podaj SKU.'); return; }
+      if (!sku) { notice('error', 'Podaj numer produktu.'); return; }
       const tytul = el('seoTytul').value.trim();
       const opis = el('seoOpis').value.trim();
-      if (!tytul && !opis) { pisz('Pola SEO są puste — nie ma czego wpisać.'); return; }
-      el('seo').disabled = true;
-      el('stan').textContent = 'Wpisuję SEO…';
-      // Zwijamy OD RAZU: karta zaraz się otworzy, a panel w pełnym rozmiarze
+      if (!tytul && !opis) {
+        notice('warning', 'Pola SEO są puste — nie ma czego wpisać.');
+        return;
+      }
+      zajete(true, 'Wpisuję SEO…');
+      // Zwijamy od razu: karta zaraz się otworzy, a panel w pełnym rozmiarze
       // zasłania w niej pasek z przyciskiem „Zapisz".
       ustawZwiniecie(true);
-      pisz('Otwieram kartę produktu i zakładkę SEO. Nie klikaj w ERP.');
+      notice('busy', 'Otwieram kartę i zakładkę SEO. Nie klikaj w ERP.', '');
       try {
         const w = await wpiszSeo(sku, { tytul: tytul, opis: opis });
-        pisz(w.ok
-          ? 'WPISANE w kartę (język: ' + w.jezyk + '), ale JESZCZE NIE ZAPISANE.\n\n'
-            + (w.przed.tytul != null ? '• meta tytuł: było ' + w.przed.tytul.length
-              + ' znaków, jest ' + tytul.length + '\n' : '')
-            + (w.przed.opis != null ? '• meta opis: było ' + w.przed.opis.length
-              + ' znaków, jest ' + opis.length + '\n' : '')
-            + '\n' + w.dalej
-          : 'NIE UDAŁO SIĘ:\n' + w.blad);
+        if (!w.ok) {
+          notice('error', w.blad);
+        } else {
+          notice('warning',
+            (w.przed.tytul != null ? '• meta tytuł: ' + w.przed.tytul.length
+              + ' → ' + tytul.length + ' znaków\n' : '')
+            + (w.przed.opis != null ? '• meta opis: ' + w.przed.opis.length
+              + ' → ' + opis.length + ' znaków\n' : '')
+            + '\n' + w.dalej,
+            'Wpisane w kartę — JESZCZE NIE ZAPISANE');
+        }
       } catch (e) {
-        pisz('Błąd: ' + (e && e.message));
+        notice('error', String(e && e.message || e));
       } finally {
-        el('seo').disabled = false;
-        el('stan').textContent = '';
+        zajete(false);
+      }
+    }
+
+    async function pokazPoprzednie() {
+      if (pracuje) return;
+      const sku = el('sku').value.trim();
+      if (!sku) { notice('error', 'Podaj numer produktu.'); return; }
+      zajete(true, 'Szukam kopii…');
+      try {
+        const r = await apkaZadanie('GET', KOPIE.ENDPOINT + '?sku=' + encodeURIComponent(sku));
+        const kopie = r.body && r.body.kopie;
+        if (r.status < 200 || r.status >= 300 || !kopie) {
+          notice('error', 'Nie udało się pobrać listy kopii (HTTP ' + r.status + ').');
+          return;
+        }
+        if (!kopie.length) {
+          notice('info', 'Dla ' + sku + ' nie ma jeszcze żadnej kopii.', '');
+          return;
+        }
+        const lista = kopie.slice(0, 10)
+          .map((k, i) => (i + 1) + '. ' + k.kiedy + '  ' + k.kto).join('\n');
+        const wybor = prompt('Kopie dla ' + sku + ' — od najnowszej.\n'
+          + 'Podaj numer, żeby wpisać jej treść do pól panelu:\n\n' + lista, '1');
+        const nr = parseInt(wybor, 10);
+        if (!nr || nr < 1 || nr > kopie.length) {
+          notice('info', 'Anulowane.', '');
+          return;
+        }
+        const jedna = await apkaZadanie('GET',
+          KOPIE.ENDPOINT + '?path=' + encodeURIComponent(kopie[nr - 1].path));
+        const tresc = jedna.body && jedna.body.tresc;
+        if (jedna.status < 200 || jedna.status >= 300 || !tresc) {
+          notice('error', 'Nie udało się wczytać kopii (HTTP ' + jedna.status + ').');
+          return;
+        }
+        const wez = rodzaj => {
+          const w = tresc[rodzaj];
+          if (w == null) return '';
+          return typeof w === 'string' ? w : String(w.tekst || '');
+        };
+        el('nazwa').value = wez('Nazwa produktu');
+        schowaneWartosci.opis = wez('Opis produktu');
+        schowaneWartosci.techniczne = wez('Dane techniczne');
+        if (el('opis')) el('opis').value = schowaneWartosci.opis;
+        if (el('techniczne')) el('techniczne').value = schowaneWartosci.techniczne;
+        odswiezBlok('opis', 'Opis produktu');
+        odswiezBlok('techniczne', 'Dane techniczne');
+        el('ktoTo').textContent = el('nazwa').value.trim().slice(0, 90);
+        notice('info', 'Kopia z ' + kopie[nr - 1].kiedy + ' (' + kopie[nr - 1].kto + ') '
+          + 'jest w polach powyżej. NIC jeszcze nie zapisałem — sprawdź treść '
+          + 'i kliknij „1. Zapisz opisy do ERP", żeby ją przywrócić.',
+          'Wczytana poprzednia wersja');
+      } finally {
+        zajete(false);
       }
     }
 
@@ -6136,16 +6243,22 @@
     if (wstepne) {
       el('sku').value = wstepne.sku || '';
       el('nazwa').value = wstepne.nazwa || '';
-      el('opis').value = wstepne.opis || '';
-      el('techniczne').value = wstepne.techniczne || '';
+      schowaneWartosci.opis = wstepne.opis || '';
+      schowaneWartosci.techniczne = wstepne.techniczne || '';
       el('seoTytul').value = wstepne.seoTytul || '';
       el('seoOpis').value = wstepne.seoOpis || '';
-      if (wstepne.info) pisz(wstepne.info);
+      el('ktoTo').textContent = String(wstepne.nazwa || '').trim().slice(0, 90);
+      odswiezBlok('opis', 'Opis produktu');
+      odswiezBlok('techniczne', 'Dane techniczne');
+      if (wstepne.info) notice('info', wstepne.info, wstepne.infoTytul || '');
     }
 
+    el('nazwa').addEventListener('input', () => {
+      el('ktoTo').textContent = el('nazwa').value.trim().slice(0, 90);
+    });
     el('close').addEventListener('click', () => box.remove());
     el('min').addEventListener('click', () => ustawZwiniecie(!zwiniety));
-    el('zapisz').addEventListener('click', () => uruchom(true));
+    el('zapisz').addEventListener('click', () => uruchom());
     el('seo').addEventListener('click', () => wpiszSeoZPanelu());
     el('kopie').addEventListener('click', () => pokazPoprzednie());
     el('sku').focus();
