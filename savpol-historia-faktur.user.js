@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.15.0
+// @version      3.16.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2164,7 +2164,11 @@
             && String(this.__savpolUrl || '').indexOf(ERP_API.ENDPOINT) >= 0) {
           const paczka = JSON.parse(body);
           const srodek = paczka && paczka.Input ? erpRozpakujZadanie(paczka.Input) : null;
-          if (srodek) erpZapamietaj(JSON.parse(srodek));
+          if (srodek) {
+            const koperta = JSON.parse(srodek);
+            erpZapamietaj(koperta);
+            sprawdzZapisSeo(koperta, this);
+          }
         }
       } catch (e) { /* jedno nieczytelne żądanie nie psuje podsłuchu */ }
       return origSend.apply(this, arguments);
@@ -3201,6 +3205,108 @@
     } catch (e) {
       return null;
     }
+  }
+
+  // ---------- Potwierdzenie, że człowiek zapisał SEO w ERP ----------
+  //
+  // SEO wpisujemy w formularz i zapis zostawiamy użytkownikowi — to świadoma
+  // decyzja, bo `csItemsUpdate` odsyła cały rekord produktu. Ale przez to
+  // tracimy informację, czy zapis się w ogóle udał. Groźny jest jeden
+  // przypadek: ERP odrzuca zapis z powodu niepowiązanego wymaganego pola,
+  // a człowiek idzie dalej w przekonaniu, że SEO poszło.
+  //
+  // Dowiadujemy się o tym BIERNIE. Podsłuch i tak widzi każde żądanie, więc
+  // rozpoznajemy zapis karty po tym, że niesie DOKŁADNIE te wartości, które
+  // wpisaliśmy — i dopiero po odpowiedzi serwera mówimy, jak poszło. Zero
+  // dodatkowego pisania do ERP i zero odpytywania.
+  const OCZEKIWANIE_SEO = { NAJDLUZEJ_MS: 15 * 60 * 1000 };
+  let oczekiwanySeo = null;
+
+  function czekajNaZapisSeo(tytul, opis, gotowe) {
+    oczekiwanySeo = {
+      tytul: String(tytul || ''),
+      opis: String(opis || ''),
+      doKiedy: Date.now() + OCZEKIWANIE_SEO.NAJDLUZEJ_MS,
+      gotowe: gotowe
+    };
+  }
+
+  function przestanCzekacNaSeo() {
+    oczekiwanySeo = null;
+  }
+
+  // Czy to żądanie jest zapisem karty niosącym nasze wartości.
+  //
+  // Dopasowanie po TREŚCI, nie po identyfikatorze produktu: karty nie
+  // otwieramy przez API, więc nie znamy jej `csItemsId`, a wpisany przez nas
+  // tekst jest i tak mocniejszym dowodem — trafia dokładnie w to, co
+  // wpisaliśmy, w tym samym rekordzie.
+  function toNaszZapisSeo(koperta) {
+    if (!oczekiwanySeo) return false;
+    if (Date.now() > oczekiwanySeo.doKiedy) { oczekiwanySeo = null; return false; }
+
+    const op = koperta && koperta.OperationInvokeInput;
+    const par = op && op.Params;
+    if (!par || par.ActionIdent !== 'csItemsUpdate') return false;
+
+    const lista = op.DataTableInitList;
+    if (!lista || typeof lista !== 'object') return false;
+
+    for (const k of Object.keys(lista)) {
+      const w = lista[k];
+      if (!w || typeof w !== 'object') continue;
+      const dt = w.DataTableInit && w.DataTableInit.DataTable;
+      const wiersz = dt ? erpNaObiekty(dt)[0] : null;
+      if (!wiersz) continue;
+
+      const tytulOk = !oczekiwanySeo.tytul
+        || String(wiersz.SEOTitle_PL || '') === oczekiwanySeo.tytul;
+      const opisOk = !oczekiwanySeo.opis
+        || String(wiersz.SEODescription_PL || '') === oczekiwanySeo.opis;
+      // Wymagamy, żeby wiersz w ogóle miał pola SEO — inaczej „brak zmiany"
+      // dałby fałszywe trafienie na każdym innym zapisie karty.
+      const maPolaSeo = Object.prototype.hasOwnProperty.call(wiersz, 'SEOTitle_PL')
+        || Object.prototype.hasOwnProperty.call(wiersz, 'SEODescription_PL');
+      if (maPolaSeo && tytulOk && opisOk) return true;
+    }
+    return false;
+  }
+
+  function sprawdzZapisSeo(koperta, xhr) {
+    if (!toNaszZapisSeo(koperta)) return;
+    const czekanie = oczekiwanySeo;
+    oczekiwanySeo = null;   // jedno żądanie, jedna odpowiedź
+
+    xhr.addEventListener('loadend', () => {
+      let blad = null;
+      if (xhr.status < 200 || xhr.status >= 300) {
+        blad = 'ERP odpowiedział HTTP ' + xhr.status;
+      } else {
+        try {
+          const odp = JSON.parse(xhr.responseText || '{}');
+          if (odp.Error) blad = String(odp.Error).slice(0, 300);
+          else if (odp.ExceptionTransport) blad = String(odp.ExceptionTransport).slice(0, 300);
+        } catch (e) {
+          blad = 'nieczytelna odpowiedź ERP';
+        }
+      }
+      try {
+        czekanie.gotowe(blad ? { ok: false, blad: blad } : { ok: true });
+      } catch (e) { /* komunikat to nie powód, żeby cokolwiek psuć */ }
+    });
+  }
+
+  // Krótkie, ciepłe potwierdzenie. Kilka wariantów, bo przy kilkuset
+  // produktach ten sam żart przestaje być żartem.
+  const GRATULACJE = [
+    '✋ Piątka. Ten produkt jest domknięty.',
+    '🎯 Opisy i SEO na miejscu. Produkt zrobiony.',
+    '✨ Gotowe. Jeden produkt bliżej końca listy.',
+    '📦 Zamknięte i podpisane. Następny?'
+  ];
+
+  function gratulacja() {
+    return GRATULACJE[Math.floor(Math.random() * GRATULACJE.length)];
   }
 
   // ---------- SEO: wpisanie w formularz, bez zapisu ----------
@@ -6176,6 +6282,18 @@
               + ' → ' + opis.length + ' znaków\n' : '')
             + '\n' + w.dalej,
             'Wpisane w kartę — JESZCZE NIE ZAPISANE');
+
+          // Od tej chwili nasłuchujemy, czy człowiek faktycznie kliknął
+          // „Zapisz" w ERP i czy serwer to przyjął. Biernie — nic nie pytamy.
+          czekajNaZapisSeo(tytul, opis, wynik => {
+            if (wynik.ok) {
+              notice('success', gratulacja(), 'SEO zapisane w ERP');
+            } else {
+              notice('error', 'ERP nie przyjął zapisu karty: ' + wynik.blad
+                + '\n' + '\n' + 'Wpisane wartości mogły przepaść — sprawdź kartę '
+                + 'i zapisz ponownie.', 'Zapis karty odrzucony');
+            }
+          });
         }
       } catch (e) {
         notice('error', String(e && e.message || e));
@@ -6256,7 +6374,10 @@
     el('nazwa').addEventListener('input', () => {
       el('ktoTo').textContent = el('nazwa').value.trim().slice(0, 90);
     });
-    el('close').addEventListener('click', () => box.remove());
+    el('close').addEventListener('click', () => {
+      przestanCzekacNaSeo();   // panel zamknięty, nie ma gdzie pokazać wyniku
+      box.remove();
+    });
     el('min').addEventListener('click', () => ustawZwiniecie(!zwiniety));
     el('zapisz').addEventListener('click', () => uruchom());
     el('seo').addEventListener('click', () => wpiszSeoZPanelu());
