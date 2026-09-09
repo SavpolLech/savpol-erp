@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.13.1
+// @version      3.13.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -535,7 +535,15 @@
     // decyzja handlowa, czyli lista.
     skuDeny: {
       '0020669': 'wypełniacz — olej, w prawie każdym koszyku, niska marża',
-      '0006418': 'wypełniacz — cukier puder, w prawie każdym koszyku, niska marża'
+      '0006418': 'wypełniacz — cukier puder, w prawie każdym koszyku, niska marża',
+      // Dopisany RAZEM z pudrem, nie zamiast obserwacji.
+      //
+      // ONE_PER_FAMILY dopuszcza jednego przedstawiciela rodziny („cukier"),
+      // a puder go dotąd zajmował. Po wykluczeniu pudru miejsce w rodzinie
+      // zwalnia się dla wanilinowego — i ten sam wypełniacz wróciłby na listę
+      // pod inną nazwą. Raport z 568 przebiegów pokazuje go przy 5,1% anchorów,
+      // przy tym rozproszonych.
+      '0006420': 'wypełniacz — cukier wanilinowy, ta sama rodzina co puder'
     },
 
     // Nigdy nie wykluczaj tych SKU — ratunek na fałszywe trafienia reguł.
