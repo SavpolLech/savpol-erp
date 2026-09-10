@@ -9,6 +9,10 @@
 // każdym insertcie, bo dla danego typu dokumentu wartość jest zawsze taka sama.
 
 const HEADER_FIXED_VALUES = {
+  // Cor i ShipmentType dopisane na wyraźną prośbę Michała (mail 2026-09-10) —
+  // wcześniej nie blokowały insertu (kolumny nullable), więc nie były w tej
+  // liście, ale wolał jawne 0 niż NULL dla WZ.
+  Cor: 0, ShipmentType: 0,
   anaKind: 2, anaUse: 1, CAddressType: 0, csDocumentsGenType: 1,
   CUnitPriceGetMethod: 0, CVATMethod: 0, DAddressType: 0, DiscountGetMethod: 0,
   DocsHeadersPaymentsPaymentBalance: 0, DocsHeadersPaymentsPositionsPaymentBalance: 0,
