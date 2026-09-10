@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.18.0
+// @version      3.18.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -6542,6 +6542,35 @@
       .filter(s => s && !widziane[s] && (widziane[s] = true));
   }
 
+  // Semantyczne komunikaty — ta sama paleta, co w panelu zapisu opisów: kolor
+  // i tytuł mają z odległości odpowiadać „udało się czy nie", bez czytania.
+  const BULK_STANY = {
+    success: { tlo: 'rgba(54,179,126,.15)', ramka: '#36b37e', tytul: 'Gotowe' },
+    error: { tlo: 'rgba(255,86,48,.15)', ramka: '#ff5630', tytul: 'Nie udało się' },
+    warning: { tlo: 'rgba(255,171,0,.15)', ramka: '#ffab00', tytul: 'Uwaga' },
+    info: { tlo: 'rgba(76,154,255,.13)', ramka: '#4c9aff', tytul: '' },
+    busy: { tlo: 'rgba(255,255,255,.07)', ramka: 'rgba(255,255,255,.35)', tytul: '' }
+  };
+
+  function ustawBulkNotice(noticeEl, rodzaj, tekst, tytulWlasny) {
+    if (!noticeEl) return;
+    const s = BULK_STANY[rodzaj] || BULK_STANY.info;
+    const tytul = tytulWlasny !== undefined ? tytulWlasny : s.tytul;
+    noticeEl.style.display = 'block';
+    noticeEl.style.background = s.tlo;
+    noticeEl.style.borderLeftColor = s.ramka;
+    noticeEl.innerHTML = '';
+    if (tytul) {
+      const h = document.createElement('div');
+      h.style.cssText = 'font-weight:700;margin-bottom:4px;color:' + s.ramka;
+      h.textContent = tytul;
+      noticeEl.appendChild(h);
+    }
+    const t = document.createElement('div');
+    t.textContent = tekst;
+    noticeEl.appendChild(t);
+  }
+
   function createBulkPanel() {
     const old = document.getElementById(BULK_TOOL.PANEL_ID);
     if (old) old.remove();
@@ -6569,7 +6598,9 @@
       '  <span data-role="min" title="Zwiń" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">–</span>',
       '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
       '</div>',
-      '<div data-role="progress" style="font-size:12px;min-height:18px;opacity:.9;margin-bottom:6px"></div>',
+      '<div data-role="notice" style="display:none;margin-bottom:8px;padding:9px 11px;',
+      '     border-radius:4px;border-left:3px solid transparent;font-size:12px;',
+      '     white-space:pre-wrap;max-height:170px;overflow:auto"></div>',
       '<div data-role="pelne">',
       '  <div style="font-size:12px;opacity:.75;margin-bottom:6px">',
       '    Podmienia fragment HTML w polu „Opis produktu", wszystkie wystąpienia ',
@@ -6604,15 +6635,15 @@
     if (bulkRun.running) return;
     const naSucho = !(opcje && opcje.zapisz === true);
     const el = r => panel.querySelector('[data-role="' + r + '"]');
-    const info = t => { el('progress').textContent = t; };
+    const info = (t, rodzaj) => ustawBulkNotice(el('notice'), rodzaj || 'busy', t);
 
     const skuLista = parsujSku(el('sku').value);
     const szukam = el('szukam').value;
     const naco = el('naco').value;
 
-    if (!skuLista.length) { info('Wklej przynajmniej jedno SKU.'); return; }
-    if (!szukam) { info('Podaj fragment, którego mam szukać.'); return; }
-    if (szukam === naco) { info('Szukany i docelowy fragment są identyczne — nie ma czego zmieniać.'); return; }
+    if (!skuLista.length) { info('Wklej przynajmniej jedno SKU.', 'error'); return; }
+    if (!szukam) { info('Podaj fragment, którego mam szukać.', 'error'); return; }
+    if (szukam === naco) { info('Szukany i docelowy fragment są identyczne — nie ma czego zmieniać.', 'error'); return; }
 
     bulkRun.running = true;
     bulkRun.stop = false;
@@ -6706,7 +6737,9 @@
       + zmienione + (naSucho ? ' z trafieniem' : ' zapisanych') + ', '
       + pominiete + ' bez trafienia, ' + bledy + ' błędów.'
       + (naSucho && zmienione > 0 ? ' Sprawdź raport, potem „Zapisz naprawdę".' : '');
-    info(podsumowanie);
+    const rodzaj = bledy > 0 ? (zmienione === 0 ? 'error' : 'warning')
+      : (zmienione > 0 ? 'success' : 'info');
+    info(podsumowanie, rodzaj);
     console.log('[Bulk edit]\n' + raport);
   }
 
@@ -6744,12 +6777,12 @@
       el('close').addEventListener('click', () => { bulkRun.stop = true; panel.remove(); });
       el('stop').addEventListener('click', () => {
         bulkRun.stop = true;
-        if (bulkRun.running) el('progress').textContent = 'Przerywam po bieżącym produkcie…';
+        if (bulkRun.running) ustawBulkNotice(el('notice'), 'warning', 'Przerywam po bieżącym produkcie…');
       });
       el('kopiuj').addEventListener('click', () => {
         if (!el('raport').value) return;
         skopiujDoSchowka(el('raport').value);
-        el('progress').textContent = 'Raport skopiowany do schowka.';
+        ustawBulkNotice(el('notice'), 'info', 'Raport skopiowany do schowka.');
       });
       el('sucho').addEventListener('click', () => runBulkEdit(panel, { zapisz: false }));
       el('zapisz').addEventListener('click', () => runBulkEdit(panel, { zapisz: true }));
