@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.18.2
+// @version      3.18.3
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2935,9 +2935,28 @@
     if (!erpPodsluch.szablonOpisow
         || (erpPodsluch.szablonOpisowSku !== String(sku) && !erpPodsluch.produkty[sku])) {
       console.log('[Opisy] Otwieram kartę ' + sku + ', żeby wziąć jego opisy.');
+      // Warunek „gotowe" MUSI wymagać wzorca.
+      //
+      // Wcześniej wystarczało `produkty[sku]`, czyli sama kartoteka — a tę
+      // podsłuch łapie już przy wyszukaniu produktu w katalogu, zanim
+      // ktokolwiek kliknie zakładkę Opisy. Przy pierwszym przebiegu w nowej
+      // sesji funkcja kończyła się więc sukcesem, mimo że wzorca nie było,
+      // i dwie linijki niżej leciało „Cannot read properties of null".
+      //
+      // Kartoteka sama w sobie nic nie daje: jest tym, co PODMIENIAMY we
+      // wzorcu, a nie tym, co go zastępuje.
       const auto = await erpOtworzZakladkeDlaSku(sku, ZAKLADKI.OPISY_B2B,
-        () => erpPodsluch.szablonOpisowSku === String(sku) || !!erpPodsluch.produkty[sku]);
+        () => !!erpPodsluch.szablonOpisow
+          && (erpPodsluch.szablonOpisowSku === String(sku)
+            || !!erpPodsluch.produkty[sku]));
       if (!auto.ok) return { ok: false, blad: auto.blad };
+    }
+
+    // Pas bezpieczeństwa: gdyby warunek wyżej kiedykolwiek znów przepuścił
+    // brak wzorca, chcemy zdania po polsku, a nie wyjątku o `null`.
+    if (!erpPodsluch.szablonOpisow) {
+      return { ok: false, blad: 'nie mam wzorca zapytania o opisy — otwórz raz '
+        + 'dowolny produkt (EDYCJA) i zakładkę „Opisy w B2B", potem spróbuj ponownie' };
     }
 
     const operacja = JSON.parse(JSON.stringify(erpPodsluch.szablonOpisow.OperationInvokeInput));
