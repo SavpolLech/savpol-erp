@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.19.0
+// @version      3.19.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1723,11 +1723,27 @@
     const grid = getVisibleCatalogGrid();
     if (!grid) return null;
     const rows = Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row'));
+    const widoczne = rows
+      .map(r => {
+        const c = r.querySelector('td[data-datafield="Item"]');
+        return c ? (c.getAttribute('title') || c.textContent || '').trim() : '(bez kolumny Item)';
+      })
+      .filter(Boolean);
     const row = rows.find(r => {
       const c = r.querySelector('td[data-datafield="Item"]');
       return c && c.getAttribute('title') === sku;
     });
-    if (!row) return null;
+    if (!row) {
+      // Bez tej linijki „nie znaleziono w katalogu" nie odróżnia trzech różnych
+      // rzeczy: produkt naprawdę nie istnieje, siatka pokazuje jeszcze wynik
+      // POPRZEDNIEGO wyszukania, albo zmieniły się kolumny widoku. Przy
+      // ośmiu odrzuceniach z rzędu to rozróżnienie jest całą diagnozą.
+      console.warn('[Cross-sell] Nie znalazłem ' + sku + ' w katalogu. '
+        + 'Wierszy w siatce: ' + rows.length
+        + (widoczne.length ? '; widzę: ' + widoczne.slice(0, 8).join(', ') : '')
+        + (rows.length > 8 ? ' …' : ''));
+      return null;
+    }
 
     const dysCell = row.querySelector('td[data-datafield="QStockAv"]');
     const groupCell = row.querySelector('td[data-datafield="ItemsGroupTranslatedDesc"]');
