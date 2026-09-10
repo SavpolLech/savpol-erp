@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.19.1
+// @version      3.19.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1718,8 +1718,25 @@
     return label ? label.textContent.trim() : '';
   }
 
+  function wierszKatalogu(grid, sku) {
+    if (!grid) return null;
+    return Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row')).find(r => {
+      const c = r.querySelector('td[data-datafield="Item"]');
+      return c && c.getAttribute('title') === sku;
+    }) || null;
+  }
+
   async function lookupCatalogItem(sku) {
     await searchCatalog(sku);
+
+    // Czekamy na WYNIK, nie na upływ czasu.
+    //
+    // Stały odstęp po wyszukaniu wystarczał, dopóki ERP odpowiadał szybko.
+    // Gdy zamulił, zaglądaliśmy do siatki z poprzednimi wynikami i produkt
+    // „nie istniał" — osiem odrzuceń z rzędu, cały przebieg bez propozycji,
+    // bez żadnego objawu poza wynikiem. Awaria przerywana, więc tym gorsza.
+    await waitFor(() => wierszKatalogu(getVisibleCatalogGrid(), sku), 16, 250);
+
     const grid = getVisibleCatalogGrid();
     if (!grid) return null;
     const rows = Array.from(grid.querySelectorAll('tbody tr.cs-grid-data-row'));
@@ -1729,10 +1746,7 @@
         return c ? (c.getAttribute('title') || c.textContent || '').trim() : '(bez kolumny Item)';
       })
       .filter(Boolean);
-    const row = rows.find(r => {
-      const c = r.querySelector('td[data-datafield="Item"]');
-      return c && c.getAttribute('title') === sku;
-    });
+    const row = wierszKatalogu(grid, sku);
     if (!row) {
       // Bez tej linijki „nie znaleziono w katalogu" nie odróżnia trzech różnych
       // rzeczy: produkt naprawdę nie istnieje, siatka pokazuje jeszcze wynik
