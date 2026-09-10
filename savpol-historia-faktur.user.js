@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.17.1
+// @version      3.17.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2163,7 +2163,14 @@
       erpPodsluch.szablonZalacznikow = koperta;
       erpPodsluch.szablonSku = skuWzorca;
     }
-    if (maOpisy) {
+    // Tylko wzorzec Z TOŻSAMOŚCIĄ produktu (skuWzorca niepuste). Część żądań o
+    // opisy, jakie strona wysyła przy otwieraniu karty, nie niesie wiersza
+    // csItems — a taki „ślepy" wzorzec nadpisywał dobry i psuł odczyt dla
+    // wszystkich kolejnych SKU (przy bulk edicie objawiało się to serią
+    // „we wzorcu nie widzę, o który produkt pyta", łącznie z SKU, który przed
+    // chwilą działał). Do podmiany produktu potrzebujemy wiersza csItems,
+    // więc wzorce bez niego po prostu ignorujemy.
+    if (maOpisy && skuWzorca) {
       erpPodsluch.szablonOpisow = koperta;
       erpPodsluch.szablonOpisowSku = skuWzorca;
     }
@@ -2920,10 +2927,16 @@
   async function erpCzytajOpisy(sku) {
     if (!erpPodsluch.koperta) return { ok: false, blad: 'brak danych sesji ERP' };
 
-    if (!erpPodsluch.szablonOpisow || erpPodsluch.szablonOpisowSku !== String(sku)) {
+    // Kartę otwieramy TYLKO gdy nie mamy wzorca albo tożsamości tego produktu.
+    // Mając jedno i drugie, podmieniamy produkt we wzorcu — dokładnie jak przy
+    // załącznikach. To eliminuje otwieranie karty per-SKU (wolne i zawodne w
+    // pętli) i sprawia, że po jednorazowym „rozgrzaniu" kolejne odczyty tego
+    // samego SKU idą już bez ruszania UI.
+    if (!erpPodsluch.szablonOpisow
+        || (erpPodsluch.szablonOpisowSku !== String(sku) && !erpPodsluch.produkty[sku])) {
       console.log('[Opisy] Otwieram kartę ' + sku + ', żeby wziąć jego opisy.');
       const auto = await erpOtworzZakladkeDlaSku(sku, ZAKLADKI.OPISY_B2B,
-        () => erpPodsluch.szablonOpisowSku === String(sku));
+        () => erpPodsluch.szablonOpisowSku === String(sku) || !!erpPodsluch.produkty[sku]);
       if (!auto.ok) return { ok: false, blad: auto.blad };
     }
 
@@ -2932,9 +2945,18 @@
     const lista = operacja.RefreshInputObject && operacja.RefreshInputObject.DataTableInitList;
     if (lista) Object.keys(lista).forEach(k => {
       const w = lista[k];
-      if (w && typeof w === 'object' && w.QueryUID) w.QueryUID = erpGuid();
+      if (!w || typeof w !== 'object') return;
+      if (w.QueryUID) w.QueryUID = erpGuid();
+      // Podmiana kartoteki na tę, o którą naprawdę pytamy (wzorzec mógł powstać
+      // przy innym produkcie). Podmieniamy WARTOŚCI w wierszu, nie cały zestaw —
+      // patrz komentarz przy erpCzytajZalaczniki.
+      if (String(w.DataSetSQLIdent || '') === 'csItems') {
+        erpPodmienProduktWeWzorcu(w, sku);
+      }
     });
 
+    // Kontrola PRZED wysłaniem: żądanie pyta o TEN produkt, czy o poprzedni?
+    // Przy nieudanej podmianie wolimy nie wysłać nic, niż odczytać cudzy opis.
     const czyj = erpWzorzecDotyczy(operacja, sku);
     if (!czyj) return { ok: false, blad: 'we wzorcu nie widzę, o który produkt pyta' };
     if (!czyj.zgodny) {
