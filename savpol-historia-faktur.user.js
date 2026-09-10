@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.18.3
+// @version      3.18.4
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -4456,6 +4456,20 @@
           }, anchorGroup);
           logAvailability(avail);
           analysis.candidates = avail.kept;
+          // Skrót powodów — inaczej „brak propozycji" nie odróżnia sytuacji
+          // „nikt z nikim nie chodzi w parze" od „wszystkich wyciął filtr".
+          if (avail.rejected.length) {
+            const zlicz = {};
+            avail.rejected.forEach(r => {
+              const powod = String(r.reason || 'nieznany').replace(/\(.*\)/, '').trim();
+              zlicz[powod] = (zlicz[powod] || 0) + 1;
+            });
+            analysis.powodyOdrzucen = Object.keys(zlicz)
+              .sort((a, b) => zlicz[b] - zlicz[a])
+              .slice(0, 5)
+              .map(k => k + ' × ' + zlicz[k])
+              .join(', ');
+          }
           analysis.weakSignal = analysis.weakSignal || avail.kept.length === 0;
           if (avail.aborted) { partial = true; analysis.partial = true; }
         }
@@ -4518,8 +4532,15 @@
         ui.finish('Brak propozycji dla tego produktu', false);
         ui.detail(`Sprawdziłem ${analysis.N} faktur i żaden produkt nie powtarza się ` +
           'w nich dość często, żeby go polecać. To normalne — ten produkt ' +
-          'po prostu nie ma stałych towarzyszy. Zrób opis bez tej sekcji.');
-        button.textContent = '🤷 Brak propozycji';
+          'po prostu nie ma stałych towarzyszy. Zrób opis bez tej sekcji.'
+          + (analysis.powodyOdrzucen ? '\n' + '\n' + 'Odrzuceni kandydaci: '
+            + analysis.powodyOdrzucen : ''));
+        // Brak propozycji NIE jest końcem pracy nad produktem — opis trzeba
+        // zrobić tak czy inaczej, tylko bez sekcji cross-sellingu. Bez tego
+        // przycisku ten przypadek był ślepą uliczką: użytkownik nie miał jak
+        // otworzyć generatora i przebieg szedł do kosza.
+        ui.result(' ', mainSku, { group: anchorGroup, invoices: analysis.N });
+        button.textContent = '🤷 Bez propozycji — użyj generatora';
       } else {
         if (spec && spec.rada) ui.detail('Specyfikacja nie została pobrana. ' + spec.rada);
         const clean = !partial && !analysis.unverified;
