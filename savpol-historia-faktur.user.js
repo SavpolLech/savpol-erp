@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.16.0
+// @version      3.17.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -384,6 +384,28 @@
       // próg by tu nie wystarczył.
       MIN_SCORE: 0.8
     }
+  };
+
+  // ---------- Konfiguracja: zbiorcza podmiana w opisach (bulk edit) ----------
+  //
+  // Osobne narzędzie, świadomie oddzielone od budowania opisów przez scraper
+  // faktur i od zapisu opisów z apki: inny cel (mechaniczna podmiana fragmentu
+  // HTML na liście produktów), inny przycisk, inne UI. Współdzieli z tamtym
+  // wyłącznie sprawdzoną maszynerię zapisu do ERP (erpCzytajOpisy, zapiszOpisy).
+  //
+  // Podmiana jest DOSŁOWNA (nie regex): szuka dokładnego ciągu znaków w długim
+  // opisie i zamienia wszystkie wystąpienia. Dosłowność jest tu cechą, nie
+  // ograniczeniem — przy zapisie bez wersjonowania po stronie ERP przewidywalność
+  // jest ważniejsza niż siła. Podmieniamy WYŁĄCZNIE pole „Opis produktu".
+  const BULK_TOOL = {
+    ENABLE: true,
+    BUTTON_ID: 'savpol-bulk-btn',
+    PANEL_ID: 'savpol-bulk-panel',
+    // Które pole opisu tykamy. Świadomie jedno — patrz komentarz wyżej.
+    POLE: 'opis',
+    // Odstęp po każdym produkcie. Każda pozycja to odczyt + (przy zapisie)
+    // kilka żądań do ERP; nie zasypujemy serwera przy dłuższej liście.
+    DELAY_MS: 250
   };
 
   // ---------- Konfiguracja: statystyki cen sprzedaży ----------
@@ -6386,6 +6408,209 @@
     return box;
   }
 
+  // ==================== BULK EDIT: zbiorcza podmiana w opisach ====================
+  //
+  // Przebieg: dla każdego SKU czytamy „Opis produktu", liczymy dosłowne
+  // wystąpienia szukanego fragmentu, składamy nową treść przez zamianę
+  // wszystkich wystąpień i — w trybie zapisu — oddajemy ją do zapiszOpisy(),
+  // które ma już kopię zapasową, blokadę cudzych zmian i kontrolę po zapisie.
+  // Domyślnie NIC nie zapisuje: najpierw sucho, zapis po zatwierdzeniu.
+  const bulkRun = { running: false, stop: false };
+
+  // Ile razy `igla` występuje dosłownie w `stog`. Bez regexa, bez pułapek na
+  // znakach specjalnych — liczymy przez rozbicie łańcucha.
+  function liczWystapienia(stog, igla) {
+    if (!igla) return 0;
+    return String(stog).split(igla).length - 1;
+  }
+
+  // Parsowanie wklejonej listy SKU: po jednym w wierszu, przycięte, bez pustych
+  // i bez duplikatów (podwójny SKU to podwójny zapis tego samego produktu).
+  function parsujSku(txt) {
+    const widziane = {};
+    return String(txt || '').split(/\r?\n/)
+      .map(s => s.trim())
+      .filter(s => s && !widziane[s] && (widziane[s] = true));
+  }
+
+  function createBulkPanel() {
+    const old = document.getElementById(BULK_TOOL.PANEL_ID);
+    if (old) old.remove();
+
+    const box = document.createElement('div');
+    box.id = BULK_TOOL.PANEL_ID;
+    box.style.cssText = [
+      'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483000',
+      'width:460px', 'max-height:90vh', 'overflow:auto',
+      'padding:14px 16px', 'box-sizing:border-box',
+      'background:#1f2933', 'color:#f5f7fa', 'border-radius:8px',
+      'box-shadow:0 6px 24px rgba(0,0,0,.35)',
+      'font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif'
+    ].join(';');
+
+    const field = 'width:100%;box-sizing:border-box;font:12px ui-monospace,Consolas,monospace;' +
+      'padding:6px 8px;border:1px solid rgba(255,255,255,.2);border-radius:4px;' +
+      'background:rgba(0,0,0,.25);color:#f5f7fa;resize:vertical';
+    const btn = 'cursor:pointer;font:inherit;font-size:12px;padding:7px 12px;border:0;' +
+      'border-radius:4px;font-weight:600';
+
+    box.innerHTML = [
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
+      '  <strong style="flex:1;font-size:13px">🔁 Zbiorcza podmiana w opisach</strong>',
+      '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
+      '</div>',
+      '<div style="font-size:12px;opacity:.75;margin-bottom:6px">',
+      '  Podmienia <b>dosłowny</b> fragment HTML w polu „Opis produktu". ',
+      '  Zmienia wszystkie wystąpienia w każdym SKU z listy.</div>',
+      '<div style="font-size:12px;opacity:.85;margin-top:6px">SKU (po jednym w wierszu):</div>',
+      '<textarea data-role="sku" rows="4" spellcheck="false" style="' + field + '"></textarea>',
+      '<div style="font-size:12px;opacity:.85;margin-top:8px">Szukam (dokładny HTML):</div>',
+      '<textarea data-role="szukam" rows="4" spellcheck="false" style="' + field + '"></textarea>',
+      '<div style="font-size:12px;opacity:.85;margin-top:8px">Zmieniam na:</div>',
+      '<textarea data-role="naco" rows="4" spellcheck="false" style="' + field + '"></textarea>',
+      '<div data-role="progress" style="margin-top:10px;font-size:12px;min-height:18px;opacity:.9"></div>',
+      '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">',
+      '  <button data-role="sucho" style="' + btn + ';background:#3b82f6;color:#fff">Sprawdź na sucho</button>',
+      '  <button data-role="zapisz" style="' + btn + ';background:#b91c1c;color:#fff" disabled>Zapisz naprawdę</button>',
+      '  <button data-role="stop" style="' + btn + ';background:#374151;color:#f5f7fa">Przerwij</button>',
+      '</div>',
+      '<div style="font-size:11px;opacity:.6;margin-top:8px">',
+      '  „Zapisz naprawdę" odblokuje się po udanym przebiegu na sucho. ',
+      '  Raport z każdego przebiegu ląduje w schowku.</div>'
+    ].join('');
+
+    document.body.appendChild(box);
+    return box;
+  }
+
+  async function runBulkEdit(panel, opcje) {
+    if (bulkRun.running) return;
+    const naSucho = !(opcje && opcje.zapisz === true);
+    const el = r => panel.querySelector('[data-role="' + r + '"]');
+    const info = t => { el('progress').textContent = t; };
+
+    const skuLista = parsujSku(el('sku').value);
+    const szukam = el('szukam').value;
+    const naco = el('naco').value;
+
+    if (!skuLista.length) { info('Wklej przynajmniej jedno SKU.'); return; }
+    if (!szukam) { info('Podaj fragment, którego mam szukać.'); return; }
+    if (szukam === naco) { info('Szukany i docelowy fragment są identyczne — nie ma czego zmieniać.'); return; }
+
+    bulkRun.running = true;
+    bulkRun.stop = false;
+    el('sucho').disabled = true;
+    el('zapisz').disabled = true;
+
+    const wyniki = [];
+    let zmienione = 0, pominiete = 0, bledy = 0, sumaWystapien = 0;
+
+    for (let i = 0; i < skuLista.length; i++) {
+      if (bulkRun.stop) { wyniki.push('— przerwano na życzenie —'); break; }
+      const sku = skuLista[i];
+      info((naSucho ? 'Sucho' : 'Zapis') + ' ' + (i + 1) + '/' + skuLista.length + ': ' + sku + '…');
+
+      try {
+        const lista = await erpCzytajOpisy(sku);
+        if (!lista.ok) {
+          bledy++;
+          wyniki.push('✗ ' + sku + ' — nie odczytałem opisów: ' + lista.blad);
+          continue;
+        }
+        const wiersz = opisPoKluczu(lista.wiersze, BULK_TOOL.POLE);
+        const stara = wiersz ? String(wiersz.ItemDesc1_PL || wiersz.ItemTranslatedDesc1 || '') : '';
+        const n = liczWystapienia(stara, szukam);
+
+        if (n === 0) {
+          pominiete++;
+          wyniki.push('· ' + sku + ' — nie znaleziono fragmentu, pomijam');
+          continue;
+        }
+        sumaWystapien += n;
+        const nowa = stara.split(szukam).join(naco);
+
+        if (naSucho) {
+          zmienione++;
+          wyniki.push('~ ' + sku + ' — ' + n + '× do podmiany  ('
+            + stara.length + ' → ' + nowa.length + ' znaków)');
+          continue;
+        }
+
+        // Zapis idzie przez wspólną, sprawdzoną ścieżkę: kopia zapasowa,
+        // przełączenie z WYSIWYG, kontrola po zapisie. Bulk edit nie robił
+        // migawki, więc blokada cudzych zmian tu nie zadziała fałszywie.
+        const w = await zapiszOpisy(sku, { [BULK_TOOL.POLE]: nowa }, { zapisz: true });
+        if (w.ok) {
+          zmienione++;
+          wyniki.push('✓ ' + sku + ' — ' + n + '× podmienione i potwierdzone  ('
+            + stara.length + ' → ' + nowa.length + ' znaków)');
+        } else {
+          bledy++;
+          wyniki.push('✗ ' + sku + ' — zapis odrzucony: ' + w.blad);
+        }
+      } catch (e) {
+        bledy++;
+        wyniki.push('✗ ' + sku + ' — błąd: ' + (e && e.message || e));
+      }
+
+      if (i < skuLista.length - 1) await new Promise(r => setTimeout(r, BULK_TOOL.DELAY_MS));
+    }
+
+    bulkRun.running = false;
+    el('sucho').disabled = false;
+    // Zapis odblokowujemy dopiero, gdy sucho pokazało realne trafienia.
+    if (naSucho) el('zapisz').disabled = !(zmienione > 0);
+
+    const naglowek = (naSucho ? 'BULK EDIT — SUCHO (nic nie zapisano)' : 'BULK EDIT — ZAPIS')
+      + '\n' + location.href + '\n' + new Date().toISOString()
+      + '\nPole: „Opis produktu"'
+      + '\nSzukam: ' + JSON.stringify(szukam.slice(0, 120)) + (szukam.length > 120 ? '…' : '')
+      + '\nZmieniam na: ' + JSON.stringify(naco.slice(0, 120)) + (naco.length > 120 ? '…' : '')
+      + '\nSKU: ' + skuLista.length
+      + ' | z trafieniem: ' + zmienione
+      + ' | bez trafienia: ' + pominiete
+      + ' | błędy: ' + bledy
+      + ' | wystąpień łącznie: ' + sumaWystapien;
+    const raport = naglowek + '\n\n' + wyniki.join('\n');
+    ostatniZrzut = raport;
+    skopiujDoSchowka(raport);
+
+    const podsumowanie = (naSucho ? 'Sucho gotowe. ' : 'Zapis gotowy. ')
+      + zmienione + (naSucho ? ' z trafieniem' : ' zapisanych') + ', '
+      + pominiete + ' bez trafienia, ' + bledy + ' błędów. Raport w schowku.'
+      + (naSucho && zmienione > 0 ? ' Sprawdź raport, potem „Zapisz naprawdę".' : '');
+    info(podsumowanie);
+    console.log('[Bulk edit]\n' + raport);
+  }
+
+  function insertBulkButtonIfNeeded() {
+    if (!BULK_TOOL.ENABLE) return;
+    if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
+    const toolbar = getVisibleToolbar();
+    if (!toolbar) return;
+    if (toolbar.querySelector('#' + BULK_TOOL.BUTTON_ID)) return;
+
+    const b = document.createElement('div');
+    b.id = BULK_TOOL.BUTTON_ID;
+    b.className = 'csButton _csControl csButtonAction csAutogenerateButton UnderlinedButton icon-left';
+    b.style.cursor = 'pointer';
+    b.innerHTML = '<div class="caption" title="Podmień dosłowny fragment HTML w opisach '
+      + 'produktów — lista SKU, szukany fragment, docelowy fragment">🔁 Podmień w opisach</div>';
+    b.addEventListener('click', () => {
+      const panel = createBulkPanel();
+      const el = r => panel.querySelector('[data-role="' + r + '"]');
+      el('close').addEventListener('click', () => { bulkRun.stop = true; panel.remove(); });
+      el('stop').addEventListener('click', () => {
+        bulkRun.stop = true;
+        if (bulkRun.running) el('progress').textContent = 'Przerywam po bieżącym produkcie…';
+      });
+      el('sucho').addEventListener('click', () => runBulkEdit(panel, { zapisz: false }));
+      el('zapisz').addEventListener('click', () => runBulkEdit(panel, { zapisz: true }));
+      el('sku').focus();
+    });
+    toolbar.appendChild(b);
+  }
+
   function insertOpisyButtonIfNeeded() {
     if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
     const toolbar = getVisibleToolbar();
@@ -6934,6 +7159,7 @@
       insertEsavpolButtonIfNeeded();
       insertEanButtonIfNeeded();
       insertOpisyButtonIfNeeded();
+      insertBulkButtonIfNeeded();
     }, 1000);
   }
 
