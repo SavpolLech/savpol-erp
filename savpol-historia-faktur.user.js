@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.17.2
+// @version      3.18.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3468,6 +3468,54 @@
   // specyfikacji: prywatne repo, wspólne dla całego zespołu.
   const KOPIE = { ENDPOINT: '/api/opis-kopia' };
 
+  // Gdzie apka trzyma AKTUALNY stan opisów — lustro, jeden plik per SKU,
+  // nadpisywany przy każdej zmianie. Inaczej niż kopie (te są historyczne i
+  // dopisywane): tu chodzi o to, żeby repo apki po każdym zapisie odzwierciedlało
+  // realny stan ERP, niezależnie od tego, jak zmiana powstała (generator czy
+  // bulk edit). Niekrytyczne: zapis w ERP już się udał, wysyłka to tylko
+  // odbicie stanu do repo.
+  const AKTUALNE = { ENDPOINT: '/api/opis-aktualny' };
+
+  // Wspólny kształt treści opisów dla apki (kopia i lustro). Klucz to CZYTELNA
+  // nazwa rodzaju, bo apka wylicza `rodzaje` jako `Object.keys(tresc)`. Wartość
+  // niesie GUID rodzaju i identyfikator wiersza — bez nich nie da się odtworzyć.
+  function zbudujTrescOpisow(wiersze) {
+    const tresc = {};
+    (wiersze || []).forEach(w => {
+      const rodzaj = w.B2BDescriptionTypeTranslatedDesc || ('typ ' + w.csB2BDescriptionTypesG);
+      tresc[rodzaj] = {
+        typG: w.csB2BDescriptionTypesG || '',
+        wierszId: w.csItemsDesc4B2BPortalsId,
+        tekst: String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '')
+      };
+    });
+    return tresc;
+  }
+
+  // Odbicie aktualnego stanu opisów do repo apki. Nie przerywa niczego: po
+  // udanym zapisie w ERP treść już jest bezpieczna, więc porażka wysyłki to
+  // najwyżej chwilowo nieaktualne lustro — meldujemy i lecimy dalej.
+  async function wyslijAktualneOpisy(sku, wiersze) {
+    const login = erpPodsluch.koperta && erpPodsluch.koperta.LoginInfo;
+    try {
+      const r = await apkaZadanie('POST', AKTUALNE.ENDPOINT, {
+        sku: sku,
+        kto: (login && login.UserName) || 'nieznany',
+        tresc: zbudujTrescOpisow(wiersze)
+      });
+      if (r.status >= 200 && r.status < 300 && r.body && r.body.ok !== false) {
+        return { ok: true, sciezka: r.body && r.body.path };
+      }
+      console.warn('[Opisy] Apka nie przyjęła aktualnego stanu (HTTP ' + r.status
+        + ') — repo apki może być chwilowo nieaktualne dla ' + sku + '.');
+      return { ok: false, status: r.status };
+    } catch (e) {
+      console.warn('[Opisy] Wysyłka aktualnego stanu nie powiodła się: '
+        + (e && e.message || e));
+      return { ok: false, blad: String(e && e.message || e) };
+    }
+  }
+
   // Zabezpieczenie treści przed nadpisaniem — WSPÓLNE, nie na jednym dysku.
   //
   // Nad tym samym ERP pracują 2–3 osoby. Kopia w „Pobranych" jednej z nich nie
@@ -3488,15 +3536,7 @@
     // zapisujemy. Kopia ma być zdjęciem stanu sprzed zmiany; gdyby kiedyś
     // ktoś rozszerzył zakres zapisu albo ERP zrobił coś nieoczekiwanego,
     // węższa kopia okazałaby się bezużyteczna dokładnie wtedy, gdy trzeba.
-    const tresc = {};
-    wiersze.forEach(w => {
-      const rodzaj = w.B2BDescriptionTypeTranslatedDesc || ('typ ' + w.csB2BDescriptionTypesG);
-      tresc[rodzaj] = {
-        typG: w.csB2BDescriptionTypesG || '',
-        wierszId: w.csItemsDesc4B2BPortalsId,
-        tekst: String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '')
-      };
-    });
+    const tresc = zbudujTrescOpisow(wiersze);
 
     // `kiedy` nadaje apka — jeden zegar dla wszystkich, zamiast trzech
     // przeglądarek, z których każda może chodzić inaczej.
@@ -3926,7 +3966,15 @@
       return { ok: false, blad: 'po zapisie treść nie zgadza się dla: ' + niezgodne.join(', ') };
     }
     console.log('[Opisy] ' + sku + ' — zapisane i potwierdzone odczytem.');
-    return { ok: true, plan: plan };
+
+    // Odbicie aktualnego stanu do repo apki. Używamy `po` — czyli tego, co
+    // faktycznie leży teraz w ERP (po ewentualnej normalizacji HTML) — a nie
+    // tego, co wysłaliśmy, żeby lustro było wierne. Porażka nie psuje zapisu.
+    const lustro = await wyslijAktualneOpisy(sku, po.wiersze);
+    if (lustro.ok) {
+      console.log('[Opisy] ' + sku + ' — aktualny stan odbity do repo apki.');
+    }
+    return { ok: true, plan: plan, lustro: lustro.ok };
   }
 
   // Wybór specyfikacji — dwa kroki, tak jak robi to człowiek:
@@ -6616,7 +6664,8 @@
         if (w.ok) {
           zmienione++;
           wyniki.push('✓ ' + sku + ' — ' + traf.n + '× podmienione i potwierdzone' + jak + '  ('
-            + stara.length + ' → ' + nowa.length + ' znaków)');
+            + stara.length + ' → ' + nowa.length + ' znaków)'
+            + (w.lustro ? '' : '  [uwaga: repo apki nieodświeżone]'));
         } else {
           bledy++;
           wyniki.push('✗ ' + sku + ' — zapis odrzucony' + jak + ': ' + w.blad);
