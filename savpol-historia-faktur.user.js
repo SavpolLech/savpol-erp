@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.18.4
+// @version      3.19.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -346,6 +346,33 @@
     // nie po klasie CSS — klasy w sklepie się zmieniają, kształt nie.
     PRODUCT_LINK_RE: /^\/[a-z0-9ąćęłńóśźż-]+-\d{6,}$/i
   };
+
+  // ---------- Kto widzi narzędzia zaawansowane ----------
+  // Ze skryptu korzysta cały zespół, ale „Podmień w opisach" i „Dane z ERP"
+  // są potrzebne tylko wybranym osobom. Bramkujemy je po loginie ERP
+  // (LoginInfo.UserName z przechwyconej sesji).
+  //
+  // PUSTA lista = pokazuj wszystkim (zachowanie sprzed ograniczenia). Wpisanie
+  // choćby jednego loginu włącza ograniczenie — reszta przestaje widzieć te
+  // przyciski. Login sprawdzasz przez savpolKtoJestem() w konsoli.
+  const DOSTEP_ZAAWANSOWANY = [
+    'l.dutkiewicz@savpol.pl'   // dokładną wartość sprawdzisz przez savpolKtoJestem()
+  ];
+
+  function aktualnyLoginErp() {
+    const li = erpPodsluch && erpPodsluch.koperta && erpPodsluch.koperta.LoginInfo;
+    return li && li.UserName ? String(li.UserName) : '';
+  }
+
+  // Dopóki nie mamy jeszcze sesji, login jest pusty — przy niepustej liście
+  // znaczy to „nie pokazuj", więc przyciski pojawią się dopiero, gdy skrypt
+  // przechwyci sesję (sekunda–dwie po wejściu na katalog). Świadomie: lepiej
+  // pokazać z opóźnieniem właściwej osobie niż mignąć wszystkim.
+  function czyDostepZaawansowany() {
+    if (!DOSTEP_ZAAWANSOWANY.length) return true;
+    const login = aktualnyLoginErp().toLowerCase();
+    return !!login && DOSTEP_ZAAWANSOWANY.some(u => String(u).toLowerCase() === login);
+  }
 
   // ---------- Konfiguracja: masowy odczyt danych z katalogu ----------
   // Druga funkcja skryptu, niezależna od cross-sellingu: wklejasz kolumnę
@@ -6801,6 +6828,7 @@
 
   function insertBulkButtonIfNeeded() {
     if (!BULK_TOOL.ENABLE) return;
+    if (!czyDostepZaawansowany()) return;
     if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
     const toolbar = getVisibleToolbar();
     if (!toolbar) return;
@@ -7285,6 +7313,7 @@
 
   function insertEanButtonIfNeeded() {
     if (!EAN_TOOL.ENABLE) return;
+    if (!czyDostepZaawansowany()) return;
     if (!location.href.includes(TARGET_URL_FRAGMENT)) return;
     const toolbar = getVisibleToolbar();
     if (!toolbar) return;
@@ -7371,6 +7400,19 @@
     unsafeWindow.savpolKopia = function (path) {
       if (!path) { console.warn('[Kopie] Podaj ścieżkę z savpolKopie().'); return; }
       return pokazKopie1(String(path));
+    };
+
+    // Dokładny login ERP tej sesji — do wpisania w DOSTEP_ZAAWANSOWANY.
+    unsafeWindow.savpolKtoJestem = function () {
+      const login = aktualnyLoginErp();
+      if (!login) {
+        console.warn('[ERP] Nie mam jeszcze danych sesji — kliknij coś w ERP '
+          + '(np. otwórz katalog) i spróbuj ponownie.');
+        return '';
+      }
+      skopiujDoSchowka(login);
+      console.log('[ERP] Twój login ERP: ' + login + ' (skopiowany do schowka)');
+      return login;
     };
 
     unsafeWindow.savpolOstatniZrzut = function () {
