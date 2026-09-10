@@ -34,3 +34,6 @@ automatyzacje/**/debug-*.png
 # (lib/git-log-push.js), żeby było widać co się dzieje bez dostępu do
 # serwera. Zawierają tylko numery dokumentów i liczniki, nie dane handlowe
 # (kwoty, kontrahenci) — te zostają wyłącznie w CSV, dalej ignorowanym wyżej.
+
+# Kolekcja sucharow z Familiady - cudza tworczosc, repo jest de facto publiczne
+suchary.txt

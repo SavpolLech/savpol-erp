@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.19.3
+// @version      3.20.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3441,9 +3441,45 @@
     '📦 Zamknięte i podpisane. Następny?'
   ];
 
-  function gratulacja() {
-    return GRATULACJE[Math.floor(Math.random() * GRATULACJE.length)];
+  // Suchary — RZADKO, i tylko przy sukcesie.
+  //
+  // Rzadko, bo cała wartość jest w niespodziance: żart za każdym razem staje
+  // się elementem interfejsu, a element interfejsu nikogo nie bawi. Jeden na
+  // pięć zapisów wystarcza, żeby to zostało miłym trafem.
+  //
+  // Źródło: suchary Karola Strasburgera z Familiady, wybrane z kolekcji
+  // zebranej przez zespół (suchary.txt). Wzięte najkrótsze — te dłuższe nie
+  // mieszczą się w okienku i psują rytm.
+  //
+  // Świadomie POMINIĘTE: żarty o blondynkach, o wadze żony i te oparte na
+  // stereotypach płciowych. To narzędzie pracy używane przez cały zespół,
+  // więc nie każdy kultowy suchar tu pasuje.
+  const SUCHARY = [
+    '– Co to jest autosugestia? – Jest to sugerowanie komuś, że ma auto.',
+    'Pytanie: Jakim samochodem jeździ Ringo? Starem.',
+    '– Co to jest: czerwone i źle robi na zęby? – Cegła.',
+    '– Co to jest kałuża? – Kałuża „po wojskowemu”, to jest akwen wodny bez znaczenia strategicznego.',
+    'Z marchewką jest tak, że nie rośnie w sadzie, ale za to pomaga wygrać w Familiadzie.',
+    'Po meczu trener mówi do zawodników: – Następnym razem pójdzie lepiej, bo gorzej już być nie może.',
+    'Chuck Norris ma takie włosy na klacie, że jego włosy na klacie też mają włosy na klacie.',
+    'Przychodzi baba do okulisty i mówi: – Panie doktorze, z bliska nic nie widzę. – A z daleka? – Z Częstochowy.',
+    'Dwie kury rozmawiają ze sobą: – Co robi twój stary? – A... coś tam grzebie przy samochodzie.'
+  ];
+
+
+  const SZANSA_NA_SUCHAR = 0.2;   // jeden na pięć zapisów
+
+  function losowy(lista) {
+    return lista[Math.floor(Math.random() * lista.length)];
   }
+
+  function gratulacja() {
+    const podstawa = losowy(GRATULACJE);
+    return Math.random() < SZANSA_NA_SUCHAR
+      ? podstawa + '\n\n' + losowy(SUCHARY)
+      : podstawa;
+  }
+
 
   // ---------- SEO: wpisanie w formularz, bez zapisu ----------
   //
