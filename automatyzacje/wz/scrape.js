@@ -224,23 +224,47 @@ async function scrapeWzInPage(opts) {
     const next = pager.querySelector('.NextPageButton');
     return !!next && !next.className.split(/\s+/).includes('inactive');
   }
+  // BŁĄD naprawiony 2026-09-10: czekaliśmy tylko aż zmieni się NUMER strony
+  // (.ActivePageNoInput), nie treść siatki. ERP potrafi zaktualizować numer
+  // strony zanim realnie doładuje nowe wiersze (osobne wywołanie AJAX) — w tym
+  // oknie targetRows() zwracał STARĄ, już przetworzoną stronę. Ponieważ te
+  // dokumenty były już w processedDocs, docsOnPage wychodziło puste, pętla
+  // leciała dalej i klikała "następna" PONOWNIE — realna strona nigdy nie
+  // została przeczytana. Przy ~700 dok./dzień (~34 strony) to realnie gubiło
+  // dokumenty, nie tylko teoretycznie — stąd rozjazd ze stanem faktycznym w ERP.
+  // Naprawa: czekamy, aż treść wierszy (nie tylko numer strony) FAKTYCZNIE
+  // się zmieni, zanim uznamy przejście za zakończone.
   async function goToNextPage(pager) {
     const pageNoBefore = pager.querySelector('.ActivePageNoInput');
     const beforeVal = pageNoBefore ? pageNoBefore.value : null;
+    const rowsBefore = targetRows().map(rowDocNumber).join('|');
+
     const pageChanged = () => {
       const p = getVisiblePager();
       const inp = p && p.querySelector('.ActivePageNoInput');
       return inp && inp.value !== beforeVal;
     };
+    const rowsChanged = () => {
+      const now = targetRows().map(rowDocNumber).join('|');
+      return now.length > 0 && now !== rowsBefore;
+    };
+
     const next = pager.querySelector('.NextPageButton');
-    if (next) {
-      next.click();
-      if (await waitFor(pageChanged, 40, 250)) {
-        await humanPause(DELAY_AFTER_PAGE);
-        return true;
-      }
+    if (!next) return false;
+
+    next.click();
+    if (!await waitFor(pageChanged, 40, 250)) return false;
+
+    // Numer strony już się zmienił — ale to sam w sobie NIC nie gwarantuje
+    // o treści. Czekamy osobno, aż wiersze faktycznie się różnią od tych
+    // sprzed kliknięcia. Dłuższy limit niż gdziekolwiek indziej — to jest
+    // dokładnie ten moment, w którym wcześniej traciliśmy dane.
+    if (!await waitFor(rowsChanged, 60, 250)) {
+      return false;
     }
-    return false;
+
+    await humanPause(DELAY_AFTER_PAGE);
+    return true;
   }
 
   const headers = [];
