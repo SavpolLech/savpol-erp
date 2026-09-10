@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.19.2
+// @version      3.19.3
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3023,6 +3023,22 @@
       const w = lista[k];
       if (!w || typeof w !== 'object') return;
       if (w.QueryUID) w.QueryUID = erpGuid();
+
+      // Cała lista, nie pierwsza strona.
+      //
+      // Wzorzec przejmujemy od strony, a strona pobiera tyle wierszy, ile
+      // mieści się w widoku. Produkt z większą liczbą rodzajów opisu miał
+      // więc część z nich za stroną — a wtedy istniejący wiersz wyglądał na
+      // brakujący i zapis próbował go ZAŁOŻYĆ. Kończyło się to błędem klucza
+      // głównego, czyli w najlepszym możliwym miejscu: baza nie pozwoliła
+      // zrobić duplikatu. Gdyby pozwoliła, mielibyśmy dwa opisy tego samego
+      // rodzaju i nikt by nie wiedział, który pokazuje sklep.
+      if (Object.prototype.hasOwnProperty.call(w, 'PageSizeFromClient')) {
+        w.PageSizeFromClient = 500;
+        w.PageActual = 0;
+        if (Object.prototype.hasOwnProperty.call(w, 'KeepPage')) w.KeepPage = false;
+      }
+
       // Podmiana kartoteki na tę, o którą naprawdę pytamy (wzorzec mógł powstać
       // przy innym produkcie). Podmieniamy WARTOŚCI w wierszu, nie cały zestaw —
       // patrz komentarz przy erpCzytajZalaczniki.
@@ -4007,7 +4023,20 @@
     for (const p of plan) {
       if (!p.wierszId) {
         const zal = await erpZalozWierszOpisu(lista.itemId, p.typ);
-        if (!zal.ok) return { ok: false, blad: 'nie udało się założyć wiersza „' + p.klucz + '": ' + zal.blad };
+        if (!zal.ok) {
+          // Naruszenie klucza głównego znaczy jedno: wiersz TAM JEST, tylko
+          // go nie zobaczyliśmy. Nie ma po co przerywać pracy — czytamy listę
+          // jeszcze raz i korzystamy z istniejącego. Zostawiamy jednak ślad
+          // w konsoli, bo powtarzalne wpadanie tutaj oznaczałoby, że odczyt
+          // wciąż czegoś nie widzi.
+          if (/PRIMARY KEY|duplicate key/i.test(String(zal.blad || ''))) {
+            console.warn('[Opisy] „' + etykietaTypu(p.klucz) + '" już istnieje '
+              + 'w ERP, choć nie było go w odczytanej liście. Czytam ponownie.');
+          } else {
+            return { ok: false, blad: 'nie udało się założyć wiersza „'
+              + etykietaTypu(p.klucz) + '": ' + zal.blad };
+          }
+        }
         // Identyfikator nadaje serwer, więc czytamy listę ponownie.
         const znow = await erpCzytajOpisy(sku);
         if (!znow.ok) return { ok: false, blad: 'założyłem wiersz, ale nie umiem go odczytać: ' + znow.blad };
