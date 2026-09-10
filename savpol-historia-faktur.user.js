@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.18.1
+// @version      3.18.2
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -6651,6 +6651,7 @@
     el('zapisz').disabled = true;
 
     const wyniki = [];
+    const udaneSku = [];   // tylko potwierdzone zapisy — te wykreślamy z pola
     let zmienione = 0, pominiete = 0, bledy = 0, sumaWystapien = 0;
 
     for (let i = 0; i < skuLista.length; i++) {
@@ -6694,6 +6695,7 @@
           { zapisz: true, tolerujNormalizacje: true });
         if (w.ok) {
           zmienione++;
+          udaneSku.push(sku);
           wyniki.push('✓ ' + sku + ' — ' + traf.n + '× podmienione i potwierdzone' + jak + '  ('
             + stara.length + ' → ' + nowa.length + ' znaków)'
             + (w.lustro ? '' : '  [uwaga: repo apki nieodświeżone]'));
@@ -6739,7 +6741,21 @@
       + (naSucho && zmienione > 0 ? ' Sprawdź raport, potem „Zapisz naprawdę".' : '');
     const rodzaj = bledy > 0 ? (zmienione === 0 ? 'error' : 'warning')
       : (zmienione > 0 ? 'success' : 'info');
-    info(podsumowanie, rodzaj);
+
+    // Po REALNYM zapisie wykreślamy z pola SKU te, które się udały — zostają
+    // tylko nieukończone (błędy, brak trafienia, nieprzetworzone po przerwaniu),
+    // żeby dało się od razu puścić kolejny przebieg na samych problematycznych.
+    // Na sucho pola nie ruszamy: tam nic jeszcze nie zapisano.
+    let dodatek = '';
+    if (!naSucho && udaneSku.length) {
+      const zostaje = skuLista.filter(s => udaneSku.indexOf(s) < 0);
+      el('sku').value = zostaje.join('\n');
+      dodatek = zostaje.length
+        ? ' Wykreśliłem ' + udaneSku.length + ' zapisanych — w polu zostało '
+          + zostaje.length + ' do poprawki.'
+        : ' Wykreśliłem wszystkie ' + udaneSku.length + ' — pole SKU puste, nic nie zostało.';
+    }
+    info(podsumowanie + dodatek, rodzaj);
     console.log('[Bulk edit]\n' + raport);
   }
 
