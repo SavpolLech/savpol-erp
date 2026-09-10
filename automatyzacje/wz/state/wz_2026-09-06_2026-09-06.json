@@ -1,0 +1,15 @@
+{
+  "dateFrom": "2026-09-06",
+  "dateTo": "2026-09-06",
+  "processedDocNumbers": [],
+  "complete": false,
+  "lastUpdated": "2026-09-10T22:36:27.365Z",
+  "runs": [
+    {
+      "ts": "2026-09-10T22:36:27.364Z",
+      "paczkaDok": 0,
+      "partial": true,
+      "stoppedReason": "pagination_stuck"
+    }
+  ]
+}
