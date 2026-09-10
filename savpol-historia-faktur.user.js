@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.17.0
+// @version      3.17.1
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3885,10 +3885,16 @@
     // Kontrola po zapisie: czytamy z ERP to, co miało tam wylądować.
     const po = await erpCzytajOpisy(sku);
     if (!po.ok) return { ok: true, ostrzezenie: 'zapisane, ale nie udało się sprawdzić: ' + po.blad };
+    // ERP normalizuje HTML przy zapisie (np. „<rect/>" → „<rect></rect>"),
+    // więc porównanie znak w znak potrafi dać fałszywy alarm mimo poprawnego
+    // zapisu. Przy { tolerujNormalizacje: true } porównujemy treść po tej samej
+    // normalizacji po obu stronach. Domyślnie zachowanie bez zmian — generator
+    // wysyła HTML już w formie znormalizowanej i woli porównanie ścisłe.
+    const rownaj = (opcje && opcje.tolerujNormalizacje) ? normalizujHtml : (x => x);
     const niezgodne = plan.filter(p => {
       const w = opisPoKluczu(po.wiersze, p.klucz);
       const t = w ? String(w.ItemDesc1_PL || w.ItemTranslatedDesc1 || '') : '';
-      return t !== String(nowe[p.klucz]);
+      return rownaj(t) !== rownaj(String(nowe[p.klucz]));
     }).map(p => p.klucz);
 
     if (niezgodne.length) {
@@ -6417,11 +6423,44 @@
   // Domyślnie NIC nie zapisuje: najpierw sucho, zapis po zatwierdzeniu.
   const bulkRun = { running: false, stop: false };
 
+  // Normalizacja HTML do formy, w jakiej trzyma go ERP.
+  //
+  // ERP (a właściwie parser HTML przeglądarki) przepuszcza opis przez własną
+  // serializację: „<rect/>" staje się „<rect></rect>", znika część różnic w
+  // zapisie. Dlatego dosłowny fragment skopiowany z edytora zewnętrznego
+  // („<rect .../>") nigdy nie pasuje do tego, co leży w bazie. Round-trip przez
+  // innerHTML odtwarza dokładnie tę samą normalizację — po obu stronach.
+  //
+  // Świadome ograniczenie: fragment MUSI być poprawnym, domkniętym kawałkiem
+  // HTML. Ułamek taga („<a class=") round-trip zniekształci — dlatego używamy
+  // tej formy tylko jako fallbacku, gdy dopasowanie dosłowne nie trafiło.
+  function normalizujHtml(s) {
+    const d = document.createElement('div');
+    d.innerHTML = String(s);
+    return d.innerHTML;
+  }
+
   // Ile razy `igla` występuje dosłownie w `stog`. Bez regexa, bez pułapek na
   // znakach specjalnych — liczymy przez rozbicie łańcucha.
   function liczWystapienia(stog, igla) {
     if (!igla) return 0;
     return String(stog).split(igla).length - 1;
+  }
+
+  // Jak dopasować szukany fragment do zapisanej treści. Najpierw dosłownie;
+  // gdy nic nie trafia, próbujemy formy znormalizowanej (patrz normalizujHtml).
+  // Zwraca którą formą trafiliśmy, żeby TĄ SAMĄ formą podmienić.
+  function dopasujFragment(stara, szukam, naco) {
+    const nRaw = liczWystapienia(stara, szukam);
+    if (nRaw > 0) {
+      return { n: nRaw, tryb: 'dosłownie', szukam: szukam, naco: naco };
+    }
+    const szukamN = normalizujHtml(szukam);
+    const nNorm = szukamN !== szukam ? liczWystapienia(stara, szukamN) : 0;
+    if (nNorm > 0) {
+      return { n: nNorm, tryb: 'po normalizacji HTML', szukam: szukamN, naco: normalizujHtml(naco) };
+    }
+    return { n: 0, tryb: null, szukam: szukam, naco: naco };
   }
 
   // Parsowanie wklejonej listy SKU: po jednym w wierszu, przycięte, bez pustych
@@ -6457,26 +6496,34 @@
     box.innerHTML = [
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">',
       '  <strong style="flex:1;font-size:13px">🔁 Zbiorcza podmiana w opisach</strong>',
+      '  <span data-role="min" title="Zwiń" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">–</span>',
       '  <span data-role="close" title="Zamknij" style="cursor:pointer;opacity:.6;padding:0 6px;font-size:16px;line-height:1">&times;</span>',
       '</div>',
-      '<div style="font-size:12px;opacity:.75;margin-bottom:6px">',
-      '  Podmienia <b>dosłowny</b> fragment HTML w polu „Opis produktu". ',
-      '  Zmienia wszystkie wystąpienia w każdym SKU z listy.</div>',
-      '<div style="font-size:12px;opacity:.85;margin-top:6px">SKU (po jednym w wierszu):</div>',
-      '<textarea data-role="sku" rows="4" spellcheck="false" style="' + field + '"></textarea>',
-      '<div style="font-size:12px;opacity:.85;margin-top:8px">Szukam (dokładny HTML):</div>',
-      '<textarea data-role="szukam" rows="4" spellcheck="false" style="' + field + '"></textarea>',
-      '<div style="font-size:12px;opacity:.85;margin-top:8px">Zmieniam na:</div>',
-      '<textarea data-role="naco" rows="4" spellcheck="false" style="' + field + '"></textarea>',
-      '<div data-role="progress" style="margin-top:10px;font-size:12px;min-height:18px;opacity:.9"></div>',
-      '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">',
-      '  <button data-role="sucho" style="' + btn + ';background:#3b82f6;color:#fff">Sprawdź na sucho</button>',
-      '  <button data-role="zapisz" style="' + btn + ';background:#b91c1c;color:#fff" disabled>Zapisz naprawdę</button>',
-      '  <button data-role="stop" style="' + btn + ';background:#374151;color:#f5f7fa">Przerwij</button>',
-      '</div>',
-      '<div style="font-size:11px;opacity:.6;margin-top:8px">',
-      '  „Zapisz naprawdę" odblokuje się po udanym przebiegu na sucho. ',
-      '  Raport z każdego przebiegu ląduje w schowku.</div>'
+      '<div data-role="progress" style="font-size:12px;min-height:18px;opacity:.9;margin-bottom:6px"></div>',
+      '<div data-role="pelne">',
+      '  <div style="font-size:12px;opacity:.75;margin-bottom:6px">',
+      '    Podmienia fragment HTML w polu „Opis produktu", wszystkie wystąpienia ',
+      '    w każdym SKU. Najpierw dosłownie; gdy nie trafi, próbuje formy ',
+      '    znormalizowanej (ERP rozwija np. „&lt;rect/&gt;" do „&lt;rect&gt;&lt;/rect&gt;").</div>',
+      '  <div style="font-size:12px;opacity:.85;margin-top:6px">SKU (po jednym w wierszu):</div>',
+      '  <textarea data-role="sku" rows="4" spellcheck="false" style="' + field + '"></textarea>',
+      '  <div style="font-size:12px;opacity:.85;margin-top:8px">Szukam (HTML):</div>',
+      '  <textarea data-role="szukam" rows="4" spellcheck="false" style="' + field + '"></textarea>',
+      '  <div style="font-size:12px;opacity:.85;margin-top:8px">Zmieniam na:</div>',
+      '  <textarea data-role="naco" rows="4" spellcheck="false" style="' + field + '"></textarea>',
+      '  <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">',
+      '    <button data-role="sucho" style="' + btn + ';background:#3b82f6;color:#fff">Sprawdź na sucho</button>',
+      '    <button data-role="zapisz" style="' + btn + ';background:#b91c1c;color:#fff" disabled>Zapisz naprawdę</button>',
+      '    <button data-role="stop" style="' + btn + ';background:#374151;color:#f5f7fa">Przerwij</button>',
+      '  </div>',
+      '  <div style="display:flex;align-items:center;gap:8px;margin-top:12px">',
+      '    <span style="flex:1;font-size:12px;opacity:.85">Raport (zostaje tu, nie tylko w schowku):</span>',
+      '    <button data-role="kopiuj" style="' + btn + ';background:#374151;color:#f5f7fa" disabled>Kopiuj raport</button>',
+      '  </div>',
+      '  <textarea data-role="raport" rows="8" readonly spellcheck="false" style="' + field + ';margin-top:4px"></textarea>',
+      '  <div style="font-size:11px;opacity:.6;margin-top:8px">',
+      '    „Zapisz naprawdę" odblokuje się po przebiegu na sucho z trafieniami.</div>',
+      '</div>'
     ].join('');
 
     document.body.appendChild(box);
@@ -6519,19 +6566,20 @@
         }
         const wiersz = opisPoKluczu(lista.wiersze, BULK_TOOL.POLE);
         const stara = wiersz ? String(wiersz.ItemDesc1_PL || wiersz.ItemTranslatedDesc1 || '') : '';
-        const n = liczWystapienia(stara, szukam);
+        const traf = dopasujFragment(stara, szukam, naco);
 
-        if (n === 0) {
+        if (traf.n === 0) {
           pominiete++;
           wyniki.push('· ' + sku + ' — nie znaleziono fragmentu, pomijam');
           continue;
         }
-        sumaWystapien += n;
-        const nowa = stara.split(szukam).join(naco);
+        sumaWystapien += traf.n;
+        const nowa = stara.split(traf.szukam).join(traf.naco);
+        const jak = traf.tryb === 'dosłownie' ? '' : ' [' + traf.tryb + ']';
 
         if (naSucho) {
           zmienione++;
-          wyniki.push('~ ' + sku + ' — ' + n + '× do podmiany  ('
+          wyniki.push('~ ' + sku + ' — ' + traf.n + '× do podmiany' + jak + '  ('
             + stara.length + ' → ' + nowa.length + ' znaków)');
           continue;
         }
@@ -6539,14 +6587,17 @@
         // Zapis idzie przez wspólną, sprawdzoną ścieżkę: kopia zapasowa,
         // przełączenie z WYSIWYG, kontrola po zapisie. Bulk edit nie robił
         // migawki, więc blokada cudzych zmian tu nie zadziała fałszywie.
-        const w = await zapiszOpisy(sku, { [BULK_TOOL.POLE]: nowa }, { zapisz: true });
+        // tolerujNormalizacje: ERP przy zapisie normalizuje HTML, więc bez tego
+        // kontrola „znak w znak" zgłaszałaby fałszywy błąd mimo dobrego zapisu.
+        const w = await zapiszOpisy(sku, { [BULK_TOOL.POLE]: nowa },
+          { zapisz: true, tolerujNormalizacje: true });
         if (w.ok) {
           zmienione++;
-          wyniki.push('✓ ' + sku + ' — ' + n + '× podmienione i potwierdzone  ('
+          wyniki.push('✓ ' + sku + ' — ' + traf.n + '× podmienione i potwierdzone' + jak + '  ('
             + stara.length + ' → ' + nowa.length + ' znaków)');
         } else {
           bledy++;
-          wyniki.push('✗ ' + sku + ' — zapis odrzucony: ' + w.blad);
+          wyniki.push('✗ ' + sku + ' — zapis odrzucony' + jak + ': ' + w.blad);
         }
       } catch (e) {
         bledy++;
@@ -6572,12 +6623,17 @@
       + ' | błędy: ' + bledy
       + ' | wystąpień łącznie: ' + sumaWystapien;
     const raport = naglowek + '\n\n' + wyniki.join('\n');
+    // Raport trzymamy w trzech miejscach, bo schowek bywa nadpisany przez ERP,
+    // zanim użytkownik zdąży wkleić: w polu panelu (zostaje na oczach), w
+    // savpolOstatniZrzut() i w schowku. Pole jest źródłem prawdy do kopiowania.
+    el('raport').value = raport;
+    el('kopiuj').disabled = false;
     ostatniZrzut = raport;
     skopiujDoSchowka(raport);
 
     const podsumowanie = (naSucho ? 'Sucho gotowe. ' : 'Zapis gotowy. ')
       + zmienione + (naSucho ? ' z trafieniem' : ' zapisanych') + ', '
-      + pominiete + ' bez trafienia, ' + bledy + ' błędów. Raport w schowku.'
+      + pominiete + ' bez trafienia, ' + bledy + ' błędów.'
       + (naSucho && zmienione > 0 ? ' Sprawdź raport, potem „Zapisz naprawdę".' : '');
     info(podsumowanie);
     console.log('[Bulk edit]\n' + raport);
@@ -6599,10 +6655,30 @@
     b.addEventListener('click', () => {
       const panel = createBulkPanel();
       const el = r => panel.querySelector('[data-role="' + r + '"]');
+
+      // Zwijanie — jak w panelu opisów: chowamy wszystko poza nagłówkiem
+      // i paskiem postępu, żeby po długim przebiegu podsumowanie zostało widoczne.
+      let zwiniety = false;
+      const ustawZwiniecie = tak => {
+        zwiniety = tak;
+        el('pelne').style.display = tak ? 'none' : '';
+        el('min').textContent = tak ? '+' : '–';
+        el('min').title = tak ? 'Rozwiń' : 'Zwiń';
+        panel.style.width = tak ? '360px' : '460px';
+        if (tak) { panel.style.top = '16px'; panel.style.bottom = 'auto'; }
+        else { panel.style.top = 'auto'; panel.style.bottom = '16px'; }
+      };
+      el('min').addEventListener('click', () => ustawZwiniecie(!zwiniety));
+
       el('close').addEventListener('click', () => { bulkRun.stop = true; panel.remove(); });
       el('stop').addEventListener('click', () => {
         bulkRun.stop = true;
         if (bulkRun.running) el('progress').textContent = 'Przerywam po bieżącym produkcie…';
+      });
+      el('kopiuj').addEventListener('click', () => {
+        if (!el('raport').value) return;
+        skopiujDoSchowka(el('raport').value);
+        el('progress').textContent = 'Raport skopiowany do schowka.';
       });
       el('sucho').addEventListener('click', () => runBulkEdit(panel, { zapisz: false }));
       el('zapisz').addEventListener('click', () => runBulkEdit(panel, { zapisz: true }));
