@@ -43,6 +43,22 @@ Robocza notatka z sesji diagnostycznej (2026-09-11), produkt testowy: `0000031`
 | `ItemDescShowKind` | radiogroup „Domyślny / Opis serii i produktu / Opis serii” | Dane dodatkowe (Widoczność opisu produktu) |
 | `withNutrition` | radiogroup „Nie dotyczy / Produkt zwolniony.../ Podajemy wartości odżywcze” | Dane dodatkowe (Wartości odżywcze) |
 | `itemSearchPriority` | Priorytet wyszukiwania | Dane dodatkowe |
+| `csItemsId` | Identyfikator wew. | widok Katalog (lista) |
+| `csItemsG` | (brak etykiety — surowa nazwa) | widok Katalog (lista) |
+| `csCompaniesId` | (brak etykiety — surowa nazwa) | widok Katalog (lista) |
+| `csItemsStatusesValuesId` | Status (wyświetlany jako tłumaczony tekst, ale kolumna to ID) | widok Katalog (lista) |
+
+Cztery powyższe potwierdzone przez panel „wybór kolumn” widoku Katalog
+(`diagnostyka/sonda-lista-kolumn.js`) — techniczna nazwa (`data-fieldname`)
+widoczna wprost, więc pewność 100%, nie zgadywanie z etykiety. Ten sam
+panel potwierdził też ze 100% pewnością wcześniejszą hipotezę
+`withNutrition` (kolumna nazywa się tak dosłownie, bez polskiej etykiety
+w tym widoku).
+
+Widok Katalog ma do wyboru 50 kolumn, ale większość to dane
+obliczone/pochodne z innych tabel (QStock*, CSalesPrice*, ShowPromo*,
+SalesType/Factor, LabelReport*, ItemTransition, Rank, SourceId...) —
+nie ma ich w liście 141 kolumn `csItems`, więc pomijam.
 
 Zasada dla pól językowych: przełącznik języka (Polski/Angielski/Niemiecki/
 Francuski/Niderlandzki/Hiszpański/Portugalski/Ukraiński/Rosyjski/Chorwacki/
