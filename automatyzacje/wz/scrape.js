@@ -68,8 +68,17 @@ const BATCH_SIZE = parseInt(process.env.BATCH_SIZE || '15', 10);
 // (przydatne, dopóki nie wiemy, czy "Do" jest inkluzywne czy nie — patrz
 // setDateFilter). Bez żadnej z tych zmiennych skrypt bierze cokolwiek
 // pokazuje domyślny, niefiltrowany widok listy.
-const FILTER_DATE_FROM = process.env.FILTER_DATE_FROM || process.env.FILTER_DATE || null;
-const FILTER_DATE_TO = process.env.FILTER_DATE_TO || process.env.FILTER_DATE || null;
+// "wczoraj" jako wartość specjalna — do codziennego uruchamiania bez
+// wpisywania konkretnej daty (harmonogram na serwerze puszcza ten sam
+// wrapper każdego dnia).
+function resolveDateKeyword(v) {
+  if (v !== 'wczoraj' && v !== 'yesterday') return v;
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+const FILTER_DATE_FROM = resolveDateKeyword(process.env.FILTER_DATE_FROM || process.env.FILTER_DATE || null);
+const FILTER_DATE_TO = resolveDateKeyword(process.env.FILTER_DATE_TO || process.env.FILTER_DATE || null);
 
 // Zapisany filtr ERP "WZ" — mniej stron do przewijania (patrz setDocTypeFilter).
 // DOC_TYPES w scrapeWzInPage zostaje jako druga linia obrony niezależnie od tego.
