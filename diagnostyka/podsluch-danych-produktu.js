@@ -71,7 +71,7 @@
       linie.push((i + 1) + '. ' + (pasuje ? '*** PASUJE PO TREŚCI *** ' : '') + w.url);
       linie.push('   metoda: ' + w.metoda);
       if (w.zadanie) linie.push('   żądanie (początek): ' + w.zadanie.slice(0, MAX_PODGLAD).replace(/\s+/g, ' '));
-      linie.push('   odpowiedź: ' + (w.odpowiedz ? w.odpowiedz.length + ' znaków, początek: ' + w.odpowiedz.slice(0, MAX_PODGLAD).replace(/\s+/g, ' ') : '(brak / nieczytelna)');
+      linie.push('   odpowiedź: ' + (w.odpowiedz ? w.odpowiedz.length + ' znaków, początek: ' + w.odpowiedz.slice(0, MAX_PODGLAD).replace(/\s+/g, ' ') : '(brak / nieczytelna)'));
       linie.push('');
     });
     const txt = linie.join('\n');
