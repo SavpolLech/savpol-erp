@@ -730,7 +730,7 @@
     "2026/WZ/GDS1/014422"
   ],
   "complete": true,
-  "lastUpdated": "2026-09-10T14:48:16.145Z",
+  "lastUpdated": "2026-09-11T02:54:29.159Z",
   "runs": [
     {
       "ts": "2026-09-10T13:43:42.339Z",
@@ -1023,6 +1023,12 @@
     {
       "ts": "2026-09-10T14:48:16.144Z",
       "paczkaDok": 8,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-09-11T02:54:29.157Z",
+      "paczkaDok": 0,
       "partial": false,
       "stoppedReason": null
     }
