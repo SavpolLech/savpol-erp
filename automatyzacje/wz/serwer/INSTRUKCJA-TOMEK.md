@@ -134,7 +134,7 @@ Zapisz plik.
 
 Harmonogram Zadań uruchamia plik punktualnie o pełnej godzinie, ale samo
 logowanie do ERP nie następuje natychmiast — `uruchom.bat` czeka najpierw
-losowo 0–40 minut (to jest zaszyte w kodzie, nic nie trzeba konfigurować).
+losowo 0–15 minut (to jest zaszyte w kodzie, nic nie trzeba konfigurować).
 Dzięki temu logowania nie wypadają zawsze o tej samej sekundzie, co
 wyglądałoby podejrzanie dla dostawcy ERP.
 
