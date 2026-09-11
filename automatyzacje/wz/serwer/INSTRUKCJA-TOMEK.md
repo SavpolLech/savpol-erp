@@ -101,42 +101,48 @@ Zapisz plik.
 
 **b) Zarejestruj zadanie w Harmonogramie Zadań Windows**
 
+To zadanie odpala się **tylko raz dziennie, o 7:00** — cały dzień pracy
+(sesje scrapowania, przerwy między nimi, koniec o 17:00) obsługuje sam plik
+`uruchom.bat` w jednej, długo działającej pętli. Nie trzeba ustawiać
+"powtarzaj co godzinę".
+
 1. Otwórz **Harmonogram zadań** (wpisz w wyszukiwarce Windows: "Harmonogram
    zadań" / "Task Scheduler").
-2. Po prawej: **Utwórz zadanie podstawowe...** (Create Basic Task).
-3. Nazwa: `Savpol WZ`. Dalej.
-4. Wyzwalacz: **Codziennie** (Daily). Dalej. Ustaw godzinę startu np. **08:00**.
-   Dalej.
-5. Akcja: **Uruchom program** (Start a program). Dalej.
-6. **Program/skrypt**: wskaż plik
+2. Po prawej: **Utwórz zadanie** (Create Task) — **nie** "zadanie
+   podstawowe", żeby mieć dostęp do wszystkich zakładek na starcie.
+3. Zakładka **Ogólne** (General):
+   - Nazwa: `Savpol WZ`.
+   - Zaznacz **"Uruchom niezależnie od tego, czy użytkownik jest
+     zalogowany"** (Run whether user is logged on or not) — inaczej zadanie
+     nie odpali się, gdy nikt nie jest zalogowany na ten komputer.
+4. Zakładka **Wyzwalacze** (Triggers) → **Nowy...** (New):
+   - Zaczynaj zadanie: **Cotygodniowo** (Weekly).
+   - Godzina startu: **7:00:00**.
+   - Zaznacz dni: **poniedziałek, wtorek, środa, czwartek, piątek** (bez
+     soboty i niedzieli).
+   - Powtarzanie zadania **wyłączone** (to zadanie odpala się raz na dzień
+     roboczy — pętlę wewnątrz dnia robi sam skrypt).
+5. Zakładka **Akcje** (Actions) → **Nowa...** (New) → Uruchom program (Start
+   a program) → **Program/skrypt**: wskaż plik
    `C:\savpol-automatyzacje\automatyzacje\wz\serwer\uruchom.bat`
    (przycisk "Przeglądaj").
-7. Zakończ (Finish).
-8. Teraz znajdź to zadanie na liście, kliknij **Właściwości** (Properties):
-   - Zakładka **Wyzwalacze** (Triggers) → edytuj wyzwalacz → zaznacz
-     **"Powtarzaj zadanie co"** (Repeat task every): **1 godzinę**, **przez
-     czas trwania** (for a duration of): **9 godzin** (żeby łapało okno
-     8:00–17:00).
-   - Ta sama zakładka: **Zaawansowane ustawienia harmonogramu** — jeśli jest
-     opcja dni tygodnia, zaznacz **tylko dni robocze (Pon–Pt)**. Jeśli
-     kreator dawał tylko "Codziennie" bez wyboru dni — nie szkodzi, skrypt
-     **sam odmawia startu w weekend** (ma to wpisane w kodzie), więc
-     ewentualne odpalenie w sobotę/niedzielę i tak nic nie zrobi.
-   - Zakładka **Ogólne** (General): zaznacz **"Uruchom niezależnie od tego,
-     czy użytkownik jest zalogowany"** (Run whether user is logged on or
-     not) — inaczej zadanie nie odpali się, gdy nikt nie jest zalogowany na
-     ten komputer.
-9. Zapisz (OK) — może zapytać o hasło konta Windows, na którym to ma działać.
+6. Zakładka **Ustawienia** (Settings):
+   - Zaznacz **"Zatrzymaj zadanie, jeśli działa dłużej niż"** (Stop the task
+     if it runs longer than): **10 godzin**. To siatka bezpieczeństwa — gdyby
+     coś się zawiesiło (np. ERP nie odpowiada), zadanie i tak zakończy się
+     same, zamiast wisieć do rana.
+   - **"Jeśli zadanie już działa"** (If the task is already running):
+     **"Nie uruchamiaj nowej kopii"** (Do not start a new instance) —
+     zwykle jest to domyślne ustawienie, tylko sprawdź.
+7. Zapisz (OK) — może zapytać o hasło konta Windows, na którym to ma działać.
 
-**To wszystko.** Zadanie będzie się teraz odpalać samo, co godzinę między
-8:00 i 17:00, w dni robocze — sam skrypt dodatkowo odmawia pracy poza
-7:00–17:00 i w weekendy, nawet gdyby coś poszło nie tak z harmonogramem.
-
-Harmonogram Zadań uruchamia plik punktualnie o pełnej godzinie, ale samo
-logowanie do ERP nie następuje natychmiast — `uruchom.bat` czeka najpierw
-losowo 0–15 minut (to jest zaszyte w kodzie, nic nie trzeba konfigurować).
-Dzięki temu logowania nie wypadają zawsze o tej samej sekundzie, co
-wyglądałoby podejrzanie dla dostawcy ERP.
+**To wszystko.** Zadanie odpali się raz, o 7:00, w dni robocze. Sam plik
+`uruchom.bat` czeka najpierw losowo 0–15 minut (żeby logowanie do ERP nie
+wypadało zawsze punktualnie o 7:00), potem wykonuje sesje scrapowania jedna
+po drugiej z losowymi przerwami 5–15 minut między nimi, aż zegar wskaże
+17:00 — wtedy sam się zatrzymuje. `scrape.js` dodatkowo sam odmawia pracy
+poza 7:00–17:00 i w weekendy, niezależnie od tego wszystkiego — nawet gdyby
+coś było źle skonfigurowane w Harmonogramie.
 
 ### 2.5 Aktualizacje kodu — nic nie musisz robić
 

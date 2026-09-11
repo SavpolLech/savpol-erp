@@ -1,27 +1,47 @@
 @echo off
 REM ============================================================
-REM  Automatyzacja WZ (Savpol) - uruchamiane przez Harmonogram Zadan.
-REM  NIE trzeba tego nigdy recznie modyfikowac ani odpalac -
-REM  Harmonogram Zadan wskazuje wprost na ten plik.
+REM  Automatyzacja WZ (Savpol) - uruchamiane przez Harmonogram Zadan,
+REM  JEDEN raz dziennie o 7:00 (dni robocze). Harmonogram Zadan NIE
+REM  odpala tego pliku co godzine - ten skrypt sam sobie powtarza
+REM  sesje scrapowania przez caly dzien, w petli, az minie okno pracy.
+REM  NIE trzeba tego nigdy recznie modyfikowac ani odpalac.
 REM
-REM  Za kazdym razem:
-REM    1) "git pull" - pobiera najnowsza wersje kodu z repo (Lech
-REM       aktualizuje kod, ten plik go automatycznie podciaga, zero
-REM       akcji ze strony Tomka)
-REM    2) odswieza typy kolumn z bazy (schema-test-tables.json) -
-REM       baza bywa przebudowywana, nie zakladamy ze jest stala
-REM    3) CZEKA losowo 0-15 minut - Harmonogram Zadan odpala ten plik co
-REM       godzine, punktualnie o pelnej godzinie. Bez tego kroku logowanie
-REM       do ERP wygladaloby jak bot (dokladnie 8:00:00, 9:00:00, ...).
-REM       Kroki 1-2 wyzej nie dotykaja ERP, moga isc od razu - czekamy
-REM       tylko przed samym zalogowaniem. Przedzial celowo krotki - sesja
-REM       scrapowania sama trwa do 60 min, dlugie opoznienie zjadaloby
-REM       zbyt duzo okna pracy przed nastepnym odpaleniem.
-REM    4) odpala scraper, ktory pisze WPROST do bazy (nie CSV)
+REM  Przebieg:
+REM    1) losowe opoznienie startu dnia: 0-15 min (zeby nie logowac sie
+REM       do ERP zawsze punktualnie o 7:00 - wygladaloby to jak bot)
+REM    2) PETLA, az zegar wskaze 17:00 lub pozniej:
+REM         a) git pull            - najnowszy kod (Lech aktualizuje,
+REM                                   ten plik go automatycznie
+REM                                   podciaga, zero akcji Tomka)
+REM         b) generate-test-tables.js - odswieza typy kolumn z bazy
+REM                                       (baza bywa przebudowywana)
+REM         c) scrape.js            - jedna sesja scrapowania (30-60 min,
+REM                                    losowane wewnatrz scrape.js),
+REM                                    pisze WPROST do bazy (nie CSV)
+REM         d) przerwa 5-15 min (losowo) przed kolejna sesja
+REM    3) scrape.js i tak sam odmawia startu poza godzinami 7-17 i w
+REM       weekendy (niezaleznie od tej petli) - to tylko dodatkowe
+REM       zabezpieczenie w samym skrypcie.
 REM ============================================================
 
 setlocal
-cd /d "%~dp0\..\..\.."
+set REPO_ROOT=%~dp0\..\..\..
+
+cd /d "%REPO_ROOT%"
+
+for /f %%i in ('powershell -NoProfile -Command "Get-Random -Minimum 0 -Maximum 900"') do set START_DELAY_SEC=%%i
+set /a START_DELAY_MIN=%START_DELAY_SEC%/60
+echo [%date% %time%] losowe opoznienie startu dnia: %START_DELAY_SEC% s (~%START_DELAY_MIN% min)...
+timeout /t %START_DELAY_SEC% /nobreak >nul
+
+:LOOP
+cd /d "%REPO_ROOT%"
+
+for /f %%h in ('powershell -NoProfile -Command "(Get-Date).Hour"') do set NOW_HOUR=%%h
+if %NOW_HOUR% GEQ 17 (
+  echo [%date% %time%] Godzina %NOW_HOUR% - po godzinach pracy, koncze na dzis.
+  goto :EOF
+)
 
 echo [%date% %time%] git pull...
 git pull --no-edit
@@ -31,15 +51,15 @@ cd automatyzacje\wz
 echo [%date% %time%] odswiezam schemat bazy...
 node generate-test-tables.js
 
-for /f %%i in ('powershell -NoProfile -Command "Get-Random -Minimum 0 -Maximum 900"') do set DELAY_SEC=%%i
-set /a DELAY_MIN=%DELAY_SEC%/60
-echo [%date% %time%] losowe opoznienie przed zalogowaniem do ERP: %DELAY_SEC% s (~%DELAY_MIN% min)...
-timeout /t %DELAY_SEC% /nobreak >nul
-
 set FILTER_DATE=wczoraj
 set HEADLESS=true
 
-echo [%date% %time%] node scrape.js (FILTER_DATE=wczoraj, zapis do bazy)...
+echo [%date% %time%] node scrape.js (sesja scrapowania)...
 node scrape.js
 
-echo [%date% %time%] Zakonczono.
+for /f %%i in ('powershell -NoProfile -Command "Get-Random -Minimum 300 -Maximum 900"') do set BREAK_SEC=%%i
+set /a BREAK_MIN=%BREAK_SEC%/60
+echo [%date% %time%] przerwa miedzy sesjami: %BREAK_SEC% s (~%BREAK_MIN% min)...
+timeout /t %BREAK_SEC% /nobreak >nul
+
+goto :LOOP
