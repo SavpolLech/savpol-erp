@@ -72,15 +72,23 @@ Sprawdzone i odrzucone jako out-of-scope dla `csItems`:
   „kody kreskowe” (`csItemsBarCodes`) i „Ceny walutowe” — też osobne tabele.
 - **Referencje** — zewnętrzne identyfikatory produktu w innych systemach
   (tabela `csItemsRefs`, kolumny `csItemsRefsId`/`csItemsRefsTypesG`)
+- **Powiązane** — relacja produkt↔produkt, brak pól formularza w widoku
+- **Kontrahenci** — siatka „Kontrahent / Producent / Dostawca / B2B / Minimum
+  log...” — relacja produkt↔kontrahent z rolami, osobna tabela
+- **Do użycia w magazynach** — checkbox-lista magazynów (GDS1/Gdańsk,
+  GLS1/Gliwice, GUS1/Grudziądz, KRS1/Kraków, LOS1/Łódź, RZS1/Rzeszów,
+  WLS1/Wałbrzych, WAS1/Warszawa) — relacja produkt↔magazyn
+- **Limity cen produktów** — brak nowych pól w widoku, prawdopodobnie
+  siatka limitów per kontrahent/grupa
+- **Stany MWS** — brak nowych pól w widoku, dane WMS per lokalizacja
+- **Towary w drodze** — brak nowych pól w widoku (pusta siatka dla tego
+  produktu)
 
-Jeszcze nie sprawdzone, ale prawdopodobnie też osobne tabele (pominięte jako
-niskopriorytetowe — dane operacyjne/relacyjne, nie master produktu):
-Powiązane, Kontrahenci, Do użycia w magazynach, Limity cen produktów,
-Stany MWS, Towary w drodze.
-
-„Atrybuty” i „Opisy dod.” pojawiają się w DOM (wykrywane przez sondę), ale
-NIE są widoczne na rzeczywistej liście bocznej tego konta — najpewniej
-ukryte/wyłączone uprawnieniami (patrz `diagnostyka/README.md`).
+Wszystkie zakładki z rzeczywistej listy bocznej tego konta zostały
+sprawdzone (sesja z 2026-09-11). „Atrybuty” i „Opisy dod.” pojawiają się w
+DOM (wykrywane przez sondę), ale NIE są widoczne na rzeczywistej liście
+bocznej tego konta — najpewniej ukryte/wyłączone uprawnieniami (patrz
+`diagnostyka/README.md`).
 
 ## Wciąż niezidentyfikowane pola na Dane podstawowe/dodatkowe
 
