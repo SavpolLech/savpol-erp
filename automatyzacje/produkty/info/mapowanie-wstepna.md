@@ -60,11 +60,32 @@ obliczone/pochodne z innych tabel (QStock*, CSalesPrice*, ShowPromo*,
 SalesType/Factor, LabelReport*, ItemTransition, Rank, SourceId...) —
 nie ma ich w liście 141 kolumn `csItems`, więc pomijam.
 
-Zasada dla pól językowych: przełącznik języka (Polski/Angielski/Niemiecki/
-Francuski/Niderlandzki/Hiszpański/Portugalski/Ukraiński/Rosyjski/Chorwacki/
-Słowacki/Czeski — 12 pozycji) wybiera, którego sufiksu `_XX` dotyczą pola
-Tytuł/Opis/Robots/Canonical/Słowa kluczowe/Nazwa produktu. Nie trzeba klikać
-każdego języka osobno, żeby to potwierdzić — struktura jest identyczna.
+## Poprawka: nie każde pole językowe wspiera wszystkie języki
+
+Błędnie założyłem wcześniej, że przełącznik języka (Polski/Angielski/
+Niemiecki/Francuski/Niderlandzki/Hiszpański/Portugalski/Ukraiński/Rosyjski/
+Chorwacki/Słowacki/Czeski — 12 pozycji w UI) działa identycznie dla
+wszystkich pól. Po dokładnym przejrzeniu `kolumny.txt` to nieprawda —
+zależy od rodziny kolumn:
+
+| Rodzina pól | Języki faktycznie istniejące w `csItems` |
+|---|---|
+| `ItemDesc_XX` / `ItemDesc1_XX` / `KeyWords_XX` | pełne ~13: PL, EN, DE, FR, NL, ES, PT, RU, UK, IT, SK, HR, CZ |
+| `SEOTitle_XX` | tylko **PL, EN, HR** |
+| `SEODescription_XX` | tylko **PL, EN, HR** |
+| `SEOCanonical_XX` | tylko **PL, EN, HR** |
+| `SEOrobots` | **brak sufiksu językowego** — jedno wspólne pole dla całego produktu |
+
+Konsekwencja dla scrapera: przy zbieraniu SEO Tytuł/Opis/Canonical trzeba
+zbierać TYLKO z zakładek Polski/Angielski/Chorwacki — pozostałe języki na
+tym panelu nie mają gdzie zapisać wartości w tej tabeli (mogą być puste nie
+dlatego, że nikt ich nie wypełnił, tylko dlatego, że nie ma dla nich
+kolumny). Dla Słowa kluczowe i Nazwa produktu (Opisy) — zbieramy ze
+wszystkich ~13 języków normalnie.
+
+Osobna obserwacja: `ItemDesc_IT`/`KeyWords_IT` istnieją w liście kolumn, ale
+zakładka „Włoski” nigdy nie pojawiła się w żadnym zrzucie — może jest
+schowana/wymaga przewinięcia listy języków, nie sprawdzone.
 
 ## Ważna poprawka: „Dane dodatkowe” to osobna, realna zakładka
 
