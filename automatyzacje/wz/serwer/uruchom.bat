@@ -10,7 +10,12 @@ REM       aktualizuje kod, ten plik go automatycznie podciaga, zero
 REM       akcji ze strony Tomka)
 REM    2) odswieza typy kolumn z bazy (schema-test-tables.json) -
 REM       baza bywa przebudowywana, nie zakladamy ze jest stala
-REM    3) odpala scraper, ktory pisze WPROST do bazy (nie CSV)
+REM    3) CZEKA losowo 0-40 minut - Harmonogram Zadan odpala ten plik co
+REM       godzine, punktualnie o pelnej godzinie. Bez tego kroku logowanie
+REM       do ERP wygladaloby jak bot (dokladnie 8:00:00, 9:00:00, ...).
+REM       Kroki 1-2 wyzej nie dotykaja ERP, moga isc od razu - czekamy
+REM       tylko przed samym zalogowaniem.
+REM    4) odpala scraper, ktory pisze WPROST do bazy (nie CSV)
 REM ============================================================
 
 setlocal
@@ -23,6 +28,11 @@ cd automatyzacje\wz
 
 echo [%date% %time%] odswiezam schemat bazy...
 node generate-test-tables.js
+
+for /f %%i in ('powershell -NoProfile -Command "Get-Random -Minimum 0 -Maximum 2400"') do set DELAY_SEC=%%i
+set /a DELAY_MIN=%DELAY_SEC%/60
+echo [%date% %time%] losowe opoznienie przed zalogowaniem do ERP: %DELAY_SEC% s (~%DELAY_MIN% min)...
+timeout /t %DELAY_SEC% /nobreak >nul
 
 set FILTER_DATE=wczoraj
 set HEADLESS=true

@@ -132,6 +132,12 @@ Zapisz plik.
 8:00 i 17:00, w dni robocze — sam skrypt dodatkowo odmawia pracy poza
 7:00–17:00 i w weekendy, nawet gdyby coś poszło nie tak z harmonogramem.
 
+Harmonogram Zadań uruchamia plik punktualnie o pełnej godzinie, ale samo
+logowanie do ERP nie następuje natychmiast — `uruchom.bat` czeka najpierw
+losowo 0–40 minut (to jest zaszyte w kodzie, nic nie trzeba konfigurować).
+Dzięki temu logowania nie wypadają zawsze o tej samej sekundzie, co
+wyglądałoby podejrzanie dla dostawcy ERP.
+
 ### 2.5 Aktualizacje kodu — nic nie musisz robić
 
 Kiedy Lech poprawi coś w skrypcie albo doda nowy typ dokumentu, sam
