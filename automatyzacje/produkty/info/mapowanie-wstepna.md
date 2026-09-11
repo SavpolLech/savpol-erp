@@ -28,6 +28,21 @@ Robocza notatka z sesji diagnostycznej (2026-09-11), produkt testowy: `0000031`
 | `SEOCanonical_PL` (analogicznie per język) | Canonical | SEO |
 | `KeyWords_PL` (analogicznie per język) | Słowa kluczowe | SEO |
 | `ItemDesc_PL` (analogicznie per język) | Nazwa produktu | Opisy |
+| `csEBIProducersId` | Producent | Dane dodatkowe (Klasyfikacja) |
+| `csEBICategoriesId` | Kategoria | Dane dodatkowe (Klasyfikacja) |
+| `csEBIConcessionsId` | Koncesja | Dane dodatkowe (Klasyfikacja) |
+| `csEBIBrandsId` | Brand (np. „Hoffman”) | Dane dodatkowe (Klasyfikacja) |
+| `csEBIVarietiesId` | Odmiana | Dane dodatkowe (Klasyfikacja) |
+| `csSeriesId` | Seria | Dane dodatkowe (Klasyfikacja) |
+| `csCountriesG` | Kraj | Dane dodatkowe (Intrastat) |
+| `SEZKind` | radiogroup „Usługa / SSE / Poza SSE / TOWARY” | Dane dodatkowe (Specjalna strefa ekonomiczna) |
+| `IsForWholesale` | checkbox „Dostępność w hurcie” | Dane dodatkowe (Dostępność) |
+| `IsForRetail` | checkbox „Dostępność w detalu” | Dane dodatkowe (Dostępność) |
+| `IsForSC01` | checkbox „Dostępność w B2B” | Dane dodatkowe (Dostępność) |
+| `isGentle` | checkbox „Produkt delikatny” | Dane dodatkowe (Dostępność) |
+| `ItemDescShowKind` | radiogroup „Domyślny / Opis serii i produktu / Opis serii” | Dane dodatkowe (Widoczność opisu produktu) |
+| `withNutrition` | radiogroup „Nie dotyczy / Produkt zwolniony.../ Podajemy wartości odżywcze” | Dane dodatkowe (Wartości odżywcze) |
+| `itemSearchPriority` | Priorytet wyszukiwania | Dane dodatkowe |
 
 Zasada dla pól językowych: przełącznik języka (Polski/Angielski/Niemiecki/
 Francuski/Niderlandzki/Hiszpański/Portugalski/Ukraiński/Rosyjski/Chorwacki/
@@ -35,25 +50,37 @@ Słowacki/Czeski — 12 pozycji) wybiera, którego sufiksu `_XX` dotyczą pola
 Tytuł/Opis/Robots/Canonical/Słowa kluczowe/Nazwa produktu. Nie trzeba klikać
 każdego języka osobno, żeby to potwierdzić — struktura jest identyczna.
 
-## Wymaga potwierdzenia od Michała
+## Ważna poprawka: „Dane dodatkowe” to osobna, realna zakładka
 
-**Zakładka „Grupy”** to siatka przypisań produktu do WIELU hierarchii grup
-naraz (nie proste pola):
-- `B2B\Kategorie\Cukiernicze\produkty\Aromaty\Etanolowe`
-- `B2B\Profil produkcji\Cukiernia`
-- `B2B\Marki\hoffman`
-- `SAVPOL\CD\AR\Aromaty`
+Przez większość sesji błędnie zakładałem (heurystyka wykrywania aktywnej
+zakładki po klasie CSS myliła się), że „Dane podstawowe” i „Dane dodatkowe”
+renderują się jednocześnie jako jeden ciągły formularz. To nieprawda —
+„Dane dodatkowe” trzeba kliknąć osobno jako górny przełącznik, dopiero
+wtedy pokazuje swoją zawartość (grupy: Klasyfikacja, Intrastat, Specjalna
+strefa ekonomiczna, Dostępność, Kontrola zapasu, Widoczność opisu produktu,
+Wartości odżywcze, Priorytet wyszukiwania — patrz tabela wyżej). To właśnie
+tu, nie w Grupy, jest jednoznaczne, nazwane wprost źródło `csEBI*Id` — pytanie
+o hierarchię grup z poprzedniej wersji tej notatki jest już nieaktualne.
 
-Pewne: **Marka → `B2B\Marki\...`** = najpewniej `csEBIBrandsId`.
+Pole liczbowe „1” obok Seria (błędnie zaetykietowane przez sondę jako
+„Brand”) to prawdopodobnie `FirstInSeries` — nie w 100% pewne.
 
-Niepewne (nie zgadujemy z samej nazwy drzewa): `csEBICategoriesId`,
-`csEBIConcessionsId`, `csEBIVarietiesId`, `csEBIProducersId` — które z
-pozostałych 3 drzew (`B2B\Kategorie\...`, `B2B\Profil produkcji\...`,
-`SAVPOL\CD\AR\...`) odpowiada którym kolumnom? Do zapytania.
+## Niepewne / bez jednoznacznego dopasowania (Dane dodatkowe)
 
-Pola „Kategoria / Marka / Partner / Profil produkcji” na Dane podstawowe są
-zawsze puste — to prawdopodobnie tylko widgety szybkiego dodawania do tej
-samej siatki grup, nie osobne miejsce przechowywania wartości.
+- **Kod PKWiU** (dwa oddzielne pola combobox) — nie widać wprost w liście
+  141 kolumn pod tą nazwą; `CPACode` (CPA = odpowiednik PKWiU w UE) to
+  możliwy kandydat dla jednego z nich, ale niepotwierdzone.
+- **Grupa** („Artykuły spożywcze”) i **Klasa** („Wartości odżywcze”) —
+  dropdowny bez oczywistego odpowiednika nazwy kolumny w liście.
+- **Symbol PCN** („33021090” — kod taryfy celnej/Intrastat) — brak
+  oczywistej kolumny w liście 141.
+- **Data ważności ekspozycji** (datepicker, pusty) — brak oczywistego
+  dopasowania.
+- **Dni do wycofania** — tentatywnie `ShelfLifeDays`, niepotwierdzone.
+- radiogroup **„Swobodne korzystanie / Kontrola jakości”** (grupa „Kontrola
+  zapasu”) — brak oczywistego dopasowania w liście 141 kolumn.
+
+Te pola warto zapytać Michała wprost, zamiast zgadywać dalej z samych nazw.
 
 ## Nie pasuje do listy 141 kolumn — osobne tabele/relacje
 
@@ -99,9 +126,12 @@ istotne — obecnie nie wiadomo, których kolumn dotyczą.
 
 ## Nierozstrzygnięte pytania do Michała
 
-1. Które z 4 drzew grup (Kategorie/Profil produkcji/Marki/SAVPOL CD\AR)
-   odpowiada którym kolumnom `csEBICategoriesId`/`csEBIConcessionsId`/
-   `csEBIVarietiesId`/`csEBIProducersId`?
-2. Czy dane z osobnych tabel (Zapasy, Opisy w B2B, Jednostki, Referencje)
-   w ogóle wchodzą w zakres tego zadania, czy interesuje go wyłącznie
-   `csItems`?
+1. Co to za kolumny (jeśli w ogóle są w `csItems`): Kod PKWiU (x2), Grupa,
+   Klasa, Symbol PCN, Data ważności ekspozycji, radiogroup „Swobodne
+   korzystanie / Kontrola jakości”? Żadna nie ma oczywistego odpowiednika
+   nazwy w liście 141 kolumn.
+2. Czy dane z osobnych tabel (Zapasy, Opisy w B2B, Jednostki, Referencje,
+   Grupy, Kontrahenci, Do użycia w magazynach) w ogóle wchodzą w zakres
+   tego zadania, czy interesuje go wyłącznie `csItems`?
+3. `FirstInSeries` — czy to na pewno pole liczbowe obok Seria na Dane
+   dodatkowe? Do potwierdzenia.
