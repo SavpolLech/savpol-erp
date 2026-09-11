@@ -1,34 +1,37 @@
-// Podsłuch sieciowy: loguje WSZYSTKIE requesty fetch/XHR (URL + treść żądania
-// + rozmiar/początek odpowiedzi), plus próbuje automatycznie rozpoznać ten,
-// który zawiera dane konkretnego produktu (po EAN).
-// WERSJA: 2026-09-11.2
+// Podsłuch sieciowy: loguje requesty fetch/XHR (URL + rozpoznany DictIdent +
+// rozmiar/początek odpowiedzi) i pozwala pobrać PEŁNĄ, nieobciętą treść
+// odpowiedzi wybranego wpisu.
+// WERSJA: 2026-09-11.3
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
-// Po co: automatyczne dopasowanie po treści (v1) nie złapało nic — albo dane
-// wracają skompresowane (jak `definition` w getDefinition), albo aplikacja
-// nie robi nowego requestu przy zamknięciu/otwarciu zakładki (cache w
-// przeglądarce). Zamiast dalej zgadywać, ta wersja loguje KOMPLETNĄ listę
-// requestów — przeglądamy ją razem, zamiast polegać na automatycznym
-// dopasowaniu.
+// UWAGA BEZPIECZEŃSTWA: ta wersja CELOWO NIE zapisuje treści żądań (payload
+// wysyłany DO serwera) — poprzednia wersja to robiła, a żądania tej aplikacji
+// zawierają dane logowania (login+hasło) w praktycznie czystej postaci
+// (base64+zip, nie szyfrowanie). Zapisujemy tylko: URL, metodę, wyciągnięty
+// bezpiecznie "DictIdent" z żądania (sama nazwa tabeli/okna, nic wrażliwego)
+// oraz treść ODPOWIEDZI (to, co wraca z serwera — dane produktu, nie dane
+// logowania).
+//
+// Po co: generyczne nazwy endpointów (OperatrionInvoke, getData) są używane
+// do dziesiątek różnych rzeczy — jedyny sposób, żeby rozróżnić wywołania, to
+// pole "DictIdent" w treści żądania (np. "csItemsOneBro" = karta produktu).
 //
 // WAŻNE: wklej ten skrypt PRZED akcją, którą chcemy podsłuchać (nie odświeżaj
-// całej strony po wklejeniu — to kasuje podpięcie). Potem wykonaj w ERP to,
-// co ma wywołać pobranie danych (zamknij/otwórz kartę, zmień zakładkę itp.).
+// całej strony po wklejeniu — to kasuje podpięcie).
 //
 // Jak używać:
 //   1. Wklej ten plik w konsolę.
 //   2. Wykonaj w ERP akcję, którą chcemy podsłuchać.
-//   3. Wywołaj: savpolPodsluchZrzut()  → cała lista requestów do schowka.
-//   4. Jeśli coś złapało się automatycznie po EAN, zobaczysz dodatkowo log
-//      "[podsluch] ZŁAPANO PO TREŚCI".
+//   3. savpolPodsluchZrzut()      → skrócona lista (URL/DictIdent/rozmiar) do schowka.
+//   4. savpolPodsluchPelna(N)     → PEŁNA treść odpowiedzi wpisu nr N (z listy
+//      powyżej) do schowka — użyj, gdy chcemy zobaczyć całą (dużą) odpowiedź.
 
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-11.2';
-  const SZUKANY_TEKST = '5907779300001'; // EAN — zmień na inny, jeśli trzeba
-  const MAX_PODGLAD = 400; // ile znaków treści żądania/odpowiedzi zachować
+  const WERSJA = '2026-09-11.3';
+  const MAX_PODGLAD = 300;
 
   const zarejestrowane = [];
 
@@ -52,26 +55,35 @@
     }
   }
 
-  function dodajWpis(wpis) {
-    zarejestrowane.push(wpis);
-    if (wpis.odpowiedz && wpis.odpowiedz.indexOf(SZUKANY_TEKST) >= 0) {
-      console.log('[podsluch ' + WERSJA + '] ZŁAPANO PO TREŚCI: ' + wpis.url);
-    }
+  function wyciagnijDictIdent(zadanie) {
+    if (!zadanie) return null;
+    const m = /"DictIdent"\s*:\s*"([^"]+)"/.exec(zadanie);
+    return m ? m[1] : null;
+  }
+
+  function dodajWpis(url, metoda, zadanieSurowe, odpowiedz) {
+    zarejestrowane.push({
+      url: url,
+      metoda: metoda,
+      dictIdent: wyciagnijDictIdent(zadanieSurowe),
+      odpowiedz: odpowiedz
+    });
   }
 
   window.savpolPodsluchZrzut = function () {
     const linie = [];
     linie.push('Savpol ERP — podsłuch requestów, wersja ' + WERSJA);
-    linie.push('Szukany tekst (EAN): ' + SZUKANY_TEKST);
     linie.push('Data: ' + new Date().toISOString());
     linie.push('Razem zarejestrowanych requestów: ' + zarejestrowane.length);
+    linie.push('(treści żądań NIE są zapisywane — zawierają dane logowania. '
+      + 'Wywołaj savpolPodsluchPelna(N) po pełną treść ODPOWIEDZI wpisu N.)');
     linie.push('');
     zarejestrowane.forEach((w, i) => {
-      const pasuje = w.odpowiedz && w.odpowiedz.indexOf(SZUKANY_TEKST) >= 0;
-      linie.push((i + 1) + '. ' + (pasuje ? '*** PASUJE PO TREŚCI *** ' : '') + w.url);
-      linie.push('   metoda: ' + w.metoda);
-      if (w.zadanie) linie.push('   żądanie (początek): ' + w.zadanie.slice(0, MAX_PODGLAD).replace(/\s+/g, ' '));
-      linie.push('   odpowiedź: ' + (w.odpowiedz ? w.odpowiedz.length + ' znaków, początek: ' + w.odpowiedz.slice(0, MAX_PODGLAD).replace(/\s+/g, ' ') : '(brak / nieczytelna)'));
+      linie.push((i + 1) + '. ' + w.url);
+      linie.push('   metoda: ' + w.metoda + (w.dictIdent ? '   DictIdent: ' + w.dictIdent : ''));
+      linie.push('   odpowiedź: ' + (w.odpowiedz
+        ? w.odpowiedz.length + ' znaków, początek: ' + w.odpowiedz.slice(0, MAX_PODGLAD).replace(/\s+/g, ' ')
+        : '(brak / nieczytelna)'));
       linie.push('');
     });
     const txt = linie.join('\n');
@@ -80,18 +92,28 @@
     return txt;
   };
 
+  window.savpolPodsluchPelna = function (n) {
+    const w = zarejestrowane[n - 1];
+    if (!w) { console.log('[podsluch] brak wpisu nr ' + n); return; }
+    if (!w.odpowiedz) { console.log('[podsluch] wpis nr ' + n + ' nie ma czytelnej odpowiedzi'); return; }
+    kopiuj(w.odpowiedz);
+    console.log('[podsluch ' + WERSJA + '] skopiowano PEŁNĄ odpowiedź wpisu ' + n
+      + ' (' + w.odpowiedz.length + ' znaków): ' + w.url);
+    return w.odpowiedz;
+  };
+
   // --- fetch ---
   const oryginalnyFetch = window.fetch;
   if (oryginalnyFetch) {
     window.fetch = function (...args) {
       const url = (args[0] && args[0].url) || args[0];
       const opcje = args[1] || {};
-      const zadanie = typeof opcje.body === 'string' ? opcje.body : (opcje.body ? '[body nie-tekstowe]' : null);
+      const zadanie = typeof opcje.body === 'string' ? opcje.body : null;
       return oryginalnyFetch.apply(this, args).then((resp) => {
         resp.clone().text().then((body) => {
-          dodajWpis({ url: String(url), metoda: (opcje.method || 'GET'), zadanie, odpowiedz: body });
+          dodajWpis(String(url), (opcje.method || 'GET'), zadanie, body);
         }).catch(() => {
-          dodajWpis({ url: String(url), metoda: (opcje.method || 'GET'), zadanie, odpowiedz: null });
+          dodajWpis(String(url), (opcje.method || 'GET'), zadanie, null);
         });
         return resp;
       });
@@ -107,15 +129,15 @@
     return oryginalnyOpen.call(this, metoda, url, ...reszta);
   };
   XMLHttpRequest.prototype.send = function (cialo) {
-    const zadanie = typeof cialo === 'string' ? cialo : (cialo ? '[body nie-tekstowe]' : null);
+    const zadanie = typeof cialo === 'string' ? cialo : null;
     this.addEventListener('load', function () {
       let body = null;
       try { body = this.responseText; } catch (e) { /* binarne — pomijamy */ }
-      dodajWpis({ url: String(this.__podsluchUrl), metoda: this.__podsluchMetoda, zadanie, odpowiedz: body });
+      dodajWpis(String(this.__podsluchUrl), this.__podsluchMetoda, zadanie, body);
     });
     return oryginalnySend.call(this, cialo);
   };
 
-  console.log('[podsluch ' + WERSJA + '] gotowe — podpięto fetch i XMLHttpRequest. '
-    + 'Wykonaj akcję w ERP, potem wywołaj: savpolPodsluchZrzut()');
+  console.log('[podsluch ' + WERSJA + '] gotowe — podpięto fetch i XMLHttpRequest (treści żądań NIE są zapisywane). '
+    + 'Wykonaj akcję w ERP, potem: savpolPodsluchZrzut() / savpolPodsluchPelna(N)');
 })();
