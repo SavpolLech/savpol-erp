@@ -75,6 +75,32 @@ const FILTER_DATE_TO = process.env.FILTER_DATE_TO || process.env.FILTER_DATE || 
 // DOC_TYPES w scrapeWzInPage zostaje jako druga linia obrony niezależnie od tego.
 const USE_DOC_TYPE_FILTER = process.env.USE_DOC_TYPE_FILTER !== 'false';
 
+// Godziny "pracy" — poza tym oknem (i w weekendy) skrypt się NIE uruchamia,
+// nawet jeśli coś go odpali (harmonogram, ręcznie, źle skonfigurowany cron).
+// To zabezpieczenie w samym kodzie, niezależne od tego, JAK i KIEDY go
+// wywołano — harmonogram na serwerze i tak powinien odpalać tylko w tym
+// oknie, ale to jest druga linia obrony, nie jedyna.
+// ODSTĘPSTWO=false pozwala to obejść (np. do ręcznego backfillu wieczorem/
+// w weekend, tak jak robiliśmy przy nadganianiu zaległości) — świadoma
+// decyzja człowieka, nie domyślne zachowanie automatyzacji.
+const BUSINESS_HOURS_START = parseInt(process.env.BUSINESS_HOURS_START || '7', 10);
+const BUSINESS_HOURS_END = parseInt(process.env.BUSINESS_HOURS_END || '17', 10);
+const IGNORE_BUSINESS_HOURS = process.env.IGNORE_BUSINESS_HOURS === 'true';
+
+function checkBusinessHours() {
+  if (IGNORE_BUSINESS_HOURS) return { ok: true, reason: 'IGNORE_BUSINESS_HOURS=true — pominięto sprawdzenie' };
+  const now = new Date();
+  const day = now.getDay(); // 0=niedziela, 6=sobota
+  const hour = now.getHours();
+  if (day === 0 || day === 6) {
+    return { ok: false, reason: 'weekend (dzień tygodnia=' + day + ')' };
+  }
+  if (hour < BUSINESS_HOURS_START || hour >= BUSINESS_HOURS_END) {
+    return { ok: false, reason: 'poza godzinami ' + BUSINESS_HOURS_START + '-' + BUSINESS_HOURS_END + ' (teraz: ' + hour + ':' + String(now.getMinutes()).padStart(2, '0') + ')' };
+  }
+  return { ok: true, reason: null };
+}
+
 // Z sondy diagnostyka/sonda-login-form.js (2026-09-07): oba pola mają
 // zduplikowane id="Input" (nieunikalne w DOM), więc idziemy po `name` —
 // to jest unikalne. Przycisku logowania NIE MA w DOM (0 widocznych
@@ -651,6 +677,12 @@ function releaseLock() {
 }
 
 async function main() {
+  const hours = checkBusinessHours();
+  if (!hours.ok) {
+    console.log('[godziny-pracy] Odmowa startu: ' + hours.reason + '. (Ustaw IGNORE_BUSINESS_HOURS=true, żeby świadomie to obejść.)');
+    return;
+  }
+
   acquireLock();
   const runStarted = Date.now();
   const dateFrom = FILTER_DATE_FROM || FILTER_DATE_TO;
