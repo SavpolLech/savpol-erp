@@ -6,10 +6,17 @@ REM  odpala tego pliku co godzine - ten skrypt sam sobie powtarza
 REM  sesje scrapowania przez caly dzien, w petli, az minie okno pracy.
 REM  NIE trzeba tego nigdy recznie modyfikowac ani odpalac.
 REM
+REM  UWAGA: godzina 17:00 to granica ZACZYNANIA nowej sesji, nie jej
+REM  przerywania. Sesja, ktora juz trwa o 17:00 (np. wystartowala 16:50),
+REM  dokoncza sie normalnie - tak jak pracownik, ktory czasem zostaje
+REM  troszke dluzej, zamiast wychodzic w polowie zadania. Sprawdzenie
+REM  godziny jest tylko na starcie petli, przed odpaleniem KOLEJNEJ sesji.
+REM
 REM  Przebieg:
 REM    1) losowe opoznienie startu dnia: 0-15 min (zeby nie logowac sie
 REM       do ERP zawsze punktualnie o 7:00 - wygladaloby to jak bot)
-REM    2) PETLA, az zegar wskaze 17:00 lub pozniej:
+REM    2) PETLA - kolejna sesja startuje tylko, jesli jest jeszcze przed
+REM       17:00 (patrz UWAGA wyzej):
 REM         a) git pull            - najnowszy kod (Lech aktualizuje,
 REM                                   ten plik go automatycznie
 REM                                   podciaga, zero akcji Tomka)
@@ -46,7 +53,7 @@ cd /d "%REPO_ROOT%"
 
 for /f %%h in ('powershell -NoProfile -Command "(Get-Date).Hour"') do set NOW_HOUR=%%h
 if %NOW_HOUR% GEQ 17 (
-  echo [%date% %time%] Godzina %NOW_HOUR% - po godzinach pracy, koncze na dzis.
+  echo [%date% %time%] Godzina %NOW_HOUR% - nie zaczynam kolejnej sesji po godzinach pracy. Koniec na dzis.
   goto :EOF
 )
 

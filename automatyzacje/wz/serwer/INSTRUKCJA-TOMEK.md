@@ -139,10 +139,13 @@ To zadanie odpala się **tylko raz dziennie, o 7:00** — cały dzień pracy
 **To wszystko.** Zadanie odpali się raz, o 7:00, w dni robocze. Sam plik
 `uruchom.bat` czeka najpierw losowo 0–15 minut (żeby logowanie do ERP nie
 wypadało zawsze punktualnie o 7:00), potem wykonuje sesje scrapowania jedna
-po drugiej z losowymi przerwami 5–15 minut między nimi, aż zegar wskaże
-17:00 — wtedy sam się zatrzymuje. `scrape.js` dodatkowo sam odmawia pracy
-poza 7:00–17:00 i w weekendy, niezależnie od tego wszystkiego — nawet gdyby
-coś było źle skonfigurowane w Harmonogramie.
+po drugiej z losowymi przerwami 5–15 minut między nimi. Godzina 17:00 jest
+sprawdzana tylko przed **rozpoczęciem kolejnej** sesji, nie w jej trakcie —
+sesja, która już trwa o 17:00, kończy się normalnie (tak jak pracownik,
+który czasem zostaje odrobinę dłużej, a nie przerywa pracę w połowie).
+`scrape.js` dodatkowo sam odmawia **zaczęcia nowej** sesji poza 7:00–17:00 i
+w weekendy, niezależnie od tego wszystkiego — nawet gdyby coś było źle
+skonfigurowane w Harmonogramie.
 
 Każda sesja jest dodatkowo odpalana przez `odpal-z-timeoutem.ps1` z limitem
 75 minut — jeśli sesja się zawiesi (np. ERP przestanie odpowiadać), zostaje
