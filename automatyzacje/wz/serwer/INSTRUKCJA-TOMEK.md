@@ -144,6 +144,15 @@ po drugiej z losowymi przerwami 5–15 minut między nimi, aż zegar wskaże
 poza 7:00–17:00 i w weekendy, niezależnie od tego wszystkiego — nawet gdyby
 coś było źle skonfigurowane w Harmonogramie.
 
+Każda sesja jest dodatkowo odpalana przez `odpal-z-timeoutem.ps1` z limitem
+75 minut — jeśli sesja się zawiesi (np. ERP przestanie odpowiadać), zostaje
+sama automatycznie ubita, a pętla po przerwie startuje kolejną, świeżą
+sesję. Kolejna sesja sama wznawia pracę tam, gdzie skończyła poprzednia
+(zapisany postęp w `state/`) — nic nie trzeba robić ręcznie po zawieszeniu.
+Do tego dochodzi jeszcze ten dzienny limit 10 godzin z kroku 6 wyżej, jako
+druga, grubsza siatka bezpieczeństwa na wypadek, gdyby coś zawiesiło się w
+samej pętli, a nie w pojedynczej sesji.
+
 ### 2.5 Aktualizacje kodu — nic nie musisz robić
 
 Kiedy Lech poprawi coś w skrypcie albo doda nowy typ dokumentu, sam

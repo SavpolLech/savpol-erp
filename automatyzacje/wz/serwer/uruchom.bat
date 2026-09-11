@@ -17,7 +17,14 @@ REM         b) generate-test-tables.js - odswieza typy kolumn z bazy
 REM                                       (baza bywa przebudowywana)
 REM         c) scrape.js            - jedna sesja scrapowania (30-60 min,
 REM                                    losowane wewnatrz scrape.js),
-REM                                    pisze WPROST do bazy (nie CSV)
+REM                                    pisze WPROST do bazy (nie CSV) -
+REM                                    odpalana przez odpal-z-timeoutem.ps1
+REM                                    z limitem 75 min: jesli sesja sie
+REM                                    zawiesi (np. ERP nie odpowiada),
+REM                                    proces jest ubijany automatycznie,
+REM                                    blokada (.scrape.lock) usuwana, a
+REM                                    petla PO PRZERWIE odpala kolejna,
+REM                                    swieza sesje - bez recznej reakcji
 REM         d) przerwa 5-15 min (losowo) przed kolejna sesja
 REM    3) scrape.js i tak sam odmawia startu poza godzinami 7-17 i w
 REM       weekendy (niezaleznie od tej petli) - to tylko dodatkowe
@@ -54,8 +61,15 @@ node generate-test-tables.js
 set FILTER_DATE=wczoraj
 set HEADLESS=true
 
-echo [%date% %time%] node scrape.js (sesja scrapowania)...
-node scrape.js
+echo [%date% %time%] node scrape.js (sesja scrapowania, limit 75 min)...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0odpal-z-timeoutem.ps1" -TimeoutSec 4500
+set SESSION_EXIT=%ERRORLEVEL%
+if %SESSION_EXIT% EQU 2 (
+  echo [%date% %time%] UWAGA: sesja zawiesila sie i zostala ubita po limicie czasu. Usuwam blokade, jade dalej.
+  del /f /q ".scrape.lock" 2>nul
+) else (
+  echo [%date% %time%] Sesja zakonczona sama, kod wyjscia: %SESSION_EXIT%.
+)
 
 for /f %%i in ('powershell -NoProfile -Command "Get-Random -Minimum 300 -Maximum 900"') do set BREAK_SEC=%%i
 set /a BREAK_MIN=%BREAK_SEC%/60
