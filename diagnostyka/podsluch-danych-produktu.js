@@ -1,7 +1,8 @@
 // Podsłuch sieciowy: loguje requesty fetch/XHR (URL + rozpoznany DictIdent +
-// rozmiar/początek odpowiedzi) i pozwala pobrać PEŁNĄ, nieobciętą treść
-// odpowiedzi wybranego wpisu.
-// WERSJA: 2026-09-11.3
+// rozmiar/początek odpowiedzi) i pozwala ZDEKODOWAĆ w przeglądarce (bez
+// ręcznego przepisywania base64) skompresowaną treść odpowiedzi wybranego
+// wpisu.
+// WERSJA: 2026-09-11.4
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
@@ -24,13 +25,20 @@
 //   1. Wklej ten plik w konsolę.
 //   2. Wykonaj w ERP akcję, którą chcemy podsłuchać.
 //   3. savpolPodsluchZrzut()      → skrócona lista (URL/DictIdent/rozmiar) do schowka.
-//   4. savpolPodsluchPelna(N)     → PEŁNA treść odpowiedzi wpisu nr N (z listy
-//      powyżej) do schowka — użyj, gdy chcemy zobaczyć całą (dużą) odpowiedź.
+//   4. savpolPodsluchDekoduj(N)   → NAJWAŻNIEJSZA funkcja: odpowiedzi tej
+//      aplikacji są spakowane (base64+ZIP+deflate) w polu "JSONResult" —
+//      ta funkcja dekoduje to W PRZEGLĄDARCE (DecompressionStream, bez
+//      żadnej biblioteki) i kopiuje do schowka już czytelny, ładnie
+//      sformatowany JSON. Używaj TEJ, nie savpolPodsluchPelna, dla wpisów
+//      z polem JSONResult (prawie wszystkie OperatrionInvoke).
+//   5. savpolPodsluchPelna(N)     → PEŁNA, ale NIEZDEKODOWANA treść
+//      odpowiedzi wpisu nr N — tylko do wyjątkowych przypadków (np. gdy
+//      odpowiedź nie jest spakowana).
 
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-11.3';
+  const WERSJA = '2026-09-11.4';
   const MAX_PODGLAD = 300;
 
   const zarejestrowane = [];
@@ -100,6 +108,54 @@
     console.log('[podsluch ' + WERSJA + '] skopiowano PEŁNĄ odpowiedź wpisu ' + n
       + ' (' + w.odpowiedz.length + ' znaków): ' + w.url);
     return w.odpowiedz;
+  };
+
+  // Ta aplikacja pakuje większe odpowiedzi jako base64(ZIP z jednym plikiem,
+  // metoda deflate) w polu "JSONResult". Zamiast ręcznie przepisywać ten
+  // ogromny base64 do rozmowy (podatne na literówki przy tak długich
+  // stringach — dokładnie to nam się przydarzyło), dekodujemy TUTAJ, w
+  // przeglądarce, korzystając z wbudowanego DecompressionStream. Zero
+  // ręcznego przepisywania danych binarnych.
+  async function dekompresujDeflateRaw(bajty) {
+    const strumien = new Blob([bajty]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    const bufor = await new Response(strumien).arrayBuffer();
+    return new Uint8Array(bufor);
+  }
+
+  window.savpolPodsluchDekoduj = async function (n) {
+    const w = zarejestrowane[n - 1];
+    if (!w || !w.odpowiedz) { console.log('[podsluch] brak wpisu/odpowiedzi nr ' + n); return; }
+    let zewnetrzny;
+    try { zewnetrzny = JSON.parse(w.odpowiedz); } catch (e) {
+      console.log('[podsluch] odpowiedź wpisu ' + n + ' nie jest JSON-em: ' + e.message);
+      return;
+    }
+    const b64 = zewnetrzny.JSONResult || zewnetrzny.Input;
+    if (!b64) { console.log('[podsluch] brak pola JSONResult/Input w odpowiedzi wpisu ' + n); return; }
+    const surowe = atob(b64);
+    const bajty = new Uint8Array(surowe.length);
+    for (let i = 0; i < surowe.length; i++) bajty[i] = surowe.charCodeAt(i);
+    const dv = new DataView(bajty.buffer);
+    if (dv.getUint32(0, true) !== 0x04034b50) {
+      console.log('[podsluch] brak sygnatury ZIP na początku (0x504B0304) — nieoczekiwany format');
+      return;
+    }
+    const nazwaLen = dv.getUint16(26, true);
+    const dodatkoweLen = dv.getUint16(28, true);
+    const startDanych = 30 + nazwaLen + dodatkoweLen;
+    const skompresowane = bajty.slice(startDanych);
+    try {
+      const rozkompresowane = await dekompresujDeflateRaw(skompresowane);
+      const tekst = new TextDecoder('utf-8').decode(rozkompresowane);
+      let ladny = tekst;
+      try { ladny = JSON.stringify(JSON.parse(tekst), null, 2); } catch (e) { /* nie-JSON, zostaw jak jest */ }
+      kopiuj(ladny);
+      console.log('[podsluch ' + WERSJA + '] zdekodowano wpis ' + n + ' (' + ladny.length + ' znaków), skopiowano do schowka');
+      window.__podsluchZdekodowany = ladny;
+      return ladny;
+    } catch (e) {
+      console.log('[podsluch] błąd dekompresji wpisu ' + n + ': ' + e.message);
+    }
   };
 
   // --- fetch ---
