@@ -254,24 +254,93 @@ końca) — do sprawdzenia. „Symbol PCN” też nie widoczny jeszcze w
 zdekodowanej części. Radiogroup „Swobodne korzystanie / Kontrola jakości”
 — również nie widoczny jeszcze.
 
+## ROZSTRZYGNIĘCIE (2026-09-14, ciąg dalszy): pełna lista 314 pól z zapytania SQL
+
+Pytanie „czy to jest osobny widok z aliasami, czy klient sam dorabia HTML
+do czystych nazw z API?" — złapaliśmy request `OperationName:
+RefreshDataSetSQL_Synchronous` dla tej samej karty (`DictIdent:
+csItemsOneBro`). To jest odpowiedź serwera z **surowymi danymi rekordu**
+w formacie `DataTable` (`FieldDefs` — lista definicji pól, osobno wartości
+w wierszach) — nie szablon HTML. Wyciągnęliśmy z niej pełną listę **314
+nazw pól**, które ten jeden zapytanie SQL faktycznie zwraca dla produktu.
+
+**Odpowiedź: serwer zwraca OBA warianty naraz.** W tych samych 314 polach
+są jednocześnie: `csEBIProducersId` I `ProducerDesc`, `csEBIBrandsId` I
+`BrandDesc`, `csEBICategoriesId` I `CategoryDesc`, `csEBIConcessionsId` I
+`ConcessionDesc`, `csEBIVarietiesId` I `VarietyDesc`, `csPurchaseVATRatesId`
+I `purchaseVATRate`, `csItemsVatClassyficationsG` I `ItemClassyfication`,
+`csSeriesId` I `Series`, `csPCGSG` I `PCGS`/`PCGSTranslatedDesc`. Szablon
+HTML binduje się do wersji opisowej (do wyświetlenia/edycji przez
+combobox), ale surowa kolumna ID jest w tych samych danych pod swoją
+prawdziwą nazwą — **więc nasze pierwotne dopasowania `csEBI*Id` z góry tej
+notatki jednak są poprawne**, tylko trzeba je czytać z innego pola danych
+niż to, do którego bezpośrednio binduje się kontrolka na ekranie.
+
+### Nowe potwierdzenia 1:1 z tej listy 314 pól
+
+`ShelfLifeDays`, `csItemsVatClassyficationsG`, `csPurchaseVATRatesId`,
+`csEBIProducersId`, `csEBIBrandsId`, `csEBICategoriesId`,
+`csEBIConcessionsId`, `csEBIVarietiesId`, `csSeriesId`, `csCountriesG`,
+`PartNo2`, `csETIMClassesId`, `csPCGSG`, `csCPACodesG`,
+`csStorageLocationsTypesG`, `ExpectedExpirationPeriod`,
+`LotRegistrationRequired`, `ExpirationDateRequired`,
+`csSysTablesIdentTemplatesG`, `csItemsModelsId`, `csProductExpertId`,
+`weightClass`, `strengthClass`, `isDiff`, `registerPrice`, `basePrice`,
+`blockEditETIMFeatures`, `globalPrice`, `globalStrictPrice`, `AutoItemNo`,
+`csCompaniesId4FTI` — wszystkie potwierdzone dosłownie, bez zgadywania.
+
+### WAŻNE ZASTRZEŻENIE: to zapytanie jest wyselekcjonowane, nie wyczerpujące
+
+Ta konkretna odpowiedź NIE zawiera wszystkich 141 kolumn — np. z rodziny
+`KeyWords_XX` widać tylko `KeyWords_PL`/`EN`/`HR` (nie ma DE/ES/FR/NL/PT/
+RU/UK/IT/SK/CZ, mimo że te kolumny istnieją w bazie wg `kolumny.txt`),
+podobnie `KeyWordsAuto_XX` — tylko `_HR`. Nieobecność pola w tej liście
+**nie znaczy, że kolumna nie istnieje** — znaczy tylko, że to konkretne
+zapytanie (dopasowane do aktualnie widocznych zakładek/języka) jej nie
+pobrało. Do pełnego scrapowania trzeba będzie sprawdzić, czy przełączenie
+zakładki/języka rozszerza SELECT, czy lista pól jest zawsze taka sama
+niezależnie od tego, co jest aktualnie widoczne na ekranie.
+
+**Nieobecne w tej odpowiedzi, mimo że są w `kolumny.txt`:** `purchaseLastPrice`
+(za to jest `CPurchasePrice` — inne pole, możliwe że to naprawdę różne
+kolumny, nie alias), `DefSort`, `LastChangeDate`, `createdDate`, `isEOL`,
+`csUNSPSCCommodityId`, `IsPhoto`, `IsPhotoPrev`, `csProducersIdAgr`,
+`NameA1Agr`, `NameL1Agr`, `PhotoVersion`, `PhotoSmallVersion`, `Photo`,
+`PhotoSmall` (za to jest `PhotoUrl`/`PhotoSmallUrl` — url zamiast
+surowego binarnego pola, sensowne dla API).
+
+### Pola z tej listy 314, których wciąż nie ma w `kolumny.txt` pod żadną nazwą
+
+`EANType`, `isFractionalQuantity`, `groupsInfo01`…`04` (+ warianty XML),
+`itemsGroupMask01`…`04`, `CRecyclingFee` (KGO), `validTo`, `expireDays`,
+`csItemsAddId`/`csItemsAddG` (+ cała rodzina `Atr01`…`AtrInt09` —
+atrybuty rozszerzone produktu), `csProducersIdNew`/`csSupplierIdNew` (+
+`ProducersDescNew`/`SupplierDescNew`/`*Ident`), `csItemsGroupsId4Purchase`/
+`csItemsGroupsId4BonusDiscount` (+ rabaty grupowe), `Usr4PIM`. Prawdopodobnie
+te dane też siedzą w tabeli `csItems`, tylko `kolumny.txt` (141 kolumn) nie
+jest pełnym zrzutem wszystkich kolumn tej tabeli — do potwierdzenia z
+Michałem, czy interesuje go też ten dodatkowy zestaw.
+
 ## Nierozstrzygnięte pytania do Michała
 
-1. **Najważniejsze:** karta produktu w ERP wystawia pola pod innymi
-   nazwami niż surowe kolumny z Twojej listy (np. `ProducerDesc` zamiast
-   `csEBIProducersId`, `CPurchasePrice` zamiast `purchaseLastPrice`,
-   `purchaseVATRate` zamiast `csPurchaseVATRatesId`, `Series` zamiast
-   `csSeriesId`). Czy to jest widok/zapytanie zbudowane nad `csItems`,
-   i czy możesz dać nam listę: nazwa pola w UI → surowa nazwa kolumny w
-   tabeli? Bez tego nie mamy pewności, do której kolumny wpisywać wartości
-   przy zapisie do bazy.
-2. `EANType`, `isFractionalQuantity`, `groupsInfo01XML`–`04XML`,
-   `CRecyclingFee` (KGO) — nie widzimy ich w liście 141 kolumn pod żadną
-   rozpoznawalną nazwą. Czy w ogóle są w `csItems`, a jeśli tak, pod jaką
-   nazwą?
-3. Kod PKWiU (drugie pole, `PCGS`/`PCGSTranslatedDesc`) — czy to faktycznie
-   `csPCGSG`, czy inna kolumna?
+1. `kolumny.txt` ma 141 kolumn, ale nasze zapytanie testowe do samej karty
+   produktu zwróciło już 314 różnych nazw pól (część to duplikaty
+   ID+Desc, ale reszta wygląda na dodatkowe, prawdziwe kolumny —
+   `csItemsAddId`/`Atr01`…`AtrInt09`, `groupsInfo01`–`04`, `EANType`,
+   `CRecyclingFee`, `csProducersIdNew`/`csSupplierIdNew` i inne). Czy
+   Twoja lista 141 to celowo tylko podzbiór, czy to jest cały zrzut kolumn
+   tabeli `csItems` i te dodatkowe pola siedzą w INNEJ tabeli?
+2. `purchaseLastPrice` (z Twojej listy) vs `CPurchasePrice` (pole
+   faktycznie widoczne na karcie, w polu „Zakupu”) — czy to ta sama
+   wartość pod dwiema nazwami, czy naprawdę dwie różne kolumny (np. jedna
+   ręcznie wpisywana, druga wyliczana z historii zakupów)?
+3. `EANType`, `isFractionalQuantity`, `groupsInfo01XML`–`04XML`,
+   `CRecyclingFee` (KGO), `validTo`, `expireDays` — nie widzimy ich w
+   liście 141 kolumn pod żadną rozpoznawalną nazwą. Czy w ogóle są w
+   `csItems`, a jeśli tak, pod jaką nazwą?
 4. Grupa, Klasa, Symbol PCN, radiogroup „Swobodne korzystanie/Kontrola
-   jakości” — wciąż nieznalezione w szablonie karty, doszukujemy dalej.
+   jakości” — wciąż nieznalezione ani w szablonie karty, ani w liście 314
+   pól z zapytania SQL. Możliwe, że to inna tabela — do sprawdzenia.
 5. Czy dane z osobnych tabel (Zapasy, Opisy w B2B, Jednostki, Referencje,
    Kontrahenci, Do użycia w magazynach) w ogóle wchodzą w zakres tego
    zadania, czy interesuje Cię wyłącznie `csItems`?
