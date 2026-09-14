@@ -187,17 +187,24 @@ flagi:
   (produkt 0031513) z INNYMI produktami (nasze 10 testowych) — różne SKU,
   różny prawidłowy kod, stąd wrażenie niezgodności. Po zescrapowaniu przez
   API tego samego SKU co przykład Michała: `CPACode = "20081919"` — **dokładnie
-  ta sama wartość** co w jego danych (`20081919`). Mapowanie poprawne,
-  jedyna różnica to typ (`string` z API vs `int` w DB — rzutować przy
-  zapisie).
-- `EAN` — API zawsze string, DB ma `int` (trzeba rzutować przy zapisie do
-  `worek`). U 4 z 10 produktów (IPRA: `0000074`, `0000078`, `0000085`,
+  ta sama wartość** co w jego danych (`20081919`). Mapowanie poprawne.
+- `EAN` — u 4 z 10 produktów (IPRA: `0000074`, `0000078`, `0000085`,
   `0000087`) to pole ma coś, co nie wygląda jak standardowy kod EAN-13
   (`"74if25083mali"`, `"78if24979masl"`, `"85IF27405POMA"`,
   `"87if27754pozi"`) — **decyzja (Lech, 2026-09-14): przenosimy to bez
   zmian, tak jak odczytane.** Możliwe, że to wewnętrzne numery EAN
   zbudowane na potrzeby pracy magazynu dla tych konkretnych produktów, nie
   błąd/śmieci. Pozostałe 6 (HOFFMANN) mają standardowy EAN-13.
+
+**Poprawka co do typów `CPACode`/`EAN` (2026-09-14):** wcześniejsze "API
+string vs DB int" było błędne — sprawdzone wprost w `INFORMATION_SCHEMA`
+na `dbo.csItems`: obie kolumny to `nvarchar(100)`, czyli TEKST. Wrażenie
+"int" pochodziło z tego, jak Excel Michała wyświetlił te komórki
+(formatowanie liczbowe), nie z prawdziwego typu SQL. **Nasze stringi z API
+już się zgadzają z realnym schematem — żadnego rzutowania przy zapisie do
+`worek` nie trzeba.** Zasada na przyszłość: przy porównywaniu typów
+odnosimy się do `INFORMATION_SCHEMA`/przykładu Michała jako danych, nie do
+tego, jak Excel akurat coś wyrenderował.
 
 **Wartości niepuste u Michała, których w ogóle nie wyłapujemy:** z 36
 niedopasowanych kolumn, 17 miało realną (nie-NULL) wartość w przykładzie
@@ -212,6 +219,21 @@ sekcja niżej). Prawdziwe, potwierdzone braki:
 
 Reszta z 36 niedopasowanych (19 kolumn) była `NULL` u Michała, więc nie ma
 czego wyłapywać — nie wiadomo, czy są w ogóle używane.
+
+**Próba namierzenia `DefSort`/`LastChangeDate`/`createdDate` inną drogą
+(2026-09-14):** sprawdziłem, czy odpowiedź siatki katalogu (osobne
+zapytanie SQL, `DataSetSQLIdent: csitems`, ale inny request niż karta) ma
+te pola — złapana odpowiedź okazała się być **agregatem/statystyką stanów**
+dla całego katalogu (`QStock`/`QStockAv`/`QStockRes`/`FStock`, jeden
+wiersz), nie listą pojedynczych produktów z tymi kolumnami. Prawdziwa
+lista wierszy siatki katalogu (ta faktycznie widoczna na ekranie) idzie
+najwyraźniej inną drogą, którą `page.on('response')` w Playwright nie
+złapał — możliwe, że częściowo przez WebSocket (scraper WZ już to
+podejrzewał w komentarzu o "ERP non-stop odbudowuje WebSocket w tle").
+**Decyzja (Lech, 2026-09-14): nie ciągniemy tego dalej teraz** — to tylko 3
+pola audytowe/sortujące, niższy priorytet niż dalszy reverse-engineering
+sieci. Czekamy na SQL (SELECT-y od Michała, albo gdy `worek`/`cs06` się
+napełni) — to je da bez dalszego grzebania w ERP.
 
 ## Realny wiersz z bazy dla SKU 0031513 (od Michała, 2026-09-14)
 
