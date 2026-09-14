@@ -861,10 +861,28 @@
     "2026/WZ/GDS1/015378",
     "2026/WZ/GDS1/015377",
     "2026/WZ/GDS1/015376",
-    "2026/WZ/GDS1/015375"
+    "2026/WZ/GDS1/015375",
+    "2026/WZ/GDS1/015374",
+    "2026/WZ/GDS1/015373",
+    "2026/WZ/GDS1/015372",
+    "2026/WZ/GDS1/015371",
+    "2026/WZ/GDS1/015370",
+    "2026/WZ/GDS1/015369",
+    "2026/WZ/GDS1/015368",
+    "2026/WZ/GDS1/015367",
+    "2026/WZ/GDS1/015366",
+    "2026/WZ/GDS1/015365",
+    "2026/WZ/GDS1/015364",
+    "2026/WZ/GDS1/015363",
+    "2026/WZ/GDS1/015362",
+    "2026/WZ/GDS1/015361",
+    "2026/WZ/GDS1/015360",
+    "2026/WZ/GDS1/015359",
+    "2026/WZ/GDS1/015358",
+    "2026/WZ/GDS1/015357"
   ],
-  "complete": false,
-  "lastUpdated": "2026-09-14T11:02:32.671Z",
+  "complete": true,
+  "lastUpdated": "2026-09-14T11:08:12.720Z",
   "runs": [
     {
       "ts": "2026-09-14T10:10:01.478Z",
@@ -1213,6 +1231,18 @@
       "paczkaDok": 5,
       "partial": true,
       "stoppedReason": "session_time_limit"
+    },
+    {
+      "ts": "2026-09-14T11:08:00.295Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-09-14T11:08:12.720Z",
+      "paczkaDok": 3,
+      "partial": false,
+      "stoppedReason": null
     }
   ]
 }
