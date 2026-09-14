@@ -170,6 +170,43 @@ zweryfikowane 1:1 (nie sprawdziliśmy tego samego produktu w obu miejscach
 naraz) — i tej kolumny w ogóle nie ma w liście 141 od Michała, więc na razie
 to tylko techniczna odpowiedź dla Ciebie, nie coś do zgłoszenia Michałowi.
 
+## Photo / PhotoSmall — namierzone (2026-09-14)
+
+W wiadomości do Michała napisaliśmy, że `Photo`/`PhotoSmall`/`PhotoVersion`
+nie udało się namierzyć — to już nieaktualne, znaleźliśmy działający
+mechanizm:
+
+1. Zdjęcie NIE jest w danych karty produktu (`csItemsOneBro`/`csitems`) —
+   pola `PhotoUrl`/`PhotoSmallUrl` tam są zawsze `null`. Trzeba pobrać
+   dane z zakładki **Zdjęcia** (`DataSetSQLIdent: csphotos`), która ma
+   własny rekord ze wszystkimi metadanymi zdjęcia (46 pól, m.in.
+   `LocalFileName`, `RemoteFileName`, `RemoteIdent`, `PhotoUrl`,
+   `PhotoUrlMed`, `PhotoUrlSmall`).
+2. Pole `PhotoUrl` w tym rekordzie NIE jest gotowym linkiem — to
+   wewnętrzny identyfikator w formacie `tabela|pole|GUID|wersja`, np.
+   `csPhotos|Photo|A4064574-9CCE-4850-19A3-E1CBA59E9B7C|1`.
+3. Potwierdzony (podsłuchany z Network w DevTools, status 200) wzorzec
+   prawdziwego URL do pobrania pliku:
+
+   ```
+   https://erp.savpol.pl/api/Download/<PhotoUrl z "|" zamienionym na "_">.png
+   ```
+
+   Przykład: `https://erp.savpol.pl/api/Download/csPhotos_Photo_A4064574-9CCE-4850-19A3-E1CBA59E9B7C_1.png`
+
+   Rozszerzenie jest zawsze `.png`, niezależnie od oryginalnego
+   `LocalFileName`/`RemoteFileName` (które kończyły się na `.jpg`) — endpoint
+   serwuje/konwertuje zawsze do PNG.
+4. To endpoint pod `/api/...` na `erp.savpol.pl` — wymaga tej samej
+   zalogowanej sesji ERP co resztą danych (nie jest publiczny/anonimowy).
+   Scraper będzie musiał pobierać zdjęcia w tej samej sesji (ciasteczko/token),
+   nie osobnym anonimowym requestem.
+
+Nie sprawdzone: czy `PhotoUrlMed`/`PhotoUrlSmall` (analogiczne pola, wersje
+mniejsze) używają tego samego wzorca URL (prawdopodobnie tak, po prostu z
+`Photo` zamienionym na `PhotoMed`/`PhotoSmall` w środku identyfikatora) —
+do potwierdzenia przy pierwszej realnej implementacji scrapera.
+
 ## Nie pasuje do listy 141 kolumn — osobne tabele/relacje
 
 Sprawdzone i odrzucone jako out-of-scope dla `csItems`:
