@@ -182,19 +182,22 @@ flagi:
 - `ShelfLifeDays` — fałszywy alarm. U Michała `'730.000000'` (DB ma
   `decimal(x,6)`, Excel wyeksportował jako tekst), u nas czyste inty
   (`450`, `365`). To różnica formatu, nie błąd.
-- `CPACode` — API zawsze zwraca string (`"33021090"` u wszystkich 10,
-  wygląda jak prawidłowy kod CPA/PKWiU), DB ma `int`. Wartość z przykładu
-  Michała (`20081919`) nie wygląda jak prawidłowy kod tej samej rodziny —
-  możliwe, że to legacy/nietypowe dane na tym konkretnym SKU, nie błąd
-  naszego mapowania.
+- `CPACode` — **fałszywy alarm, sprawdzone i potwierdzone poprawne
+  2026-09-14.** Wcześniejsza wątpliwość porównywała wartość Michała
+  (produkt 0031513) z INNYMI produktami (nasze 10 testowych) — różne SKU,
+  różny prawidłowy kod, stąd wrażenie niezgodności. Po zescrapowaniu przez
+  API tego samego SKU co przykład Michała: `CPACode = "20081919"` — **dokładnie
+  ta sama wartość** co w jego danych (`20081919`). Mapowanie poprawne,
+  jedyna różnica to typ (`string` z API vs `int` w DB — rzutować przy
+  zapisie).
 - `EAN` — API zawsze string, DB ma `int` (trzeba rzutować przy zapisie do
-  `worek`). **Ale też realny problem danych**: 4 z 10 produktów (IPRA:
-  `0000074`, `0000078`, `0000085`, `0000087`) mają w tym polu coś, co NIE
-  jest kodem EAN (`"74if25083mali"`, `"78if24979masl"`, `"85IF27405POMA"`,
-  `"87if27754pozi"`) — wygląda na wewnętrzny placeholder/kod, nie
-  prawdziwy kod kreskowy. Pozostałe 6 (HOFFMANN) mają poprawny EAN-13.
-  Wygląda na problem w danych źródłowych ERP dla tych konkretnych SKU, nie
-  błąd scrapera — warto zapytać Michała.
+  `worek`). U 4 z 10 produktów (IPRA: `0000074`, `0000078`, `0000085`,
+  `0000087`) to pole ma coś, co nie wygląda jak standardowy kod EAN-13
+  (`"74if25083mali"`, `"78if24979masl"`, `"85IF27405POMA"`,
+  `"87if27754pozi"`) — **decyzja (Lech, 2026-09-14): przenosimy to bez
+  zmian, tak jak odczytane.** Możliwe, że to wewnętrzne numery EAN
+  zbudowane na potrzeby pracy magazynu dla tych konkretnych produktów, nie
+  błąd/śmieci. Pozostałe 6 (HOFFMANN) mają standardowy EAN-13.
 
 **Wartości niepuste u Michała, których w ogóle nie wyłapujemy:** z 36
 niedopasowanych kolumn, 17 miało realną (nie-NULL) wartość w przykładzie
