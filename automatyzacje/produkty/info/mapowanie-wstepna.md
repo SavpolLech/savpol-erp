@@ -161,14 +161,117 @@ formularzu — etykieta nie została znaleziona przez sondę (prawdopodobnie
 inny wzorzec DOM niż `label.Label`). Do zbadania osobno, jeśli okaże się
 istotne — obecnie nie wiadomo, których kolumn dotyczą.
 
+## PRZEŁOM (2026-09-14): prawdziwe nazwy pól wprost z kodu aplikacji
+
+Znaleźliśmy sposób, żeby ominąć zgadywanie z etykiet całkowicie. Karta
+produktu (`DictIdent: csItemsOneBro`) jest budowana z jednego dużego
+requestu API, który zwraca m.in. `VisualDefinition` — surowy szablon HTML
+CAŁEJ karty, ze wszystkimi atrybutami `data-datafield="..."`. To jest
+źródło prawdy — nazwa techniczna wprost z kodu, nie zgadywana z etykiety.
+
+Jak to zdobyliśmy: `diagnostyka/podsluch-danych-produktu.js` (wersja
+2026-09-11.6) podsłuchuje `fetch`/`XMLHttpRequest`, a odpowiedzi tej
+aplikacji są spakowane jako base64(ZIP+deflate) w polu `JSONResult` —
+skrypt dekoduje to bezpośrednio w przeglądarce (`DecompressionStream`,
+zero ręcznego przepisywania danych binarnych, co wcześniej się nie udawało).
+
+### WAŻNE ZASTRZEŻENIE — nazwy pól w karcie ≠ nazwy kolumn w `kolumny.txt`
+
+Karta korzysta z `data-datasetsqlident="csItems"`, ale sporo pól ma
+**inne nazwy niż w liście 141 kolumn** — np. `ProducerDesc` zamiast
+`csEBIProducersId`, `CPurchasePrice` zamiast `purchaseLastPrice`,
+`purchaseVATRate` zamiast `csPurchaseVATRatesId`. To wygląda na
+widok/zapytanie z przemianowanymi/rozwiniętymi polami nad prawdziwą
+tabelą `csItems`, nie bezpośredni dostęp do surowych kolumn. **To kluczowe
+pytanie do Michała** — patrz sekcja pytań niżej.
+
+### Potwierdzone 1:1 (dokładnie ta sama nazwa co w `kolumny.txt`)
+
+| Kolumna | Pole w ERP (etykieta) | Sekcja |
+|---|---|---|
+| `IsInventoryRecords` | Ewidencja stanów... (4 opcje: 0/1/2/3) | Dane podstawowe |
+| `BMM` | radiogroup bez widocznej etykiety (3 opcje) | Dane podstawowe |
+| `canSetSalePrice` | Użytkownik może zmieniać cenę sprzedaży | Dane podstawowe |
+| `IsExp` | Wyeksportowana | Dane podstawowe |
+| `isSplitPaymentRequired` | Wymagany mechanizm podzielonej płatności | Dane podstawowe |
+| `purchaseOnRequestOnly` | Zakup tylko na zamówienie | Dane podstawowe |
+| `StockLevelMin` | Ilość (Stan minimalny) | Dane podstawowe |
+| `FirstInSeries` | pole liczbowe obok Seria | Dane dodatkowe — **potwierdzone, nie tentatywne** |
+| `CPACode` | Kod PKWiU (jeden z dwóch) | Dane dodatkowe |
+| `SEZKind` | radiogroup Usługa/SSE/Poza SSE/TOWARY | Dane dodatkowe |
+| `IsForWholesale` | Dostępność w hurcie | Dane dodatkowe |
+| `IsForRetail` | Dostępność w detalu | Dane dodatkowe |
+| `IsForSC01` | Dostępność w B2B | Dane dodatkowe |
+| `isGentle` | Produkt delikatny | Dane dodatkowe |
+| `SMM` | radiogroup bez widocznej etykiety (2 opcje) | Dane dodatkowe |
+| `ItemDescShowKind` | Widoczność opisu produktu | Dane dodatkowe |
+| `withNutrition` | Wartości odżywcze | Dane dodatkowe |
+| `itemSearchPriority` | Priorytet wyszukiwania | Dane dodatkowe |
+| `CeneoItemDesc` | pole w zakładce „Opisy dod.” (ukryta uprawnieniami, ale pole istnieje w szablonie) | Opisy dod. |
+| `ItemDesc1`, `ItemDesc2`, `ItemDesc3`, `ItemDesc4` | dodatkowe pola opisu (bez sufiksu języka) | Opisy dod. |
+
+„Kod PKWiU” (drugie pole) to `PCGS` w szablonie (kolumna `csPCGSG` w
+`kolumny.txt` to prawdopodobnie GUID-owy klucz do słownika PCGS, a samo
+`PCGS`/`PCGSTranslatedDesc` to pola tekstowe wyświetlane na karcie —
+prawdopodobnie odpowiadają `csPCGSG` pośrednio przez wybór ze słownika).
+
+„Data ważności ekspozycji” → `validTo` (pole readonly, obliczane — stąd
+nie ma go wprost w liście 141 kolumn jako edytowalnej kolumny).
+„Dni do wycofania” → `expireDays` (też readonly/obliczane).
+
+### Nazwy inne niż w `kolumny.txt` (prawdopodobnie widok z aliasami)
+
+| Pole w karcie (`data-datafield`) | Etykieta | Najbliższa kolumna z listy |
+|---|---|---|
+| `ProducerDesc` | Producent | `csEBIProducersId`? |
+| `CategoryDesc` | Kategoria | `csEBICategoriesId`? |
+| `ConcessionDesc` | Koncesja | `csEBIConcessionsId`? |
+| `BrandDesc` | Brand | `csEBIBrandsId`? |
+| `VarietyDesc` | Odmiana | `csEBIVarietiesId`? |
+| `Series` | Seria | `csSeriesId`? |
+| `CPurchasePrice` | Zakupu (cena) | `purchaseLastPrice`? |
+| `purchaseVATRate` | VAT zakupu | `csPurchaseVATRatesId`? |
+| `ItemClassyfication` | Klasyfikacja podatkowa VAT | `csItemsVatClassyficationsG`? |
+| `CountryTranslatedDesc` | Kraj | `csCountriesG`? |
+| `EANType` | Typ kodu kreskowego | brak w liście 141 |
+| `isFractionalQuantity` | Czy ilość ułamkowa | brak w liście 141 |
+| `groupsInfo01XML`…`groupsInfo04XML` | (mechanizm edycji „Grupy” — 4 maski grup, multi-select, XML) | brak w liście 141 — to jednak NIE jest bezpośrednio `csEBI*Id`, tylko osobny mechanizm |
+| `CRecyclingFee` | KGO | brak w liście 141 pod tą nazwą |
+
+**Wcześniejsze „pewne” dopasowania `csEBIProducersId`/`csEBICategoriesId`/
+`csEBIConcessionsId`/`csEBIBrandsId`/`csEBIVarietiesId`/`csSeriesId`/
+`csPurchaseVATRatesId`/`purchaseLastPrice`/`csItemsVatClassyficationsG`/
+`csCountriesG` z wcześniejszej sekcji tej notatki są więc do ponownego
+potwierdzenia** — karta najwyraźniej nie wystawia tych surowych kolumn
+wprost, tylko ich odpowiedniki opisowe/przez widok.
+
+### Jeszcze bez dopasowania
+
+„Grupa” („Artykuły spożywcze”) i „Klasa” („Wartości odżywcze”) z Dane
+dodatkowe nie pojawiły się w tym fragmencie szablonu, który zdążyliśmy
+zdekodować (możliwe, że są dalej w tym samym pliku, nie doczytaliśmy do
+końca) — do sprawdzenia. „Symbol PCN” też nie widoczny jeszcze w
+zdekodowanej części. Radiogroup „Swobodne korzystanie / Kontrola jakości”
+— również nie widoczny jeszcze.
+
 ## Nierozstrzygnięte pytania do Michała
 
-1. Co to za kolumny (jeśli w ogóle są w `csItems`): Kod PKWiU (x2), Grupa,
-   Klasa, Symbol PCN, Data ważności ekspozycji, radiogroup „Swobodne
-   korzystanie / Kontrola jakości”? Żadna nie ma oczywistego odpowiednika
-   nazwy w liście 141 kolumn.
-2. Czy dane z osobnych tabel (Zapasy, Opisy w B2B, Jednostki, Referencje,
-   Grupy, Kontrahenci, Do użycia w magazynach) w ogóle wchodzą w zakres
-   tego zadania, czy interesuje go wyłącznie `csItems`?
-3. `FirstInSeries` — czy to na pewno pole liczbowe obok Seria na Dane
-   dodatkowe? Do potwierdzenia.
+1. **Najważniejsze:** karta produktu w ERP wystawia pola pod innymi
+   nazwami niż surowe kolumny z Twojej listy (np. `ProducerDesc` zamiast
+   `csEBIProducersId`, `CPurchasePrice` zamiast `purchaseLastPrice`,
+   `purchaseVATRate` zamiast `csPurchaseVATRatesId`, `Series` zamiast
+   `csSeriesId`). Czy to jest widok/zapytanie zbudowane nad `csItems`,
+   i czy możesz dać nam listę: nazwa pola w UI → surowa nazwa kolumny w
+   tabeli? Bez tego nie mamy pewności, do której kolumny wpisywać wartości
+   przy zapisie do bazy.
+2. `EANType`, `isFractionalQuantity`, `groupsInfo01XML`–`04XML`,
+   `CRecyclingFee` (KGO) — nie widzimy ich w liście 141 kolumn pod żadną
+   rozpoznawalną nazwą. Czy w ogóle są w `csItems`, a jeśli tak, pod jaką
+   nazwą?
+3. Kod PKWiU (drugie pole, `PCGS`/`PCGSTranslatedDesc`) — czy to faktycznie
+   `csPCGSG`, czy inna kolumna?
+4. Grupa, Klasa, Symbol PCN, radiogroup „Swobodne korzystanie/Kontrola
+   jakości” — wciąż nieznalezione w szablonie karty, doszukujemy dalej.
+5. Czy dane z osobnych tabel (Zapasy, Opisy w B2B, Jednostki, Referencje,
+   Kontrahenci, Do użycia w magazynach) w ogóle wchodzą w zakres tego
+   zadania, czy interesuje Cię wyłącznie `csItems`?
