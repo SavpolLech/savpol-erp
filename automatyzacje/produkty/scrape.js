@@ -418,4 +418,16 @@ async function main() {
   console.log('\n[koniec] Zescrapowano ' + ok + '/' + skus.length + ' produktów.');
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+// Uruchom main() tylko gdy plik jest wywołany bezpośrednio (node scrape.js),
+// nie gdy jest require()-owany przez inny skrypt (np. scrape-sekwencyjnie.js,
+// który współdzieli login/otwieranie karty/zapis, ale steruje inaczej,
+// którymi SKU iterować).
+if (require.main === module) {
+  main().catch(err => { console.error(err); process.exit(1); });
+}
+
+module.exports = {
+  login, CATALOG_URL, ERP_BASE_URL, HEADLESS,
+  decodeJsonResult, extractCardRecord,
+  scrapeOneProduct, saveResult
+};
