@@ -4,6 +4,20 @@ Robocza notatka z sesji diagnostycznej (2026-09-11), produkt testowy: `0000031`
 (Aromat cytrynowy - HOFFMANN 900g). Podstawa: `automatyzacje/produkty/info/kolumny.txt`
 (141 kolumn tabeli `csItems`).
 
+## csPhotos: potwierdzone 1:1 na produkcie wielo-zdjęciowym (2026-09-14)
+
+Michał dosłał kolejny plik diagnostyczny — tym razem zrzut z **realnej
+`dbo.csPhotos`** (nie `csItems`), 3 wiersze dla `csSourceId = 1738089450`
+(SKU `0025321`, plik nazwany po SKU). To dokładnie to, o co prosiliśmy w
+mailu po utworzeniu `csPhotos_test`. Zescrapowaliśmy ten sam SKU scraperem
+i porównaliśmy — **pełna zgodność 1:1**: te same `csPhotosId`, `Ord`
+(1/2/3, poprawna kolejność wyświetlania), `LocalFileName`,
+`RemoteFileName`, `RemoteIdent` dla wszystkich 3 zdjęć. To pierwszy
+sprawdzony przypadek produktu z **wieloma zdjęciami** — potwierdza, że
+`pickPhotoRecords` w `scrape.js` poprawnie łapie WSZYSTKIE zdjęcia danego
+produktu (nie tylko pierwsze) i sortuje je zgodnie z `Ord`. Wgrane do
+`worek.dbo.csItems_test`/`csPhotos_test` razem z resztą.
+
 ## Potwierdzone dopasowania
 
 | Kolumna | Pole w ERP | Zakładka |
