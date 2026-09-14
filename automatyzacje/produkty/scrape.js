@@ -155,6 +155,39 @@ async function openProductCardInPage(opts) {
   return { ok: true, kartaWidoczna: !!karta };
 }
 
+// Klika zakładkę "Zdjęcia" na już otwartej karcie — to wywołuje DRUGIE,
+// osobne zapytanie API (DataSetSQLIdent: csphotos), którego dane karty
+// (csItemsOneBro/csitems) w ogóle nie zawierają. Namierzone ręcznie
+// wcześniej (diagnostyka/podsluch-danych-produktu.js) — tu ten sam krok,
+// tylko sterowany z Playwrighta.
+async function openZdjeciaTabInPage() {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const tab = Array.from(document.querySelectorAll('li[title="Zdjęcia"]'))
+    .find(li => li.offsetParent !== null);
+  if (!tab) return { ok: false, blad: 'nie widzę zakładki „Zdjęcia" na karcie' };
+  tab.click();
+  await sleep(1500);
+  return { ok: true };
+}
+
+// Zamyka zakładkę karty produktu (górny pasek "Katalog" / "Katalog: 0000031"),
+// żeby wrócić do katalogu i móc wyszukać kolejny SKU w TEJ SAMEJ sesji
+// przeglądarki. Bez tego pole wyszukiwania katalogu zostaje niewidoczne
+// (offsetParent null), bo ERP przełącza widok na kartę — stąd wcześniej
+// multi-SKU w jednym przebiegu nie działało (znajdowało tylko pierwszy SKU).
+// Rozpoznajemy przycisk zamknięcia po id_...csItemsOneBro_<id>_csCloseButton
+// (namierzone 2026-09-14) — nigdy nie zamykamy samej zakładki "Katalog"
+// (ta nie ma przycisku zamknięcia, jest zakładką bazową/przypiętą).
+async function closeProductCardInPage() {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const closeBtn = Array.from(document.querySelectorAll('span.csCloseButton_span'))
+    .find(s => s.offsetParent !== null && /csItemsOneBro/.test(s.id || ''));
+  if (!closeBtn) return { ok: false, blad: 'nie widzę przycisku zamknięcia karty' };
+  closeBtn.click();
+  await sleep(800);
+  return { ok: true };
+}
+
 // ---------- Zapis wyniku ----------
 
 function escCsv(v) {
@@ -167,7 +200,7 @@ function escCsv(v) {
 // rekordem i metadanymi. CSV nazwane results-* → łapie je istniejąca reguła
 // .gitignore (automatyzacje/**/results-*.csv), więc dane handlowe nie wejdą
 // do repo. Nazwy pól w nagłówku, wartości w jednym wierszu (jeden produkt).
-function saveResult(sku, rekord, fieldNames) {
+function saveResult(sku, rekord, fieldNames, zdjecia) {
   if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
   const id = String(rekord.Item || sku).replace(/[^A-Za-z0-9_-]/g, '_');
 
@@ -196,13 +229,15 @@ function saveResult(sku, rekord, fieldNames) {
     liczbaPolDopasowanych: F.DOPASOWANE.length - brakujaceDopasowane.length,
     brakujaceDopasowane,
     dopasowane: dopasowaneRekord,
-    wszystkie: rekord
+    wszystkie: rekord,
+    zdjecia: zdjecia || []
   }, null, 2), 'utf8');
 
   console.log('[wynik] Zapisano:');
   console.log('  ' + jsonPath);
   console.log('  ' + dopasowanePath + '  (' + F.DOPASOWANE.length + ' kolumn, ' + brakujaceDopasowane.length + ' pustych/brakujących)');
   console.log('  ' + wszystkiePath + '  (' + fieldNames.length + ' pól API)');
+  console.log('  zdjęcia: ' + (zdjecia || []).length);
   if (brakujaceDopasowane.length) {
     console.log('[wynik] Pola z listy dopasowanych, których to zapytanie NIE zwróciło: ' +
       brakujaceDopasowane.join(', '));
@@ -241,10 +276,32 @@ async function scrapeOneProduct(page, captured, sku) {
         ' wierszy=' + c.records.length + ' Item=' + items.join(',') +
         ' maItem=' + c.fieldNames.includes('Item'));
     });
+    await page.evaluate(closeProductCardInPage);
     return false;
   }
 
-  saveResult(sku, trafienie.rekord, trafienie.fieldNames);
+  // --- Zdjęcia: druga zakładka, drugie zapytanie API (csphotos) ---
+  const zdjeciaOtwarcie = await page.evaluate(openZdjeciaTabInPage);
+  let zdjecia = [];
+  if (!zdjeciaOtwarcie.ok) {
+    console.warn('[produkt] ' + sku + ': ' + zdjeciaOtwarcie.blad + ' — zapisuję bez zdjęć.');
+  } else {
+    const csItemsId = trafienie.rekord.csItemsId;
+    for (let i = 0; i < 30 && !zdjecia.length; i++) {
+      zdjecia = pickPhotoRecords(captured, csItemsId);
+      if (!zdjecia.length) await page.waitForTimeout(300);
+    }
+    console.log('[produkt] ' + sku + ': zdjęcia — znaleziono ' + zdjecia.length + '.');
+  }
+
+  saveResult(sku, trafienie.rekord, trafienie.fieldNames, zdjecia);
+
+  // Zamknij kartę PRZED przejściem do kolejnego SKU — inaczej pole
+  // wyszukiwania katalogu zostaje zasłonięte/niewidoczne dla następnego
+  // wywołania openProductCardInPage (patrz komentarz przy closeProductCardInPage).
+  const zamkniecie = await page.evaluate(closeProductCardInPage);
+  if (!zamkniecie.ok) console.warn('[produkt] ' + sku + ': ' + zamkniecie.blad + ' — kolejny SKU może nie znaleźć wyszukiwarki.');
+
   return true;
 }
 
@@ -265,6 +322,43 @@ function pickCardRecord(captured, sku) {
     }
   }
   return best;
+}
+
+// Endpoint namierzony ręcznie (Network w DevTools, status 200) w sesji
+// 2026-09-14 — patrz mapowanie-wstepna.md, sekcja "Photo / PhotoSmall".
+// Identyfikator z pola PhotoUrl ma format "tabela|pole|GUID|wersja" —
+// zamieniamy "|" na "_" i dolepiamy ".png" (endpoint zawsze serwuje PNG,
+// niezależnie od oryginalnego rozszerzenia). SPRAWDZONE (2026-09-14):
+// ten wzorzec działa TYLKO dla PhotoUrl (pełny rozmiar) — analogicznie
+// zbudowane URL-e z PhotoUrlMed/PhotoUrlSmall dają 404 (sprawdzone wprost
+// przez context.request.get), więc ich NIE budujemy — nie mamy jeszcze
+// poprawnego wzorca dla wersji med/small.
+function budujUrlDoZdjecia(ident) {
+  if (!ident || typeof ident !== 'string') return null;
+  return 'https://erp.savpol.pl/api/Download/' + ident.replace(/\|/g, '_') + '.png';
+}
+
+// Wybiera z bufora WSZYSTKIE rekordy csphotos powiązane z danym produktem
+// (csSourceId = csItemsId karty). To osobna, jeden-do-wielu tabela — produkt
+// może mieć więcej niż jedno zdjęcie.
+function pickPhotoRecords(captured, csItemsId) {
+  const wynik = [];
+  for (const c of captured) {
+    if (c.dataSetIdent !== 'csphotos') continue;
+    for (const r of c.records) {
+      if (String(r.csSourceId) !== String(csItemsId)) continue;
+      wynik.push({
+        csPhotosId: r.csPhotosId,
+        ord: r.Ord,
+        doNotShow4Items: r.DoNotShow4Items,
+        localFileName: r.LocalFileName,
+        urlPhoto: budujUrlDoZdjecia(r.PhotoUrl)
+      });
+    }
+  }
+  // Kolejność wyświetlania na karcie = pole Ord (patrz mapowanie-wstepna.md).
+  wynik.sort((a, b) => (a.ord || 0) - (b.ord || 0));
+  return wynik;
 }
 
 async function main() {
