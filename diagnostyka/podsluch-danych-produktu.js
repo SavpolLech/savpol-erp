@@ -1,22 +1,25 @@
-// Podsłuch sieciowy: loguje requesty fetch/XHR (URL + rozpoznany DictIdent +
-// rozmiar/początek odpowiedzi) i pozwala ZDEKODOWAĆ w przeglądarce (bez
-// ręcznego przepisywania base64) skompresowaną treść odpowiedzi wybranego
-// wpisu.
-// WERSJA: 2026-09-11.7
+// Podsłuch sieciowy: loguje requesty fetch/XHR (URL + rozpoznany DictIdent),
+// automatycznie w tle rozpoznaje OperationName każdej odpowiedzi (definicja
+// formularza czy dane rekordu) i pozwala pobrać/zdekodować pełną treść
+// wybranego wpisu.
+// WERSJA: 2026-09-11.8
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
 // UWAGA BEZPIECZEŃSTWA: ta wersja CELOWO NIE zapisuje treści żądań (payload
-// wysyłany DO serwera) — poprzednia wersja to robiła, a żądania tej aplikacji
-// zawierają dane logowania (login+hasło) w praktycznie czystej postaci
-// (base64+zip, nie szyfrowanie). Zapisujemy tylko: URL, metodę, wyciągnięty
-// bezpiecznie "DictIdent" z żądania (sama nazwa tabeli/okna, nic wrażliwego)
-// oraz treść ODPOWIEDZI (to, co wraca z serwera — dane produktu, nie dane
-// logowania).
+// wysyłany DO serwera) — żądania tej aplikacji zawierają dane logowania
+// (login+hasło) w praktycznie czystej postaci (base64+zip, nie szyfrowanie).
+// Zapisujemy tylko: URL, metodę, wyciągnięty bezpiecznie "DictIdent" z
+// żądania (sama nazwa tabeli/okna, nic wrażliwego) oraz treść ODPOWIEDZI
+// (to, co wraca z serwera).
 //
 // Po co: generyczne nazwy endpointów (OperatrionInvoke, getData) są używane
 // do dziesiątek różnych rzeczy — jedyny sposób, żeby rozróżnić wywołania, to
-// pole "DictIdent" w treści żądania (np. "csItemsOneBro" = karta produktu).
+// pole "DictIdent" w treści żądania (np. "csItemsOneBro" = karta produktu)
+// ORAZ "OperationName" w treści odpowiedzi (np. "DictDefinition" = sama
+// struktura formularza, nie wartości; inne nazwy = dane rekordu). Wcześniej
+// trzeba było ręcznie dekodować każdy wpis, żeby to sprawdzić — teraz dzieje
+// się to automatycznie w tle zaraz po złapaniu odpowiedzi.
 //
 // WAŻNE: wklej ten skrypt PRZED akcją, którą chcemy podsłuchać (nie odświeżaj
 // całej strony po wklejeniu — to kasuje podpięcie).
@@ -24,21 +27,19 @@
 // Jak używać:
 //   1. Wklej ten plik w konsolę.
 //   2. Wykonaj w ERP akcję, którą chcemy podsłuchać.
-//   3. savpolPodsluchZrzut()      → skrócona lista (URL/DictIdent/rozmiar) do schowka.
-//   4. savpolPodsluchDekoduj(N)   → NAJWAŻNIEJSZA funkcja: odpowiedzi tej
-//      aplikacji są spakowane (base64+ZIP+deflate) w polu "JSONResult" —
-//      ta funkcja dekoduje to W PRZEGLĄDARCE (DecompressionStream, bez
-//      żadnej biblioteki) i kopiuje do schowka już czytelny, ładnie
-//      sformatowany JSON. Używaj TEJ, nie savpolPodsluchPelna, dla wpisów
-//      z polem JSONResult (prawie wszystkie OperatrionInvoke).
+//   3. Poczekaj sekundę (dekodowanie w tle) i wywołaj: savpolPodsluchZrzut()
+//      → lista z URL/DictIdent/OperationName/pierwszymi polami (jeśli to
+//      dane) do schowka. Od razu widać, który wpis to dane rekordu.
+//   4. savpolPodsluchDekoduj(N)   → PEŁNA, zdekodowana treść wpisu N do
+//      schowka (i krótkie podsumowanie w konsoli) — użyj, gdy już wiesz,
+//      który numer Cię interesuje.
 //   5. savpolPodsluchPelna(N)     → PEŁNA, ale NIEZDEKODOWANA treść
-//      odpowiedzi wpisu nr N — tylko do wyjątkowych przypadków (np. gdy
-//      odpowiedź nie jest spakowana).
+//      odpowiedzi wpisu nr N — tylko do wyjątkowych przypadków.
 
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-11.7';
+  const WERSJA = '2026-09-11.8';
   const MAX_PODGLAD = 300;
 
   const zarejestrowane = [];
@@ -69,57 +70,10 @@
     return m ? m[1] : null;
   }
 
-  function dodajWpis(url, metoda, zadanieSurowe, odpowiedz) {
-    zarejestrowane.push({
-      url: url,
-      metoda: metoda,
-      dictIdent: wyciagnijDictIdent(zadanieSurowe),
-      odpowiedz: odpowiedz
-    });
-  }
-
-  window.savpolPodsluchZrzut = function () {
-    const linie = [];
-    linie.push('Savpol ERP — podsłuch requestów, wersja ' + WERSJA);
-    linie.push('Data: ' + new Date().toISOString());
-    linie.push('Razem zarejestrowanych requestów: ' + zarejestrowane.length);
-    linie.push('(treści żądań NIE są zapisywane — zawierają dane logowania. '
-      + 'Wywołaj savpolPodsluchPelna(N) po pełną treść ODPOWIEDZI wpisu N.)');
-    linie.push('');
-    zarejestrowane.forEach((w, i) => {
-      linie.push((i + 1) + '. ' + w.url);
-      linie.push('   metoda: ' + w.metoda + (w.dictIdent ? '   DictIdent: ' + w.dictIdent : ''));
-      linie.push('   odpowiedź: ' + (w.odpowiedz
-        ? w.odpowiedz.length + ' znaków, początek: ' + w.odpowiedz.slice(0, MAX_PODGLAD).replace(/\s+/g, ' ')
-        : '(brak / nieczytelna)'));
-      linie.push('');
-    });
-    const txt = linie.join('\n');
-    kopiuj(txt);
-    console.log('[podsluch ' + WERSJA + '] skopiowano ' + zarejestrowane.length + ' requestów do schowka (' + txt.length + ' znaków)');
-    return txt;
-  };
-
-  window.savpolPodsluchPelna = function (n) {
-    const w = zarejestrowane[n - 1];
-    if (!w) { console.log('[podsluch] brak wpisu nr ' + n); return; }
-    if (!w.odpowiedz) { console.log('[podsluch] wpis nr ' + n + ' nie ma czytelnej odpowiedzi'); return; }
-    kopiuj(w.odpowiedz);
-    console.log('[podsluch ' + WERSJA + '] skopiowano PEŁNĄ odpowiedź wpisu ' + n
-      + ' (' + w.odpowiedz.length + ' znaków): ' + w.url);
-    return w.odpowiedz;
-  };
-
-  // Ta aplikacja pakuje większe odpowiedzi jako base64(ZIP z jednym plikiem,
-  // metoda deflate) w polu "JSONResult". Zamiast ręcznie przepisywać ten
-  // ogromny base64 do rozmowy (podatne na literówki przy tak długich
-  // stringach — dokładnie to nam się przydarzyło), dekodujemy TUTAJ, w
-  // przeglądarce, korzystając z wbudowanego DecompressionStream. Zero
-  // ręcznego przepisywania danych binarnych.
   // Celowo BEZ Blob/Response/fetch — na tej stronie fetch bywa przeciążony
-  // (patrz reszta tego skryptu), a Response/Blob.stream() potrafią pod
-  // spodem po cichu korzystać z fetch w niektórych silnikach. Piszemy
-  // wprost do writer/reader strumienia DecompressionStream, zero pośredników.
+  // (patrz monkey-patch niżej), a Response/Blob.stream() potrafią pod spodem
+  // po cichu korzystać z fetch w niektórych silnikach. Piszemy wprost do
+  // writer/reader strumienia DecompressionStream, zero pośredników.
   async function dekompresujDeflateRaw(bajty) {
     const ds = new DecompressionStream('deflate-raw');
     const writer = ds.writable.getWriter();
@@ -139,8 +93,7 @@
       try {
         wynikOdczytu = await reader.read();
       } catch (e) {
-        console.log('[podsluch] (info) koniec danych z resztkami po nich — ignoruję resztki: ' + e.message);
-        break;
+        break; // koniec prawdziwych danych, reszta to śmieci po nich — ignorujemy
       }
       const { done, value } = wynikOdczytu;
       if (done) break;
@@ -153,65 +106,126 @@
     return wynik;
   }
 
-  window.savpolPodsluchDekoduj = async function (n) {
-    const w = zarejestrowane[n - 1];
-    if (!w || !w.odpowiedz) { console.log('[podsluch] brak wpisu/odpowiedzi nr ' + n); return; }
+  // Rdzeń dekodowania — używany zarówno przez automatyczne tagowanie w tle,
+  // jak i przez savpolPodsluchDekoduj(N). Zwraca { ladny, obiekt, opName,
+  // pierwszePola } albo null, jeśli się nie udało.
+  async function zdekodujOdpowiedz(odpowiedzTekst) {
     let zewnetrzny;
-    try { zewnetrzny = JSON.parse(w.odpowiedz); } catch (e) {
-      console.log('[podsluch] odpowiedź wpisu ' + n + ' nie jest JSON-em: ' + e.message);
-      return;
-    }
+    try { zewnetrzny = JSON.parse(odpowiedzTekst); } catch (e) { return null; }
     const b64 = zewnetrzny.JSONResult || zewnetrzny.Input;
-    if (!b64) { console.log('[podsluch] brak pola JSONResult/Input w odpowiedzi wpisu ' + n); return; }
-    const surowe = atob(b64);
-    const bajty = new Uint8Array(surowe.length);
-    for (let i = 0; i < surowe.length; i++) bajty[i] = surowe.charCodeAt(i);
+    if (!b64) return null;
+    let bajty;
+    try {
+      const surowe = atob(b64);
+      bajty = new Uint8Array(surowe.length);
+      for (let i = 0; i < surowe.length; i++) bajty[i] = surowe.charCodeAt(i);
+    } catch (e) { return null; }
     const dv = new DataView(bajty.buffer);
-    if (dv.getUint32(0, true) !== 0x04034b50) {
-      console.log('[podsluch] brak sygnatury ZIP na początku (0x504B0304) — nieoczekiwany format');
-      return;
-    }
+    if (dv.getUint32(0, true) !== 0x04034b50) return null;
     const nazwaLen = dv.getUint16(26, true);
     const dodatkoweLen = dv.getUint16(28, true);
     const startDanych = 30 + nazwaLen + dodatkoweLen;
     const skompresowane = bajty.slice(startDanych);
+    let tekst;
     try {
       const rozkompresowane = await dekompresujDeflateRaw(skompresowane);
-      const tekst = new TextDecoder('utf-8').decode(rozkompresowane);
-      let ladny = tekst;
-      let obiekt = null;
-      try { obiekt = JSON.parse(tekst); ladny = JSON.stringify(obiekt, null, 2); } catch (e) { /* nie-JSON, zostaw jak jest */ }
+      tekst = new TextDecoder('utf-8').decode(rozkompresowane);
+    } catch (e) { return null; }
 
-      // Krótkie podsumowanie w konsoli PRZED skopiowaniem całości — żeby
-      // dało się szybko rozpoznać, czy to DEFINICJA formularza czy DANE
-      // rekordu, bez wklejania za każdym razem ogromnego tekstu do rozmowy.
-      if (obiekt) {
-        const opInfo = obiekt.OperationInvokeResult || {};
-        console.log('[podsluch ' + WERSJA + '] --- PODSUMOWANIE wpisu ' + n + ' ---');
-        console.log('  OperationName: ' + (opInfo.OperationName || '(brak)'));
-        console.log('  górne klucze Result: ' + Object.keys(obiekt.Result || obiekt).join(', '));
-        // Jeśli to wygląda na DANE rekordu (nie definicję), pokaż od razu
-        // pierwsze ~20 kluczy pól i ich wartości — najczęściej to wystarczy,
-        // żeby rozpoznać właściwy wpis bez kopiowania całości.
-        const wynikDanych = (obiekt.Result && Object.values(obiekt.Result)[0]) || null;
-        if (wynikDanych && wynikDanych.rows && wynikDanych.rows[0]) {
-          const rekord = wynikDanych.rows[0];
-          console.log('  TO WYGLĄDA NA DANE REKORDU — pierwsze pola:');
-          Object.keys(rekord).slice(0, 20).forEach(k => {
-            console.log('    ' + k + ' = ' + JSON.stringify(rekord[k]));
-          });
-        } else if (opInfo.OperationName === 'DictDefinition') {
-          console.log('  (to DEFINICJA formularza — data-datafield w VisualDefinition, nie wartości)');
-        }
+    let ladny = tekst;
+    let obiekt = null;
+    try { obiekt = JSON.parse(tekst); ladny = JSON.stringify(obiekt, null, 2); } catch (e) { /* nie-JSON */ }
+
+    let opName = null;
+    let pierwszePola = null;
+    if (obiekt) {
+      const opInfo = obiekt.OperationInvokeResult || {};
+      opName = opInfo.OperationName || null;
+      const wynikDanych = (obiekt.Result && Object.values(obiekt.Result)[0]) || null;
+      if (wynikDanych && wynikDanych.rows && wynikDanych.rows[0]) {
+        const rekord = wynikDanych.rows[0];
+        pierwszePola = Object.keys(rekord).slice(0, 20).map(k => k + '=' + JSON.stringify(rekord[k]));
       }
-
-      kopiuj(ladny);
-      console.log('[podsluch ' + WERSJA + '] zdekodowano wpis ' + n + ' (' + ladny.length + ' znaków), skopiowano do schowka');
-      window.__podsluchZdekodowany = ladny;
-      return ladny;
-    } catch (e) {
-      console.log('[podsluch] błąd dekompresji wpisu ' + n + ': ' + e.message);
     }
+    return { ladny, obiekt, opName, pierwszePola };
+  }
+
+  function dodajWpis(url, metoda, zadanieSurowe, odpowiedz) {
+    const wpis = {
+      url: url,
+      metoda: metoda,
+      dictIdent: wyciagnijDictIdent(zadanieSurowe),
+      odpowiedz: odpowiedz,
+      opName: undefined,      // undefined = jeszcze nie sprawdzone w tle
+      pierwszePola: null
+    };
+    zarejestrowane.push(wpis);
+    // Dekodowanie w tle — best-effort, nie blokuje niczego. Jeśli się nie
+    // uda (np. odpowiedź to nie ten format), opName zostaje null.
+    if (odpowiedz) {
+      zdekodujOdpowiedz(odpowiedz).then((wynik) => {
+        wpis.opName = (wynik && wynik.opName) || null;
+        wpis.pierwszePola = (wynik && wynik.pierwszePola) || null;
+      }).catch(() => { wpis.opName = null; });
+    } else {
+      wpis.opName = null;
+    }
+  }
+
+  window.savpolPodsluchZrzut = function () {
+    const linie = [];
+    linie.push('Savpol ERP — podsłuch requestów, wersja ' + WERSJA);
+    linie.push('Data: ' + new Date().toISOString());
+    linie.push('Razem zarejestrowanych requestów: ' + zarejestrowane.length);
+    linie.push('(treści żądań NIE są zapisywane — zawierają dane logowania.)');
+    linie.push('');
+    zarejestrowane.forEach((w, i) => {
+      linie.push((i + 1) + '. ' + w.url);
+      linie.push('   metoda: ' + w.metoda + (w.dictIdent ? '   DictIdent: ' + w.dictIdent : ''));
+      const opStatus = w.opName === undefined ? '(jeszcze dekoduję w tle...)' : (w.opName || '(nie udało się rozpoznać)');
+      linie.push('   OperationName: ' + opStatus);
+      if (w.pierwszePola) {
+        linie.push('   >>> TO SĄ DANE REKORDU <<<  pierwsze pola: ' + w.pierwszePola.slice(0, 8).join(', '));
+      }
+      linie.push('   odpowiedź: ' + (w.odpowiedz
+        ? w.odpowiedz.length + ' znaków, początek: ' + w.odpowiedz.slice(0, MAX_PODGLAD).replace(/\s+/g, ' ')
+        : '(brak / nieczytelna)'));
+      linie.push('');
+    });
+    const txt = linie.join('\n');
+    kopiuj(txt);
+    console.log('[podsluch ' + WERSJA + '] skopiowano ' + zarejestrowane.length + ' requestów do schowka (' + txt.length + ' znaków). '
+      + 'Jeśli widzisz "(jeszcze dekoduję w tle...)", poczekaj chwilę i wywołaj ponownie.');
+    return txt;
+  };
+
+  window.savpolPodsluchPelna = function (n) {
+    const w = zarejestrowane[n - 1];
+    if (!w) { console.log('[podsluch] brak wpisu nr ' + n); return; }
+    if (!w.odpowiedz) { console.log('[podsluch] wpis nr ' + n + ' nie ma czytelnej odpowiedzi'); return; }
+    kopiuj(w.odpowiedz);
+    console.log('[podsluch ' + WERSJA + '] skopiowano PEŁNĄ odpowiedź wpisu ' + n
+      + ' (' + w.odpowiedz.length + ' znaków): ' + w.url);
+    return w.odpowiedz;
+  };
+
+  window.savpolPodsluchDekoduj = async function (n) {
+    const w = zarejestrowane[n - 1];
+    if (!w || !w.odpowiedz) { console.log('[podsluch] brak wpisu/odpowiedzi nr ' + n); return; }
+    const wynik = await zdekodujOdpowiedz(w.odpowiedz);
+    if (!wynik) { console.log('[podsluch] nie udało się zdekodować wpisu ' + n + ' (może to nie ten format)'); return; }
+    console.log('[podsluch ' + WERSJA + '] --- PODSUMOWANIE wpisu ' + n + ' ---');
+    console.log('  OperationName: ' + (wynik.opName || '(brak)'));
+    if (wynik.pierwszePola) {
+      console.log('  TO WYGLĄDA NA DANE REKORDU — pierwsze pola:');
+      wynik.pierwszePola.forEach(p => console.log('    ' + p));
+    } else if (wynik.opName === 'DictDefinition') {
+      console.log('  (to DEFINICJA formularza — data-datafield w VisualDefinition, nie wartości)');
+    }
+    kopiuj(wynik.ladny);
+    console.log('[podsluch ' + WERSJA + '] zdekodowano wpis ' + n + ' (' + wynik.ladny.length + ' znaków), skopiowano do schowka');
+    window.__podsluchZdekodowany = wynik.ladny;
+    return wynik.ladny;
   };
 
   // --- fetch ---
@@ -251,5 +265,6 @@
   };
 
   console.log('[podsluch ' + WERSJA + '] gotowe — podpięto fetch i XMLHttpRequest (treści żądań NIE są zapisywane). '
-    + 'Wykonaj akcję w ERP, potem: savpolPodsluchZrzut() / savpolPodsluchPelna(N)');
+    + 'Każda odpowiedź jest teraz automatycznie tagowana w tle (OperationName). '
+    + 'Wykonaj akcję w ERP, poczekaj chwilę, potem: savpolPodsluchZrzut()');
 })();
