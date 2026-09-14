@@ -2,7 +2,7 @@
 // rozmiar/początek odpowiedzi) i pozwala ZDEKODOWAĆ w przeglądarce (bez
 // ręcznego przepisywania base64) skompresowaną treść odpowiedzi wybranego
 // wpisu.
-// WERSJA: 2026-09-11.5
+// WERSJA: 2026-09-11.6
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
@@ -38,7 +38,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-11.5';
+  const WERSJA = '2026-09-11.6';
   const MAX_PODGLAD = 300;
 
   const zarejestrowane = [];
@@ -123,13 +123,26 @@
   async function dekompresujDeflateRaw(bajty) {
     const ds = new DecompressionStream('deflate-raw');
     const writer = ds.writable.getWriter();
-    writer.write(bajty);
-    writer.close();
+    // Nie znamy dokładnego rozmiaru skompresowanych danych (nagłówek ZIP tej
+    // aplikacji ma nierzetelne pole "compressed size"), więc podajemy
+    // WSZYSTKO po nagłówku — łącznie z katalogiem centralnym ZIP, który
+    // przypadkiem jest doklejony na końcu. Prawdziwe dane zawsze przychodzą
+    // PRZED tymi śmieciami, więc łapiemy błąd "junk after end" i po prostu
+    // zwracamy to, co zdążyliśmy zebrać do tego momentu.
+    writer.write(bajty).catch(() => {});
+    writer.close().catch(() => {});
     const reader = ds.readable.getReader();
     const kawalki = [];
     let razem = 0;
     for (;;) {
-      const { done, value } = await reader.read();
+      let wynikOdczytu;
+      try {
+        wynikOdczytu = await reader.read();
+      } catch (e) {
+        console.log('[podsluch] (info) koniec danych z resztkami po nich — ignoruję resztki: ' + e.message);
+        break;
+      }
+      const { done, value } = wynikOdczytu;
       if (done) break;
       kawalki.push(value);
       razem += value.length;
