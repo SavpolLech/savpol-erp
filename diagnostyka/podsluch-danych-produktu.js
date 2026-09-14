@@ -2,7 +2,7 @@
 // rozmiar/początek odpowiedzi) i pozwala ZDEKODOWAĆ w przeglądarce (bez
 // ręcznego przepisywania base64) skompresowaną treść odpowiedzi wybranego
 // wpisu.
-// WERSJA: 2026-09-11.4
+// WERSJA: 2026-09-11.5
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
@@ -38,7 +38,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-11.4';
+  const WERSJA = '2026-09-11.5';
   const MAX_PODGLAD = 300;
 
   const zarejestrowane = [];
@@ -116,10 +116,28 @@
   // stringach — dokładnie to nam się przydarzyło), dekodujemy TUTAJ, w
   // przeglądarce, korzystając z wbudowanego DecompressionStream. Zero
   // ręcznego przepisywania danych binarnych.
+  // Celowo BEZ Blob/Response/fetch — na tej stronie fetch bywa przeciążony
+  // (patrz reszta tego skryptu), a Response/Blob.stream() potrafią pod
+  // spodem po cichu korzystać z fetch w niektórych silnikach. Piszemy
+  // wprost do writer/reader strumienia DecompressionStream, zero pośredników.
   async function dekompresujDeflateRaw(bajty) {
-    const strumien = new Blob([bajty]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-    const bufor = await new Response(strumien).arrayBuffer();
-    return new Uint8Array(bufor);
+    const ds = new DecompressionStream('deflate-raw');
+    const writer = ds.writable.getWriter();
+    writer.write(bajty);
+    writer.close();
+    const reader = ds.readable.getReader();
+    const kawalki = [];
+    let razem = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      kawalki.push(value);
+      razem += value.length;
+    }
+    const wynik = new Uint8Array(razem);
+    let offset = 0;
+    for (const k of kawalki) { wynik.set(k, offset); offset += k.length; }
+    return wynik;
   }
 
   window.savpolPodsluchDekoduj = async function (n) {
