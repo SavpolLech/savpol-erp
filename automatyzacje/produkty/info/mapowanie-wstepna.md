@@ -170,6 +170,46 @@ zweryfikowane 1:1 (nie sprawdziliśmy tego samego produktu w obu miejscach
 naraz) — i tej kolumny w ogóle nie ma w liście 141 od Michała, więc na razie
 to tylko techniczna odpowiedź dla Ciebie, nie coś do zgłoszenia Michałowi.
 
+## Realny wiersz z bazy dla SKU 0031513 (od Michała, 2026-09-14)
+
+Michał dosłał xlsx z prawdziwym wierszem `csItems` (SELECT z produkcyjnej
+bazy) dla `Item = 0031513` ("Delipasta Buono! VY4 4kg - FABBRI"). To
+pierwszy przypadek, gdzie widzimy realne wartości wszystkich 141 kolumn
+naraz — rozstrzyga część otwartych pytań z listy 36 niedopasowanych pól:
+
+- **`Photo`/`PhotoSmall`/`PhotoVersion`/`PhotoSmallVersion` = NULL, ale
+  `IsPhoto=1`, `IsPhotoPrev=1`.** To **potwierdza** (nie tylko hipotezę z
+  API) wcześniejsze ustalenie: te kolumny w `csItems` są martwe/nieużywane
+  jako źródło obrazka — `IsPhoto`/`IsPhotoPrev` to tylko flagi "produkt ma
+  zdjęcie (w tabeli `csPhotos`)". Scraper powinien po obrazek iść do
+  `csPhotos`, nie do tych kolumn `csItems`.
+- **`KeyWords_DE/ES/FR/NL/PT/RU/UK/IT/SK/CZ`** — wszystkie NULL. Potwierdza
+  przypuszczenie: strona nigdy nie była tłumaczona, te kolumny są po
+  prostu puste, nie brakuje ich w naszym zapytaniu testowym.
+- **`KeyWordsAuto`** i **`KeyWordsAuto_DE/ES/FR/IT/NL/PL/PT/RU/UK`** —
+  wszystkie wypełnione, ten sam auto-generowany string (firma+SKU+EAN+nazwa
+  produktu, sanityzowane znaki). To pole systemowe pod wyszukiwanie
+  full-text, nie do ręcznej edycji przez użytkownika.
+- **`KeyWordsAuto_EN`** — też wypełnione, ale **inną, bogatszą treścią**
+  (dodatkowo kod producenta i pełna nazwa producenta "Fabbri 1905
+  S.p.A."). EN ma inny algorytm generowania niż pozostałe języki — niski
+  priorytet, ale warto wiedzieć.
+- **`DefSort`** = `967128` — aktywnie używane pole sortowania.
+- **`LastChangeDate`** / **`createdDate`** — wypełnione, standardowe pola
+  audytowe, działają jak oczekiwano.
+- **`isEOL`** = NULL — kolumna istnieje, ale nieużyta dla tego (aktywnego)
+  produktu — sensowne, prawdopodobnie ustawiana tylko dla wycofanych.
+- **`csUNSPSCCommodityId`** = NULL — nieużywane dla tego produktu.
+- **`csProducersIdAgr`** = `218472565` (WYPEŁNIONE!) — ale to **nie jest
+  ten sam FK co `csEBIProducersId`** (który dla tego produktu jest NULL).
+  Osobny, realny klucz do czegoś innego niż główny słownik producentów —
+  `NameA1Agr`/`NameL1Agr` mimo to są NULL. Nierozpoznane, warto zapytać
+  Michała czym jest ta rodzina "Agr", jeśli okaże się istotna.
+- **`purchaseLastPrice`** = NULL — legalnie puste dla tego produktu, nie
+  potwierdza ani nie zaprzecza teorii, że to alias/duplikat
+  `CPurchasePrice` (które w ogóle jest w innej tabeli, `csItemsUnits`, nie
+  w `csItems`).
+
 ## Photo / PhotoSmall — namierzone (2026-09-14)
 
 W wiadomości do Michała napisaliśmy, że `Photo`/`PhotoSmall`/`PhotoVersion`
