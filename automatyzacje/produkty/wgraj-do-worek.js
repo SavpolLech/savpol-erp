@@ -26,6 +26,7 @@ dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, 
 const { fetchColumnsMeta, buildCreateTableSQL, mssqlType, coerceValue } =
   require(path.join(__dirname, '..', 'wz', 'lib', 'schema'));
 const F = require('./lib/fields');
+const { ITEMS_FIXED_VALUES, ITEMS_SQL_NOW_COLUMNS, ITEMS_FIXED_FIELDS } = require('./lib/fixed-values');
 
 const TEST_TABLE = 'csItems_test';
 const OUT_DIR = path.join(__dirname, 'wynik');
@@ -41,7 +42,7 @@ function loadResults(skuFilter) {
   return out;
 }
 
-async function insertRows(pool, columnsMeta, rows) {
+async function insertRows(pool, columnsMeta, fixedColumnsMeta, rows) {
   let inserted = 0;
   for (const row of rows) {
     const request = pool.request();
@@ -53,6 +54,19 @@ async function insertRows(pool, columnsMeta, rows) {
       request.input(paramName, mssqlType(col), value);
       colNames.push('[' + col.COLUMN_NAME + ']');
       paramNames.push('@' + paramName);
+    });
+    // Kolumny od Michała (2026-09-14), których API karty nie zwraca w
+    // ogóle — stałe wartości / SYSDATETIME() liczone w SQL, patrz
+    // lib/fixed-values.js.
+    fixedColumnsMeta.forEach((col, i) => {
+      colNames.push('[' + col.COLUMN_NAME + ']');
+      if (ITEMS_SQL_NOW_COLUMNS.includes(col.COLUMN_NAME)) {
+        paramNames.push('SYSDATETIME()');
+      } else {
+        const paramName = 'f' + i;
+        request.input(paramName, mssqlType(col), ITEMS_FIXED_VALUES[col.COLUMN_NAME]);
+        paramNames.push('@' + paramName);
+      }
     });
     await request.query(
       'INSERT INTO dbo.' + TEST_TABLE + ' (' + colNames.join(', ') + ') VALUES (' + paramNames.join(', ') + ')'
@@ -125,8 +139,32 @@ async function main() {
     const nowe = results.filter(r => !existing.has(String(r.dopasowane.csItemsId)));
     if (existing.size) console.log('[wgraj] Pominięto ' + existing.size + ' już obecnych (ten sam csItemsId).');
 
-    const wstawione = await insertRows(pool, columnsMeta, nowe);
+    // Kolumny od Michała, których nie ma na liście DOPASOWANE (bo API ich
+    // nie zwraca) — pobieramy metadane osobno.
+    const { found: fixedFound, missing: fixedMissing } = await fetchColumnsMeta(pool, 'dbo', TEST_TABLE, ITEMS_FIXED_FIELDS);
+    if (fixedMissing.length) {
+      console.warn('[wgraj] UWAGA: nie znalazłem w dbo.' + TEST_TABLE + ': ' + fixedMissing.join(', '));
+    }
+    const fixedColumnsMeta = fixedFound.filter(c => !c.IS_COMPUTED);
+
+    const wstawione = await insertRows(pool, columnsMeta, fixedColumnsMeta, nowe);
     console.log('[wgraj] SUKCES: wstawiono ' + wstawione + ' produktów do dbo.' + TEST_TABLE + ' w bazie "' + database + '".');
+
+    // Wiersze już wcześniej wgrane (przed dodaniem tych 5 kolumn do
+    // insertu) — dopełniamy je teraz, żeby nie zostały z NULL-ami. Warunek
+    // "createdDate IS NULL" chroni przed nadpisywaniem daty utworzenia przy
+    // każdym kolejnym uruchomieniu tego skryptu.
+    if (fixedColumnsMeta.length) {
+      const setClauses = fixedColumnsMeta.map(col =>
+        '[' + col.COLUMN_NAME + '] = ' + (ITEMS_SQL_NOW_COLUMNS.includes(col.COLUMN_NAME) ? 'SYSDATETIME()' : ITEMS_FIXED_VALUES[col.COLUMN_NAME])
+      );
+      const upd = await pool.request().query(
+        'UPDATE dbo.' + TEST_TABLE + ' SET ' + setClauses.join(', ') + ' WHERE createdDate IS NULL'
+      );
+      if (upd.rowsAffected[0]) {
+        console.log('[wgraj] Dopełniono ' + upd.rowsAffected[0] + ' wcześniej wgranych wierszy (DefSort/IsPhoto/IsPhotoPrev/daty).');
+      }
+    }
   } finally {
     await pool.close();
   }
