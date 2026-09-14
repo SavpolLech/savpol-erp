@@ -40,3 +40,28 @@
 [filtr] Wartości pól po wpisaniu: {"od":"2026-09-12","do":"2026-09-12"}
 [filtr] Licznik rekordów nie zmienił się w 15s po kliknięciu ".ButtonRefresh" — możliwe, że filtr się nie zastosował.
 [filtr] Ustawiono zakres 2026-09-12..2026-09-12, kliknięto ".ButtonRefresh". Rekordów: przed=0, po=0
+[strona] Failed to load resource: the server responded with a status of 400 ()
+[strona] SOCKET ERROR Error: xhr post error
+    at n.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:31238)
+    at i.<anonymous> (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:26032)
+    at n.emit (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:6309)
+    at i.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27872)
+    at https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27504
+[strona] Failed to load resource: the server responded with a status of 400 ()
+[strona] SOCKET ERROR Error: xhr poll error
+    at n.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:31238)
+    at i.<anonymous> (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:26201)
+    at n.emit (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:6309)
+    at i.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27872)
+    at https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27504
+[strona] WebSocket connection to 'wss://erp.savpol.pl/csAPIServer/socket.io/?sessionId=436d4247-d86d-4396-cd78-66f0f2d88b4e&LanguageSuffix=PL&csUsrId=29270321220&csCompaniesId=213217693&EIO=3&transport=websocket&sid=etlPbbn0gP3uoMkMAAiK' failed: WebSocket is closed before the connection is established.
+[strona] WebSocket connection to 'wss://erp.savpol.pl/csAPIServer/socket.io/?sessionId=436d4247-d86d-4396-cd78-66f0f2d88b4e&LanguageSuffix=PL&csUsrId=29270321220&csCompaniesId=213217693&EIO=3&transport=websocket&sid=UrLXMwwcO1DiKqPvAAl6' failed: Error during WebSocket handshake: Unexpected response code: 400
+[wz] UWAGA: nie udało się odczytać liczby dokumentów z pagera (dostałem "0") — kontrola na koniec przebiegu będzie pominięta.
+[wz] ERP zgłasza 0 dokumentów dla tego filtra. Mamy już 0 z poprzednich sesji.
+[wz] Lista załadowana. Startuję zbieranie w paczkach po 15 dok. (max 900 łącznie w tej sesji)...
+(node:28104) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[wynik] Zapisano do bazy "worek": 0 wierszy w csDocsHeaders_test, 0 wierszy w csDocsItemsPositions_test.
+[paczka] +0 WZ (łącznie w stanie: 0), complete=false
+[wz] Koniec sesji. Zebrano w tej sesji: 0 WZ, 0 pozycji. Powód zatrzymania: pagination_stuck.
+[git-log-push] Log i stan wypchnięte do repo.
