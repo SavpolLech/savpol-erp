@@ -71,17 +71,39 @@ zależy od rodziny kolumn:
 | Rodzina pól | Języki faktycznie istniejące w `csItems` |
 |---|---|
 | `ItemDesc_XX` / `ItemDesc1_XX` / `KeyWords_XX` | pełne ~13: PL, EN, DE, FR, NL, ES, PT, RU, UK, IT, SK, HR, CZ |
-| `SEOTitle_XX` | tylko **PL, EN, HR** |
-| `SEODescription_XX` | tylko **PL, EN, HR** |
-| `SEOCanonical_XX` | tylko **PL, EN, HR** |
+| `SEOTitle_XX` | tylko **PL, EN, HR** (kolumny w `kolumny.txt`) |
+| `SEODescription_XX` | tylko **PL, EN, HR** (kolumny w `kolumny.txt`) |
+| `SEOCanonical_XX` | tylko **PL, EN, HR** (kolumny w `kolumny.txt`) |
 | `SEOrobots` | **brak sufiksu językowego** — jedno wspólne pole dla całego produktu |
 
-Konsekwencja dla scrapera: przy zbieraniu SEO Tytuł/Opis/Canonical trzeba
-zbierać TYLKO z zakładek Polski/Angielski/Chorwacki — pozostałe języki na
-tym panelu nie mają gdzie zapisać wartości w tej tabeli (mogą być puste nie
-dlatego, że nikt ich nie wypełnił, tylko dlatego, że nie ma dla nich
-kolumny). Dla Słowa kluczowe i Nazwa produktu (Opisy) — zbieramy ze
-wszystkich ~13 języków normalnie.
+**Korekta 2026-09-14 (ręczna weryfikacja w ERP przez Lecha, po zakładkach
+językowych SEO):** powyższa tabela mówi, jakie kolumny *istnieją w bazie*
+(`kolumny.txt`), ale to nie to samo, co to, co UI *wyświetla* w polach dla
+każdego języka. Realny widok w karcie produktu, zakładka po zakładce:
+
+| Język | Widoczne pola |
+|---|---|
+| PL | robots, canonical, tytuł, synonimy klas ETIM, słowa kluczowe, opis |
+| EN | robots, canonical, tytuł, słowa kluczowe, opis |
+| DE | robots, tytuł, słowa kluczowe, opis |
+| FR, NL, ES, PT, UK, RU | robots, tytuł, słowa kluczowe |
+| HR | robots, canonical, tytuł, słowa kluczowe |
+
+Czyli UI pokazuje pole „Tytuł” i „Robots” dla dużo szerszej listy języków
+(DE/FR/NL/ES/PT/UK/RU), niż to, co `kolumny.txt` ma jako `SEOTitle_XX`
+(tylko PL/EN/HR). Dwa możliwe wyjaśnienia, nierozstrzygnięte:
+- pole „Tytuł” w tych zakładkach zapisuje się do innej kolumny niż
+  `SEOTitle_XX` (np. współdzieli `ItemDesc_XX`), albo
+- `kolumny.txt` faktycznie nie ma wszystkich kolumn `csItems` (patrz punkt
+  1 w pytaniach do Michała niżej — 141 vs 314 pól) i brakujące
+  `SEOTitle_DE`/`_FR`/... po prostu nie trafiły na tę listę.
+
+Nie zgadujemy dalej — to kolejny punkt do Michała. **Ważna uwaga
+praktyczna od Lecha:** strona nigdy nie była tłumaczona na inne języki niż
+polski, więc niezależnie od tego, które kolumny istnieją, w 99% przypadków
+będą one po prostu puste dla EN/DE/HR/itd. — dla scrapera nie warto
+inwestować dużo czasu w te pola, dopóki Michał nie potwierdzi, że są
+faktycznie używane.
 
 Osobna obserwacja: `ItemDesc_IT`/`KeyWords_IT` istnieją w liście kolumn, ale
 zakładka „Włoski” nigdy nie pojawiła się w żadnym zrzucie — może jest

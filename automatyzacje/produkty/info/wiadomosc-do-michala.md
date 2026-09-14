@@ -43,6 +43,14 @@ Mamy jednak kilka otwartych pytań, zanim ruszymy dalej ze scraperem:
    z nich to osobna tabela/relacja (własne ID, nie kolumny `csItems`), nie
    dodały nic nowego do listy 141 kolumn. Chcesz, żebyśmy też to
    scrapowali, czy interesuje Cię wyłącznie `csItems`?
+6. **Pola SEO per język** — w Twojej liście kolumn `SEOTitle`/
+   `SEODescription`/`SEOCanonical` istnieją tylko dla PL/EN/HR, ale w UI
+   karty produktu pole „Tytuł” i „Robots” pokazuje się też dla
+   DE/FR/NL/ES/PT/UK/RU. Czy to zapisuje się gdzieś indziej (np. do
+   `ItemDesc_XX`), czy Twoja lista 141 kolumn po prostu nie ma tych
+   dodatkowych `SEOTitle_XX`? Osobno: strona nigdy nie była tłumaczona na
+   inne języki niż polski, więc pewnie w 99% te pola będą puste — czy
+   mimo to mamy je scrapować?
 
 Jak odpowiesz na te punkty, możemy zacząć pisać docelowy scraper.
 
