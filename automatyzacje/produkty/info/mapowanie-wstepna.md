@@ -176,6 +176,22 @@ W wiadomości do Michała napisaliśmy, że `Photo`/`PhotoSmall`/`PhotoVersion`
 nie udało się namierzyć — to już nieaktualne, znaleźliśmy działający
 mechanizm:
 
+**Bonus-odkrycie:** baza `worek` (automatyzacje/wz — replika ERP budowana
+pod migrację do Odoo) ma tabelę `dbo.csItems` z dokładnie tymi samymi 141
+kolumnami co lista Michała (`kolumny.txt`), 1:1, bez różnic w obie strony —
+włącznie z `Photo`/`PhotoSmall` (varbinary — surowe bajty obrazka wprost w
+wierszu) i `PhotoVersion`/`PhotoSmallVersion` (int — licznik, ten sam co
+`|1` na końcu URL-a z API ERP). Jest tam też osobna tabela `dbo.csPhotos`
+(pełna galeria, z watermarkami). **Ale obie tabele mają 0 wierszy** — to
+tylko struktura, dane produkcyjne jeszcze nie są zsynchronizowane, więc
+nie da się tu jeszcze sprawdzić, czy `Photo`/`PhotoSmall` są realnie
+wypełnione w produkcji. Jeśli/kiedy `worek` się napełni, SQL wprost do tej
+bazy może okazać się dużo prostszą drogą do całego mapowania Michała niż
+odpytywanie ERP-owego API — zero zgadywania nazw pól, zero
+base64+zip+deflate. Diagnostyczne skrypty jednorazowe:
+`automatyzacje/wz/sprawdz-tabele-foto.js`, `sprawdz-csitems.js`,
+`sprawdz-zdjecia-wypelnienie.js`.
+
 1. Zdjęcie NIE jest w danych karty produktu (`csItemsOneBro`/`csitems`) —
    pola `PhotoUrl`/`PhotoSmallUrl` tam są zawsze `null`. Trzeba pobrać
    dane z zakładki **Zdjęcia** (`DataSetSQLIdent: csphotos`), która ma
