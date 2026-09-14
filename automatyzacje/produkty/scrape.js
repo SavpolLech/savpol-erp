@@ -170,6 +170,48 @@ async function openZdjeciaTabInPage() {
   return { ok: true };
 }
 
+// Klika zakładkę "Jednostki" — osobne zapytanie API (DataSetSQLIdent:
+// csitemsunits4item), analogicznie do openZdjeciaTabInPage.
+async function openJednostkiTabInPage() {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const tab = Array.from(document.querySelectorAll('li[title="Jednostki"]'))
+    .find(li => li.offsetParent !== null);
+  if (!tab) return { ok: false, blad: 'nie widzę zakładki „Jednostki" na karcie' };
+  tab.click();
+  await sleep(1500);
+  return { ok: true };
+}
+
+// Liczy wiersze w siatce jednostek (rozpoznawana po kolumnie "Unit").
+async function policzWierszeJednostek(page) {
+  return page.evaluate(() => {
+    const grids = Array.from(document.querySelectorAll('.cs-grid-data-table')).filter(t => t.offsetParent !== null);
+    const g = grids.find(g => g.querySelector('td[data-datafield="Unit"]'));
+    return g ? g.querySelectorAll('tbody tr.cs-grid-data-row').length : 0;
+  });
+}
+
+// Klika wiersz jednostki o danym indeksie — PRAWDZIWYM kliknięciem myszy
+// Playwrighta (page.mouse.click), NIE DOM-owym .click(). Namierzone
+// 2026-09-14: siatka Kendo w ogóle nie reaguje na .click() (nie zmienia
+// zaznaczenia, nie wysyła zapytania o kody kreskowe tej jednostki) —
+// potrzebuje realnego zdarzenia myszy w konkretnym miejscu na ekranie.
+async function kliknijWierszJednostki(page, idx) {
+  const box = await page.evaluate((idx) => {
+    const grids = Array.from(document.querySelectorAll('.cs-grid-data-table')).filter(t => t.offsetParent !== null);
+    const g = grids.find(g => g.querySelector('td[data-datafield="Unit"]'));
+    if (!g) return null;
+    const row = g.querySelectorAll('tbody tr.cs-grid-data-row')[idx];
+    if (!row) return null;
+    const cell = row.querySelector('td[data-datafield="Unit"]') || row.querySelector('td');
+    const r = cell.getBoundingClientRect();
+    return { x: r.x + 5, y: r.y + r.height / 2 };
+  }, idx);
+  if (!box) return false;
+  await page.mouse.click(box.x, box.y);
+  return true;
+}
+
 // Zamyka zakładkę karty produktu (górny pasek "Katalog" / "Katalog: 0000031"),
 // żeby wrócić do katalogu i móc wyszukać kolejny SKU w TEJ SAMEJ sesji
 // przeglądarki. Bez tego pole wyszukiwania katalogu zostaje niewidoczne
@@ -200,7 +242,7 @@ function escCsv(v) {
 // rekordem i metadanymi. CSV nazwane results-* → łapie je istniejąca reguła
 // .gitignore (automatyzacje/**/results-*.csv), więc dane handlowe nie wejdą
 // do repo. Nazwy pól w nagłówku, wartości w jednym wierszu (jeden produkt).
-function saveResult(sku, rekord, fieldNames, zdjecia) {
+function saveResult(sku, rekord, fieldNames, zdjecia, jednostki, kodyKreskowe) {
   if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
   const id = String(rekord.Item || sku).replace(/[^A-Za-z0-9_-]/g, '_');
 
@@ -230,14 +272,16 @@ function saveResult(sku, rekord, fieldNames, zdjecia) {
     brakujaceDopasowane,
     dopasowane: dopasowaneRekord,
     wszystkie: rekord,
-    zdjecia: zdjecia || []
+    zdjecia: zdjecia || [],
+    jednostki: jednostki || [],
+    kodyKreskowe: kodyKreskowe || []
   }, null, 2), 'utf8');
 
   console.log('[wynik] Zapisano:');
   console.log('  ' + jsonPath);
   console.log('  ' + dopasowanePath + '  (' + F.DOPASOWANE.length + ' kolumn, ' + brakujaceDopasowane.length + ' pustych/brakujących)');
   console.log('  ' + wszystkiePath + '  (' + fieldNames.length + ' pól API)');
-  console.log('  zdjęcia: ' + (zdjecia || []).length);
+  console.log('  zdjęcia: ' + (zdjecia || []).length + ', jednostki: ' + (jednostki || []).length + ', kody kreskowe: ' + (kodyKreskowe || []).length);
   if (brakujaceDopasowane.length) {
     console.log('[wynik] Pola z listy dopasowanych, których to zapytanie NIE zwróciło: ' +
       brakujaceDopasowane.join(', '));
@@ -294,7 +338,49 @@ async function scrapeOneProduct(page, captured, sku) {
     console.log('[produkt] ' + sku + ': zdjęcia — znaleziono ' + zdjecia.length + '.');
   }
 
-  saveResult(sku, trafienie.rekord, trafienie.fieldNames, zdjecia);
+  // --- Jednostki (csItemsUnits) + kody kreskowe per jednostka (csItemsBarCodes) ---
+  // Michał 2026-09-14: potrzebne oprócz danych karty. Jednostki to trzecie
+  // zapytanie API (csitemsunits4item, ta sama zakładka, którą już znaliśmy z
+  // wcześniejszego rozpoznania). Kody kreskowe to CZWARTE, osobne zapytanie
+  // PER JEDNOSTKA — wysyłane dopiero po zaznaczeniu konkretnego wiersza w
+  // siatce jednostek (patrz kliknijWierszJednostki).
+  const jednostkiOtwarcie = await page.evaluate(openJednostkiTabInPage);
+  let jednostki = [];
+  let kodyKreskowe = [];
+  if (!jednostkiOtwarcie.ok) {
+    console.warn('[produkt] ' + sku + ': ' + jednostkiOtwarcie.blad + ' — zapisuję bez jednostek.');
+  } else {
+    const csItemsId = trafienie.rekord.csItemsId;
+    for (let i = 0; i < 30 && !jednostki.length; i++) {
+      jednostki = pickUnitRecords(captured, csItemsId);
+      if (!jednostki.length) await page.waitForTimeout(300);
+    }
+
+    const liczbaWierszy = await policzWierszeJednostek(page);
+    // "Primer": klikamy najpierw OSTATNI wiersz, dopiero potem idziemy po
+    // kolei od 0 — bo wiersz domyślnie zaznaczony przy otwarciu zakładki
+    // (zwykle pierwszy) nie wysyła nowego zapytania na własny klik, skoro
+    // zaznaczenie się nie zmienia (brak zdarzenia "change"). Klikając
+    // najpierw gdzie indziej, wymuszamy realną zmianę zaznaczenia przy
+    // każdym kolejnym kliknięciu, łącznie z wierszem 0.
+    if (liczbaWierszy > 1) {
+      await kliknijWierszJednostki(page, liczbaWierszy - 1);
+      await page.waitForTimeout(800);
+    }
+    for (let idx = 0; idx < liczbaWierszy; idx++) {
+      await kliknijWierszJednostki(page, idx);
+      await page.waitForTimeout(900);
+    }
+    // Nie korelujemy kliknięć z odpowiedziami 1:1 — każdy rekord
+    // csitemsbarcodes niesie własne csUnitsId, więc po prostu zbieramy
+    // WSZYSTKO, co się uzbierało w buforze podczas klikania (bez czyszczenia
+    // go między kliknięciami wierszy).
+    kodyKreskowe = pickBarcodeRecords(captured, csItemsId);
+    console.log('[produkt] ' + sku + ': jednostki — ' + jednostki.length +
+      ', kody kreskowe — ' + kodyKreskowe.length + ' (sprawdzono ' + liczbaWierszy + ' wierszy jednostek).');
+  }
+
+  saveResult(sku, trafienie.rekord, trafienie.fieldNames, zdjecia, jednostki, kodyKreskowe);
 
   // Zamknij kartę PRZED przejściem do kolejnego SKU — inaczej pole
   // wyszukiwania katalogu zostaje zasłonięte/niewidoczne dla następnego
@@ -366,6 +452,45 @@ function pickPhotoRecords(captured, csItemsId) {
   return wynik;
 }
 
+// Wybiera z bufora WSZYSTKIE rekordy csitemsunits4item danego produktu —
+// zwraca cały surowy rekord (88 pól z API), bez wycinania na konkretne
+// nazwy, bo dopiero trzeba to dopasować do 68 kolumn realnej csItemsUnits
+// (Michał, 2026-09-14) — analogicznie jak przy csItems na start.
+function pickUnitRecords(captured, csItemsId) {
+  const wynik = [];
+  const widziane = new Set();
+  for (const c of captured) {
+    if (c.dataSetIdent !== 'csitemsunits4item') continue;
+    for (const r of c.records) {
+      if (String(r.csItemsId) !== String(csItemsId)) continue;
+      if (widziane.has(r.csItemsUnitsId)) continue;
+      widziane.add(r.csItemsUnitsId);
+      wynik.push(r);
+    }
+  }
+  wynik.sort((a, b) => (a.Ord || 0) - (b.Ord || 0));
+  return wynik;
+}
+
+// Wybiera z bufora WSZYSTKIE rekordy csitemsbarcodes danego produktu —
+// zbierane z kilku osobnych zapytań (jedno per kliknięty wiersz jednostki),
+// stąd dedup po csItemsBarCodesId (ten sam kod mógłby się powtórzyć, gdyby
+// dwa kliknięcia trafiły przypadkiem w tę samą jednostkę).
+function pickBarcodeRecords(captured, csItemsId) {
+  const wynik = [];
+  const widziane = new Set();
+  for (const c of captured) {
+    if (c.dataSetIdent !== 'csitemsbarcodes') continue;
+    for (const r of c.records) {
+      if (String(r.csItemsId) !== String(csItemsId)) continue;
+      if (widziane.has(r.csItemsBarCodesId)) continue;
+      widziane.add(r.csItemsBarCodesId);
+      wynik.push(r);
+    }
+  }
+  return wynik;
+}
+
 async function main() {
   const args = process.argv.slice(2).filter(a => !a.startsWith('--'));
   const skus = args.length ? args
@@ -429,5 +554,6 @@ if (require.main === module) {
 module.exports = {
   login, CATALOG_URL, ERP_BASE_URL, HEADLESS,
   decodeJsonResult, extractCardRecord,
-  scrapeOneProduct, saveResult
+  scrapeOneProduct, saveResult,
+  openProductCardInPage, closeProductCardInPage, openZdjeciaTabInPage
 };

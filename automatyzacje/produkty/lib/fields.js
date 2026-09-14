@@ -43,4 +43,39 @@ const DOPASOWANE = [
 // się napełni i potwierdzimy schemat.
 const PROD_TABLE = 'csItems';
 
-module.exports = { DOPASOWANE, PROD_TABLE };
+// Jednostki (csItemsUnits) i kody kreskowe per jednostka (csItemsBarCodes) —
+// Michał, 2026-09-14, przykład SKU 0025321. W obu przypadkach 100% kolumn
+// od Michała pasuje 1:1 po nazwie do pól zwracanych przez API (inaczej niż
+// przy csItems, gdzie tylko 105/141) — patrz mapowanie-wstepna.md.
+const DOPASOWANE_JEDNOSTKI = [
+  'csItemsUnitsId', 'csItemsUnitsG', 'csCompaniesId', 'csItemsId', 'csUnitsId',
+  'QuantityInUnit', 'Weight', 'PackageWeight', 'Volume', 'Width', 'Height',
+  'Length', 'Precision', 'IsStock', 'IsDef', 'CExportSalesPrice',
+  'csCurrenciesGExportSalesPrice', 'csCurrenciesGPurchasePrice', 'CPurchasePrice',
+  'CWholesalesPrice', 'CRetailSalesPrice', 'PackageLength', 'PackageVolumne',
+  'PackageHeigth', 'csUnitsIdPackage', 'PackageWidth', 'GrossWeight',
+  'PurchaseDiscount', 'Density', 'ItemUnitDesc1', 'COtherSalesPrice', 'Ord',
+  'IsDefPurchase', 'ImageReductionRatio', 'ImageReductionLen', 'ImageReductionType',
+  'ExportSalesDiscount', 'RetailSalesDiscount', 'WholesalesDiscount',
+  'csItemsUnitsExtIdent', 'csCurrenciesGOtherSalesPrice', 'csCurrenciesGRetailSalesPrice',
+  'csCurrenciesGWholesalesPrice', 'Discount4Calc', 'CRecyclingFee', 'IsPallet',
+  'CSalesLimitPrice', 'CSalesMinPrice', 'PalletsInUnit', 'Atr01', 'LayersInUnit',
+  'csUnitsId4SplitByUnit', 'CClosingSalesPrice', 'csCurrenciesGClosingSalePrice',
+  'IsSalesPackage', 'IsPurchaseRound', 'IsQuantityInUnit4CalcPrice', 'CDepositFee',
+  'isWarehouseTransfersRound', 'IsSaleRound', 'isFractionalQuantity', 'EANType',
+  'quantityMinInOrder', 'dimensionMax', 'isOverallDimension', 'csPaletteTypesId',
+  'unitType', 'isCutable'
+];
+const JEDNOSTKI_TABLE = 'csItemsUnits';
+
+const DOPASOWANE_EAN = [
+  'csItemsBarCodesId', 'csItemsBarCodesG', 'csCompaniesId', 'csItemsId',
+  'csUnitsId', 'EAN', 'QrCode', 'Ord', 'isDef'
+];
+const EAN_TABLE = 'csItemsBarCodes';
+
+module.exports = {
+  DOPASOWANE, PROD_TABLE,
+  DOPASOWANE_JEDNOSTKI, JEDNOSTKI_TABLE,
+  DOPASOWANE_EAN, EAN_TABLE
+};
