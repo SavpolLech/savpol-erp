@@ -16,41 +16,25 @@ załączeniu dwa pliki CSV z prawdziwym produktem (`0000031`):
 
 Mamy jednak kilka otwartych pytań, zanim ruszymy dalej ze scraperem:
 
-1. **Skąd rozjazd 141 vs 314?** Twoja lista ma 141 kolumn, ale samo
-   zapytanie karty produktu zwraca 314 różnych nazw pól (część to
-   duplikaty ID+Desc dla tego samego, ale reszta wygląda na dodatkowe,
-   prawdziwe kolumny — np. `csItemsAddId`/`Atr01`…`AtrInt09`,
-   `groupsInfo01`–`04`, `EANType`, `CRecyclingFee`,
-   `csProducersIdNew`/`csSupplierIdNew`). Czy Twoja lista to celowo
-   podzbiór, czy to miał być cały zrzut kolumn `csItems`, a te dodatkowe
-   pola siedzą w innej tabeli?
-2. **`purchaseLastPrice` vs `CPurchasePrice`** — Twoja lista ma
+1. **`purchaseLastPrice` vs `CPurchasePrice`** — Twoja lista ma
    `purchaseLastPrice`, ale na karcie w polu „Zakupu” widzimy
    `CPurchasePrice`. Ta sama wartość pod dwiema nazwami, czy dwie różne
    kolumny (np. jedna ręczna, druga wyliczana z historii zakupów)?
-3. **Pola bez pokrycia w Twojej liście**: `EANType`, `isFractionalQuantity`,
-   `groupsInfo01XML`–`04XML`, `CRecyclingFee` (KGO), `validTo`,
-   `expireDays` — nie widzimy ich w 141 kolumnach pod żadną rozpoznawalną
-   nazwą. Są w `csItems` pod inną nazwą, czy to coś innego?
-4. **Wciąż nieznalezione pola z UI**: Grupa, Klasa, Symbol PCN, radiogroup
-   „Swobodne korzystanie / Kontrola jakości” — nie widać ich ani w
-   szablonie karty, ani w zapytaniu SQL karty produktu. Możliwe, że to
-   inna tabela.
-5. **Zakres zadania** — sprawdziliśmy też katalog produktów i pozostałe
-   zakładki karty (Zapasy, Zdjęcia, Załączniki, Grupy, Opisy w B2B,
-   Powiązane, Jednostki, Referencje, Kontrahenci, Do użycia w
-   magazynach, Limity cen produktów, Stany MWS, Towary w drodze) — każda
-   z nich to osobna tabela/relacja (własne ID, nie kolumny `csItems`), nie
-   dodały nic nowego do listy 141 kolumn. Chcesz, żebyśmy też to
-   scrapowali, czy interesuje Cię wyłącznie `csItems`?
-6. **Pola SEO per język** — w Twojej liście kolumn `SEOTitle`/
+2. **36 kolumn z Twojej listy, których nie widzimy w danych karty** —
+   większość to warianty językowe (`KeyWords_DE/ES/FR/NL/PT/RU/UK/IT/SK/CZ`
+   i `KeyWordsAuto_*`), które pewnie po prostu nie są uzupełnione, bo
+   produkt nigdy nie był tłumaczony. Ale czy rozpoznajesz po nazwie, gdzie
+   się liczą te pozostałe: `DefSort`, `LastChangeDate`, `createdDate`,
+   `isEOL`, `csUNSPSCCommodityId`, `csProducersIdAgr`, `NameA1Agr`,
+   `NameL1Agr`? (Pełną listę wszystkich 36 mogę dosłać, jeśli przyda się
+   w całości.)
+3. **Pola SEO per język** — w Twojej liście kolumn `SEOTitle`/
    `SEODescription`/`SEOCanonical` istnieją tylko dla PL/EN/HR, ale w UI
    karty produktu pole „Tytuł” i „Robots” pokazuje się też dla
-   DE/FR/NL/ES/PT/UK/RU. Czy to zapisuje się gdzieś indziej (np. do
-   `ItemDesc_XX`), czy Twoja lista 141 kolumn po prostu nie ma tych
-   dodatkowych `SEOTitle_XX`? Osobno: strona nigdy nie była tłumaczona na
-   inne języki niż polski, więc pewnie w 99% te pola będą puste — czy
-   mimo to mamy je scrapować?
+   DE/FR/NL/ES/PT/UK/RU. Wiesz, gdzie się to zapisuje dla tych
+   dodatkowych języków? Osobno: strona nigdy nie była tłumaczona na inne
+   języki niż polski, więc pewnie w 99% te pola będą puste — czy mimo to
+   mamy je scrapować?
 
 Jak odpowiesz na te punkty, możemy zacząć pisać docelowy scraper.
 

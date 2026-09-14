@@ -126,11 +126,21 @@ Pole liczbowe „1” obok Seria (błędnie zaetykietowane przez sondę jako
 
 ## Niepewne / bez jednoznacznego dopasowania (Dane dodatkowe)
 
+**Uwaga (2026-09-14):** poniższe to pola widoczne na karcie produktu,
+które ja (Claude) zauważyłem podczas własnej eksploracji UI i nie umiałem
+dopasować do żadnej kolumny z listy 141 — **nie pochodzą z maila Michała**,
+on o nie nie prosił. Zostawiam je tu jako notatkę techniczną, ale zgodnie
+z ustaleniem, że zakres ograniczamy do tego, co Michał faktycznie wskazał,
+**nie wysyłamy ich Michałowi jako pytań**.
+
 - **Kod PKWiU** (dwa oddzielne pola combobox) — nie widać wprost w liście
   141 kolumn pod tą nazwą; `CPACode` (CPA = odpowiednik PKWiU w UE) to
   możliwy kandydat dla jednego z nich, ale niepotwierdzone.
 - **Grupa** („Artykuły spożywcze”) i **Klasa** („Wartości odżywcze”) —
-  dropdowny bez oczywistego odpowiednika nazwy kolumny w liście.
+  dropdowny w „Dane dodatkowe”, bez oczywistego odpowiednika nazwy kolumny
+  w liście 141. **Uwaga: to NIE to samo, co „Grupa produktu” z katalogu**
+  (ścieżka typu `B2B\Kategorie\...`) — patrz sekcja niżej, to zupełnie inne
+  pole.
 - **Symbol PCN** („33021090” — kod taryfy celnej/Intrastat) — brak
   oczywistej kolumny w liście 141.
 - **Data ważności ekspozycji** (datepicker, pusty) — brak oczywistego
@@ -139,7 +149,26 @@ Pole liczbowe „1” obok Seria (błędnie zaetykietowane przez sondę jako
 - radiogroup **„Swobodne korzystanie / Kontrola jakości”** (grupa „Kontrola
   zapasu”) — brak oczywistego dopasowania w liście 141 kolumn.
 
-Te pola warto zapytać Michała wprost, zamiast zgadywać dalej z samych nazw.
+## Grupa produktu (kolumna „GRUPA PRODUKTU” w katalogu, ścieżka B2B\Kategorie\...)
+
+To jest osobne pole od „Grupa”/„Klasa” wyżej — pytanie Lecha 2026-09-14 po
+zrzucie ekranu z katalogu. **Już to mieliśmy namierzone wcześniej, przy
+pracy nad `savpol-historia-faktur.user.js`:** techniczna nazwa pola to
+`ItemsGroupTranslatedDesc` (patrz `savpol-historia-faktur.user.js:537` —
+kolumna „Grupa produktu” w konfiguracji `DATA_FIELDS` siatki katalogu).
+
+To pole **nie pojawiło się w 314-polowej odpowiedzi karty produktu**
+(`csItemsOneBro`) — bo karta go po prostu nie pokazuje, to kolumna
+specyficzna dla siatki katalogu (`csItems`, `DictIdent: csItems`, inny
+request niż karta). Prawdopodobny surowy odpowiednik ID: `csMasterItemsGroupsId`
+— to jedyne pole z rodziny „group” złapane w 50 kolumnach katalogu
+(`sonda-lista-kolumn.js`), wcześniej błędnie ocenione jako „niskopriorytetowe”.
+Wzorzec ID+Desc, który już wielokrotnie potwierdziliśmy, sugeruje że to
+faktycznie para: `csMasterItemsGroupsId` (surowy FK) ↔ `ItemsGroupTranslatedDesc`
+(gotowy tekst ścieżki do wyświetlenia). Nie jest to jednak jeszcze
+zweryfikowane 1:1 (nie sprawdziliśmy tego samego produktu w obu miejscach
+naraz) — i tej kolumny w ogóle nie ma w liście 141 od Michała, więc na razie
+to tylko techniczna odpowiedź dla Ciebie, nie coś do zgłoszenia Michałowi.
 
 ## Nie pasuje do listy 141 kolumn — osobne tabele/relacje
 
@@ -323,25 +352,43 @@ pobrało. Do pełnego scrapowania trzeba będzie sprawdzić, czy przełączenie
 zakładki/języka rozszerza SELECT, czy lista pól jest zawsze taka sama
 niezależnie od tego, co jest aktualnie widoczne na ekranie.
 
-**Nieobecne w tej odpowiedzi, mimo że są w `kolumny.txt`:** `purchaseLastPrice`
-(za to jest `CPurchasePrice` — inne pole, możliwe że to naprawdę różne
-kolumny, nie alias), `DefSort`, `LastChangeDate`, `createdDate`, `isEOL`,
-`csUNSPSCCommodityId`, `IsPhoto`, `IsPhotoPrev`, `csProducersIdAgr`,
-`NameA1Agr`, `NameL1Agr`, `PhotoVersion`, `PhotoSmallVersion`, `Photo`,
-`PhotoSmall` (za to jest `PhotoUrl`/`PhotoSmallUrl` — url zamiast
-surowego binarnego pola, sensowne dla API).
+### Pełna lista: 36 kolumn z `kolumny.txt` (Michała), których NIE ma w tej odpowiedzi 314 pól
 
-### Pola z tej listy 314, których wciąż nie ma w `kolumny.txt` pod żadną nazwą
+To jest lista do wysłania Michałowi — pyta go nie „skąd rozjazd 141 vs
+314" (to nie nasza sprawa, on definiuje wymagania), tylko wprost: **czy
+rozpoznaje po nazwie, gdzie te kolumny się liczą, i czy ma kandydata z
+tego, co złapaliśmy.** Podzielone wg naszego przypuszczenia:
 
+**Warianty językowe — prawdopodobnie po prostu nie złapane w tym jednym
+zapytaniu (produkt nigdy nie był tłumaczony, ale kolumny w bazie mogą
+istnieć):** `KeyWords_DE`, `KeyWords_ES`, `KeyWords_FR`, `KeyWords_NL`,
+`KeyWords_PT`, `KeyWords_RU`, `KeyWords_UK`, `KeyWords_IT`, `KeyWords_SK`,
+`KeyWords_CZ`, `KeyWordsAuto`, `KeyWordsAuto_DE`, `KeyWordsAuto_EN`,
+`KeyWordsAuto_ES`, `KeyWordsAuto_FR`, `KeyWordsAuto_IT`, `KeyWordsAuto_NL`,
+`KeyWordsAuto_PL`, `KeyWordsAuto_PT`, `KeyWordsAuto_RU`, `KeyWordsAuto_UK`.
+
+**Mamy kandydata pod inną nazwą:** `purchaseLastPrice` → prawdopodobnie
+`CPurchasePrice` (pole „Zakupu" na karcie — pytanie 1 niżej, czy to ta sama
+wartość); `Photo`/`PhotoSmall`/`PhotoVersion`/`PhotoSmallVersion`/
+`IsPhoto`/`IsPhotoPrev` → prawdopodobnie odpowiadają `PhotoUrl`/
+`PhotoSmallUrl` (API oddaje gotowy URL zamiast surowego pola binarnego).
+
+**Bez żadnego kandydata w złapanych 314 polach:** `DefSort`,
+`LastChangeDate`, `createdDate`, `isEOL`, `csUNSPSCCommodityId`,
+`csProducersIdAgr`, `NameA1Agr`, `NameL1Agr`.
+
+### Pola z tej listy 314, których nie ma w `kolumny.txt` pod żadną nazwą
+
+Dla porządku — to, co karta zwraca, a czego nie ma na liście Michała:
 `EANType`, `isFractionalQuantity`, `groupsInfo01`…`04` (+ warianty XML),
 `itemsGroupMask01`…`04`, `CRecyclingFee` (KGO), `validTo`, `expireDays`,
 `csItemsAddId`/`csItemsAddG` (+ cała rodzina `Atr01`…`AtrInt09` —
 atrybuty rozszerzone produktu), `csProducersIdNew`/`csSupplierIdNew` (+
 `ProducersDescNew`/`SupplierDescNew`/`*Ident`), `csItemsGroupsId4Purchase`/
-`csItemsGroupsId4BonusDiscount` (+ rabaty grupowe), `Usr4PIM`. Prawdopodobnie
-te dane też siedzą w tabeli `csItems`, tylko `kolumny.txt` (141 kolumn) nie
-jest pełnym zrzutem wszystkich kolumn tej tabeli — do potwierdzenia z
-Michałem, czy interesuje go też ten dodatkowy zestaw.
+`csItemsGroupsId4BonusDiscount` (+ rabaty grupowe), `Usr4PIM`. Skoro Michał
+sam definiuje zakres, nie pytamy go o to wprost — to tylko informacja, że
+CSV „wszystkie-pola-api" zawiera więcej niż jego lista, gdyby chciał
+kiedyś po to sięgnąć.
 
 ## Sprawdzone dodatkowo (2026-09-14): katalog i pozostałe zakładki karty
 
@@ -379,24 +426,29 @@ Przed wysłaniem wiadomości do Michała sprawdziliśmy dwa dodatkowe źródła,
 
 ## Nierozstrzygnięte pytania do Michała
 
-1. `kolumny.txt` ma 141 kolumn, ale nasze zapytanie testowe do samej karty
-   produktu zwróciło już 314 różnych nazw pól (część to duplikaty
-   ID+Desc, ale reszta wygląda na dodatkowe, prawdziwe kolumny —
-   `csItemsAddId`/`Atr01`…`AtrInt09`, `groupsInfo01`–`04`, `EANType`,
-   `CRecyclingFee`, `csProducersIdNew`/`csSupplierIdNew` i inne). Czy
-   Twoja lista 141 to celowo tylko podzbiór, czy to jest cały zrzut kolumn
-   tabeli `csItems` i te dodatkowe pola siedzą w INNEJ tabeli?
-2. `purchaseLastPrice` (z Twojej listy) vs `CPurchasePrice` (pole
+**Zasada (2026-09-14):** pytamy Michała tylko o to, co on sam wskazał na
+liście 141 kolumn — nie o to, czy jego lista jest kompletna względem
+naszego zapytania testowego (to jego decyzja jako zakres wymagań, nie
+nasza). Nie pytamy też o pola, które zauważyłem sam podczas eksploracji
+UI, a on o nie nie prosił (Symbol PCN, radiogroup „Swobodne korzystanie",
+Grupa/Klasa z „Dane dodatkowe") — to zostaje w notatce wyżej jako
+ciekawostka techniczna, nie trafia do Michała. Zakres ograniczamy do
+`csItems` — nie pytamy o dane z osobnych tabel (Zapasy, Opisy w B2B,
+Jednostki, Referencje, Kontrahenci, Do użycia w magazynach), skoro Michał
+ich nie wskazał.
+
+1. `purchaseLastPrice` (z Twojej listy) vs `CPurchasePrice` (pole
    faktycznie widoczne na karcie, w polu „Zakupu”) — czy to ta sama
    wartość pod dwiema nazwami, czy naprawdę dwie różne kolumny (np. jedna
    ręcznie wpisywana, druga wyliczana z historii zakupów)?
-3. `EANType`, `isFractionalQuantity`, `groupsInfo01XML`–`04XML`,
-   `CRecyclingFee` (KGO), `validTo`, `expireDays` — nie widzimy ich w
-   liście 141 kolumn pod żadną rozpoznawalną nazwą. Czy w ogóle są w
-   `csItems`, a jeśli tak, pod jaką nazwą?
-4. Grupa, Klasa, Symbol PCN, radiogroup „Swobodne korzystanie/Kontrola
-   jakości” — wciąż nieznalezione ani w szablonie karty, ani w liście 314
-   pól z zapytania SQL. Możliwe, że to inna tabela — do sprawdzenia.
-5. Czy dane z osobnych tabel (Zapasy, Opisy w B2B, Jednostki, Referencje,
-   Kontrahenci, Do użycia w magazynach) w ogóle wchodzą w zakres tego
-   zadania, czy interesuje Cię wyłącznie `csItems`?
+2. 36 kolumn z Twojej listy 141, których nie widzimy w danych, jakie
+   zwraca karta produktu (patrz pełna lista wyżej, sekcja „Pełna lista: 36
+   kolumn..."). Większość to warianty językowe (`KeyWords_DE/ES/FR/...`),
+   które pewnie po prostu nie są uzupełnione (produkt nigdy nie był
+   tłumaczony) — ale czy rozpoznajesz po nazwie, gdzie się liczą
+   pozostałe: `DefSort`, `LastChangeDate`, `createdDate`, `isEOL`,
+   `csUNSPSCCommodityId`, `csProducersIdAgr`, `NameA1Agr`, `NameL1Agr`?
+3. Pola SEO per język — `SEOTitle`/`SEODescription`/`SEOCanonical` masz na
+   liście tylko dla PL/EN/HR, ale w UI pole „Tytuł” i „Robots” pokazuje
+   się też dla DE/FR/NL/ES/PT/UK/RU. Wiesz, gdzie się to zapisuje dla tych
+   dodatkowych języków?
