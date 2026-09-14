@@ -88,12 +88,38 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
     const paramNames = [];
     columnsMeta.forEach((col, i) => {
       const paramName = 'p' + i;
-      const value = coerceValue(surowaWartosc(col.COLUMN_NAME), col);
-      request.input(paramName, mssqlType(col), value);
+      let value = coerceValue(surowaWartosc(col.COLUMN_NAME), col);
+      // Sterownik mssql/tedious ma błąd przy NUMERIC_SCALE = 16 dokładnie
+      // (potwierdzone: 6..15 działa, 16 zawsze "could not be validated",
+      // niezależnie od wartości — bug w bibliotece, nie w naszych danych).
+      // csItemsUnits ma kilka kolumn typu numeric(28,16) (np. QuantityInUnit)
+      // — ograniczamy zadeklarowaną skalę do 15, zero realnej utraty
+      // precyzji dla naszych danych (nikt nie potrzebuje 16 miejsc po
+      // przecinku przy wadze/ilości).
+      let typ = mssqlType(col);
+      if ((col.DATA_TYPE === 'decimal' || col.DATA_TYPE === 'numeric') && col.NUMERIC_SCALE >= 16) {
+        typ = sql.Decimal(col.NUMERIC_PRECISION || 18, 15);
+      }
+      if ((col.DATA_TYPE === 'decimal' || col.DATA_TYPE === 'numeric') && typeof value === 'number') {
+        value = Number(value.toFixed(Math.min(col.NUMERIC_SCALE || 4, 15)));
+      }
+      try {
+        request.input(paramName, typ, value);
+      } catch (e) {
+        console.error('[wgraj-jednostki] BŁĄD walidacji kolumny ' + col.COLUMN_NAME +
+          ' (typ ' + col.DATA_TYPE + '), surowa wartość=' + JSON.stringify(surowaWartosc(col.COLUMN_NAME)) +
+          ', po coerceValue=' + JSON.stringify(value) + ', rekord=' + JSON.stringify(r).slice(0, 300));
+        throw e;
+      }
       colNames.push('[' + col.COLUMN_NAME + ']');
       paramNames.push('@' + paramName);
     });
-    await request.query('INSERT INTO dbo.' + testTable + ' (' + colNames.join(', ') + ') VALUES (' + paramNames.join(', ') + ')');
+    try {
+      await request.query('INSERT INTO dbo.' + testTable + ' (' + colNames.join(', ') + ') VALUES (' + paramNames.join(', ') + ')');
+    } catch (e) {
+      console.error('[wgraj-jednostki] BŁĄD INSERT dla rekordu: ' + JSON.stringify(r).slice(0, 500));
+      throw e;
+    }
     wstawione++;
   }
   if (pominiete) console.log('[wgraj-jednostki] ' + testTable + ': pominięto ' + pominiete + ' już obecnych.');
