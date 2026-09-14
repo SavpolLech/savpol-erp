@@ -321,6 +321,40 @@ te dane też siedzą w tabeli `csItems`, tylko `kolumny.txt` (141 kolumn) nie
 jest pełnym zrzutem wszystkich kolumn tej tabeli — do potwierdzenia z
 Michałem, czy interesuje go też ten dodatkowy zestaw.
 
+## Sprawdzone dodatkowo (2026-09-14): katalog i pozostałe zakładki karty
+
+Przed wysłaniem wiadomości do Michała sprawdziliśmy dwa dodatkowe źródła,
+żeby nie przegapić czegoś istotnego:
+
+- **Katalog (lista produktów)** — 50 dostępnych kolumn (z `sonda-lista-kolumn.js`)
+  w większości pokrywa się z tym, co już mamy, albo jest poza zakresem. Jedyne
+  nowe, ale niskopriorytetowe: `csMasterItemsGroupsId`, `csMailsTemplatesTypesG`.
+- **Pozostałe zakładki karty produktu** (Zapasy, Zdjęcia, Załączniki, Grupy,
+  Opisy w B2B, Powiązane, Jednostki, Referencje, Kontrahenci, Do użycia w
+  magazynach, Limity cen produktów, Stany MWS, Towary w drodze) — złapane
+  `podsluch-danych-produktu.js` v9, potwierdzone realnymi danymi (nie tylko
+  szablonem `VisualDefinition`):
+
+  | Zakładka | `DataSetSQLIdent` | pól |
+  |---|---|---|
+  | Zdjęcia | `csphotos` | 46 |
+  | Załączniki | `csattachments` | 50 |
+  | Grupy | `csitemsgroupsitems` | 35 |
+  | Opisy w B2B | `csitemsdesc4b2bportals` | 46 |
+  | Powiązane | `csitemslinkedto` | 31 |
+  | Jednostki | `csitemsunits4item` | 88 |
+  | Referencje | `csitemsrefs` | 22 |
+  | Kontrahenci | `csitemscustomers` | 32 |
+  | Opisy | `csitemdescriptions` | 12 |
+  | Do użycia w magazynach | `csitemswarehouses4item` | 31 |
+  | Limity cen produktów | `cspricingpoliciesitemslimits` | 68 |
+  | Stany MWS | `csstockswms` | 20 |
+  | Towary w drodze | `csgoodsintransit` | 16 |
+
+  Każda ma własne ID/G i klucze obce (`csItemsId` itp.) — to potwierdza
+  wcześniejszy wniosek: to naprawdę osobne tabele/relacje, nie kolumny
+  `csItems`. Żadna nie ujawniła nowego pola pasującego do listy 141 kolumn.
+
 ## Nierozstrzygnięte pytania do Michała
 
 1. `kolumny.txt` ma 141 kolumn, ale nasze zapytanie testowe do samej karty
