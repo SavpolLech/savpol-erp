@@ -170,6 +170,46 @@ zweryfikowane 1:1 (nie sprawdziliśmy tego samego produktu w obu miejscach
 naraz) — i tej kolumny w ogóle nie ma w liście 141 od Michała, więc na razie
 to tylko techniczna odpowiedź dla Ciebie, nie coś do zgłoszenia Michałowi.
 
+## Audyt: 10 zescrapowanych produktów vs przykład Michała (2026-09-14)
+
+Po zescrapowaniu pierwszych 10 SKU z katalogu (`0000031, 0000033, 0000034,
+0000037, 0000047, 0000051, 0000074, 0000078, 0000085, 0000087` — wgrane do
+`worek.dbo.csItems_test`) porównaliśmy TYPY i obecność wartości względem
+przykładowego wiersza od Michała (0031513).
+
+**Zgodność typów (105 dopasowanych kolumn):** 102/105 bez zastrzeżeń. 3
+flagi:
+- `ShelfLifeDays` — fałszywy alarm. U Michała `'730.000000'` (DB ma
+  `decimal(x,6)`, Excel wyeksportował jako tekst), u nas czyste inty
+  (`450`, `365`). To różnica formatu, nie błąd.
+- `CPACode` — API zawsze zwraca string (`"33021090"` u wszystkich 10,
+  wygląda jak prawidłowy kod CPA/PKWiU), DB ma `int`. Wartość z przykładu
+  Michała (`20081919`) nie wygląda jak prawidłowy kod tej samej rodziny —
+  możliwe, że to legacy/nietypowe dane na tym konkretnym SKU, nie błąd
+  naszego mapowania.
+- `EAN` — API zawsze string, DB ma `int` (trzeba rzutować przy zapisie do
+  `worek`). **Ale też realny problem danych**: 4 z 10 produktów (IPRA:
+  `0000074`, `0000078`, `0000085`, `0000087`) mają w tym polu coś, co NIE
+  jest kodem EAN (`"74if25083mali"`, `"78if24979masl"`, `"85IF27405POMA"`,
+  `"87if27754pozi"`) — wygląda na wewnętrzny placeholder/kod, nie
+  prawdziwy kod kreskowy. Pozostałe 6 (HOFFMANN) mają poprawny EAN-13.
+  Wygląda na problem w danych źródłowych ERP dla tych konkretnych SKU, nie
+  błąd scrapera — warto zapytać Michała.
+
+**Wartości niepuste u Michała, których w ogóle nie wyłapujemy:** z 36
+niedopasowanych kolumn, 17 miało realną (nie-NULL) wartość w przykładzie
+0031513. Z tych 17, **16 nie istnieje w API karty pod żadną nazwą**
+(sprawdzone wprost po nazwie w pełnej liście 314 pól) — jedyny wyjątek to
+`csProducersIdAgr`, dla którego mamy już alias (`csSupplierIdNew`, patrz
+sekcja niżej). Prawdziwe, potwierdzone braki:
+- `IsPhoto`, `IsPhotoPrev` — flagi obecności zdjęcia
+- `DefSort`, `LastChangeDate`, `createdDate` — sortowanie i pola audytowe
+- `KeyWordsAuto` + `KeyWordsAuto_DE/EN/ES/FR/IT/NL/PL/PT/RU/UK` — 10 z 11
+  wariantów językowych tego pola (tylko `_HR` jest w API)
+
+Reszta z 36 niedopasowanych (19 kolumn) była `NULL` u Michała, więc nie ma
+czego wyłapywać — nie wiadomo, czy są w ogóle używane.
+
 ## Realny wiersz z bazy dla SKU 0031513 (od Michała, 2026-09-14)
 
 Michał dosłał xlsx z prawdziwym wierszem `csItems` (SELECT z produkcyjnej
