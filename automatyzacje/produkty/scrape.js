@@ -349,9 +349,14 @@ function pickPhotoRecords(captured, csItemsId) {
       if (String(r.csSourceId) !== String(csItemsId)) continue;
       wynik.push({
         csPhotosId: r.csPhotosId,
+        csCompaniesId: r.csCompaniesId,
+        csSourceId: r.csSourceId,
         ord: r.Ord,
         doNotShow4Items: r.DoNotShow4Items,
         localFileName: r.LocalFileName,
+        remoteFileName: r.RemoteFileName,
+        remoteIdent: r.RemoteIdent,
+        csPhotosTypesG: r.csPhotosTypesG,
         urlPhoto: budujUrlDoZdjecia(r.PhotoUrl)
       });
     }
