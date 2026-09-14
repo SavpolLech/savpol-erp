@@ -2,7 +2,7 @@
 // automatycznie w tle rozpoznaje OperationName każdej odpowiedzi (definicja
 // formularza czy dane rekordu) i pozwala pobrać/zdekodować pełną treść
 // wybranego wpisu.
-// WERSJA: 2026-09-11.8
+// WERSJA: 2026-09-11.9
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
@@ -39,7 +39,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-11.8';
+  const WERSJA = '2026-09-11.9';
   const MAX_PODGLAD = 300;
 
   const zarejestrowane = [];
@@ -138,16 +138,39 @@
 
     let opName = null;
     let pierwszePola = null;
+    let dataSetIdent = null;
+    let liczbaPol = null;
     if (obiekt) {
       const opInfo = obiekt.OperationInvokeResult || {};
       opName = opInfo.OperationName || null;
-      const wynikDanych = (obiekt.Result && Object.values(obiekt.Result)[0]) || null;
-      if (wynikDanych && wynikDanych.rows && wynikDanych.rows[0]) {
-        const rekord = wynikDanych.rows[0];
-        pierwszePola = Object.keys(rekord).slice(0, 20).map(k => k + '=' + JSON.stringify(rekord[k]));
+
+      // Kształt A: RefreshDataSetSQL_Synchronous → Result.RefreshObjectReturnList[0].DataTable
+      // z FieldDefs (nazwy pól) + Records/Rows/Data (wartości, tablica-w-tablicy).
+      const refreshObj = obiekt.Result && obiekt.Result.RefreshObjectReturnList
+        && obiekt.Result.RefreshObjectReturnList[0];
+      if (refreshObj && refreshObj.DataTable && refreshObj.DataTable.FieldDefs) {
+        const dt = refreshObj.DataTable;
+        const nazwyPol = dt.FieldDefs.map(f => f.FieldName);
+        dataSetIdent = refreshObj.DataSetSQLIdent || null;
+        liczbaPol = nazwyPol.length;
+        const wiersze = dt.Records || dt.Rows || dt.Data || dt.records || dt.rows || dt.data;
+        if (wiersze && wiersze[0]) {
+          const w0 = wiersze[0];
+          const rekord = Array.isArray(w0)
+            ? nazwyPol.reduce((acc, n, i) => { acc[n] = w0[i]; return acc; }, {})
+            : w0;
+          pierwszePola = Object.keys(rekord).slice(0, 20).map(k => k + '=' + JSON.stringify(rekord[k]));
+        }
+      } else {
+        // Kształt B (np. csNGSessions): Result.<klucz>.rows[0] jako obiekt wprost.
+        const wynikDanych = (obiekt.Result && Object.values(obiekt.Result)[0]) || null;
+        if (wynikDanych && wynikDanych.rows && wynikDanych.rows[0]) {
+          const rekord = wynikDanych.rows[0];
+          pierwszePola = Object.keys(rekord).slice(0, 20).map(k => k + '=' + JSON.stringify(rekord[k]));
+        }
       }
     }
-    return { ladny, obiekt, opName, pierwszePola };
+    return { ladny, obiekt, opName, pierwszePola, dataSetIdent, liczbaPol };
   }
 
   function dodajWpis(url, metoda, zadanieSurowe, odpowiedz) {
@@ -157,7 +180,9 @@
       dictIdent: wyciagnijDictIdent(zadanieSurowe),
       odpowiedz: odpowiedz,
       opName: undefined,      // undefined = jeszcze nie sprawdzone w tle
-      pierwszePola: null
+      pierwszePola: null,
+      dataSetIdent: null,
+      liczbaPol: null
     };
     zarejestrowane.push(wpis);
     // Dekodowanie w tle — best-effort, nie blokuje niczego. Jeśli się nie
@@ -166,6 +191,8 @@
       zdekodujOdpowiedz(odpowiedz).then((wynik) => {
         wpis.opName = (wynik && wynik.opName) || null;
         wpis.pierwszePola = (wynik && wynik.pierwszePola) || null;
+        wpis.dataSetIdent = (wynik && wynik.dataSetIdent) || null;
+        wpis.liczbaPol = (wynik && wynik.liczbaPol) || null;
       }).catch(() => { wpis.opName = null; });
     } else {
       wpis.opName = null;
@@ -183,7 +210,8 @@
       linie.push((i + 1) + '. ' + w.url);
       linie.push('   metoda: ' + w.metoda + (w.dictIdent ? '   DictIdent: ' + w.dictIdent : ''));
       const opStatus = w.opName === undefined ? '(jeszcze dekoduję w tle...)' : (w.opName || '(nie udało się rozpoznać)');
-      linie.push('   OperationName: ' + opStatus);
+      linie.push('   OperationName: ' + opStatus + (w.dataSetIdent ? '   DataSetSQLIdent: ' + w.dataSetIdent : '')
+        + (w.liczbaPol ? '   (' + w.liczbaPol + ' pól)' : ''));
       if (w.pierwszePola) {
         linie.push('   >>> TO SĄ DANE REKORDU <<<  pierwsze pola: ' + w.pierwszePola.slice(0, 8).join(', '));
       }
@@ -215,7 +243,9 @@
     const wynik = await zdekodujOdpowiedz(w.odpowiedz);
     if (!wynik) { console.log('[podsluch] nie udało się zdekodować wpisu ' + n + ' (może to nie ten format)'); return; }
     console.log('[podsluch ' + WERSJA + '] --- PODSUMOWANIE wpisu ' + n + ' ---');
-    console.log('  OperationName: ' + (wynik.opName || '(brak)'));
+    console.log('  OperationName: ' + (wynik.opName || '(brak)')
+      + (wynik.dataSetIdent ? '   DataSetSQLIdent: ' + wynik.dataSetIdent : '')
+      + (wynik.liczbaPol ? '   (' + wynik.liczbaPol + ' pól)' : ''));
     if (wynik.pierwszePola) {
       console.log('  TO WYGLĄDA NA DANE REKORDU — pierwsze pola:');
       wynik.pierwszePola.forEach(p => console.log('    ' + p));
