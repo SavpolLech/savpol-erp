@@ -2,7 +2,7 @@
 // rozmiar/początek odpowiedzi) i pozwala ZDEKODOWAĆ w przeglądarce (bez
 // ręcznego przepisywania base64) skompresowaną treść odpowiedzi wybranego
 // wpisu.
-// WERSJA: 2026-09-11.6
+// WERSJA: 2026-09-11.7
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
@@ -38,7 +38,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-11.6';
+  const WERSJA = '2026-09-11.7';
   const MAX_PODGLAD = 300;
 
   const zarejestrowane = [];
@@ -179,7 +179,32 @@
       const rozkompresowane = await dekompresujDeflateRaw(skompresowane);
       const tekst = new TextDecoder('utf-8').decode(rozkompresowane);
       let ladny = tekst;
-      try { ladny = JSON.stringify(JSON.parse(tekst), null, 2); } catch (e) { /* nie-JSON, zostaw jak jest */ }
+      let obiekt = null;
+      try { obiekt = JSON.parse(tekst); ladny = JSON.stringify(obiekt, null, 2); } catch (e) { /* nie-JSON, zostaw jak jest */ }
+
+      // Krótkie podsumowanie w konsoli PRZED skopiowaniem całości — żeby
+      // dało się szybko rozpoznać, czy to DEFINICJA formularza czy DANE
+      // rekordu, bez wklejania za każdym razem ogromnego tekstu do rozmowy.
+      if (obiekt) {
+        const opInfo = obiekt.OperationInvokeResult || {};
+        console.log('[podsluch ' + WERSJA + '] --- PODSUMOWANIE wpisu ' + n + ' ---');
+        console.log('  OperationName: ' + (opInfo.OperationName || '(brak)'));
+        console.log('  górne klucze Result: ' + Object.keys(obiekt.Result || obiekt).join(', '));
+        // Jeśli to wygląda na DANE rekordu (nie definicję), pokaż od razu
+        // pierwsze ~20 kluczy pól i ich wartości — najczęściej to wystarczy,
+        // żeby rozpoznać właściwy wpis bez kopiowania całości.
+        const wynikDanych = (obiekt.Result && Object.values(obiekt.Result)[0]) || null;
+        if (wynikDanych && wynikDanych.rows && wynikDanych.rows[0]) {
+          const rekord = wynikDanych.rows[0];
+          console.log('  TO WYGLĄDA NA DANE REKORDU — pierwsze pola:');
+          Object.keys(rekord).slice(0, 20).forEach(k => {
+            console.log('    ' + k + ' = ' + JSON.stringify(rekord[k]));
+          });
+        } else if (opInfo.OperationName === 'DictDefinition') {
+          console.log('  (to DEFINICJA formularza — data-datafield w VisualDefinition, nie wartości)');
+        }
+      }
+
       kopiuj(ladny);
       console.log('[podsluch ' + WERSJA + '] zdekodowano wpis ' + n + ' (' + ladny.length + ' znaków), skopiowano do schowka');
       window.__podsluchZdekodowany = ladny;
