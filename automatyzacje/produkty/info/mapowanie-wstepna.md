@@ -194,17 +194,27 @@ naraz — rozstrzyga część otwartych pytań z listy 36 niedopasowanych pól:
   (dodatkowo kod producenta i pełna nazwa producenta "Fabbri 1905
   S.p.A."). EN ma inny algorytm generowania niż pozostałe języki — niski
   priorytet, ale warto wiedzieć.
-- **`DefSort`** = `967128` — aktywnie używane pole sortowania.
+- **`DefSort`** = `967128` — aktywnie używane pole sortowania. Sprawdzone
+  2026-09-14 przez scraper: **nie ma go w API karty pod żadną nazwą** (ani
+  wprost, ani po wartości) — trzeba by je pobierać skąd indziej (siatka
+  katalogu?) niż zapytanie karty produktu.
 - **`LastChangeDate`** / **`createdDate`** — wypełnione, standardowe pola
-  audytowe, działają jak oczekiwano.
+  audytowe. Sprawdzone 2026-09-14: **też nieobecne w API karty** — audytowe
+  daty nie są zwracane przez to zapytanie w ogóle, żadną nazwą.
 - **`isEOL`** = NULL — kolumna istnieje, ale nieużyta dla tego (aktywnego)
   produktu — sensowne, prawdopodobnie ustawiana tylko dla wycofanych.
 - **`csUNSPSCCommodityId`** = NULL — nieużywane dla tego produktu.
-- **`csProducersIdAgr`** = `218472565` (WYPEŁNIONE!) — ale to **nie jest
-  ten sam FK co `csEBIProducersId`** (który dla tego produktu jest NULL).
-  Osobny, realny klucz do czegoś innego niż główny słownik producentów —
-  `NameA1Agr`/`NameL1Agr` mimo to są NULL. Nierozpoznane, warto zapytać
-  Michała czym jest ta rodzina "Agr", jeśli okaże się istotna.
+- **`csProducersIdAgr` = potwierdzone: to `csSupplierIdNew` (Dostawca), nie
+  producent** — namierzone 2026-09-14 przez scraper (`automatyzacje/produkty/
+  scrape.js`), dopasowanie po WARTOŚCI, nie po nazwie: `csProducersIdAgr` =
+  `218472565` w danych od Michała, ten sam `218472565` wyszedł jako
+  `csSupplierIdNew` z API karty. Potwierdzone dalej: `SupplierDescNew` =
+  `"FABBRI"`, `SupplierIdent` = `"0004383"` (zgadza się z nazwą produktu
+  "...- FABBRI"), a `csProducersIdNew`/`ProducersDescNew` są `NULL` —
+  czyli mimo nazwy "Producers" w `csProducersIdAgr`, to pole realnie
+  przechowuje **dostawcę**. Nazwa kolumny jest myląca (prawdopodobnie
+  legacy z jakiejś starszej integracji "Agr"), ale wartość jednoznaczna.
+  Warto to zweryfikować z Michałem, ale z dużą pewnością.
 - **`purchaseLastPrice`** = NULL — legalnie puste dla tego produktu, nie
   potwierdza ani nie zaprzecza teorii, że to alias/duplikat
   `CPurchasePrice` (które w ogóle jest w innej tabeli, `csItemsUnits`, nie
