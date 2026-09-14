@@ -1,0 +1,15 @@
+{
+  "name": "savpol-produkty-automatyzacja",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Playwright: logowanie do ERP + scraping karty produktu (csItemsOneBro) przez podsłuch odpowiedzi API. Analogicznie do automatyzacje/wz.",
+  "type": "commonjs",
+  "scripts": {
+    "scrape": "node scrape.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mssql": "^11.0.1",
+    "playwright": "^1.47.0"
+  }
+}

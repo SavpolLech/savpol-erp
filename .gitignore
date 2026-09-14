@@ -19,6 +19,10 @@ automatyzacje/**/node_modules/
 automatyzacje/**/results.json
 automatyzacje/**/results-*.csv
 
+# Wyniki scrapera produktów (dane handlowe z ERP: opisy, ceny) — lokalnie,
+# nie do repo. Cały katalog wynik/ (CSV + JSON pełnego rekordu produktu).
+automatyzacje/**/wynik/
+
 # Wygenerowany artefakt (generate-test-tables.js odtwarza go z bazy) — nie
 # ma sensu wersjonować, łatwo się rozjedzie z prawdziwym schematem
 automatyzacje/**/schema-test-tables.json
