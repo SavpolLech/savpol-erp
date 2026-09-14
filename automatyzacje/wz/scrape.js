@@ -46,7 +46,7 @@ const HEADLESS = process.env.HEADLESS === 'true'; // domyślnie WIDOCZNA przegl�
 const ERP_BASE_URL = process.env.ERP_BASE_URL || 'https://erp.savpol.pl/';
 const WZ_LIST_URL = process.env.WZ_LIST_URL ||
   'https://erp.savpol.pl/pl/wydania-zewnetrzne/csdocsheaders4goodsissue';
-const MAX_DOCS = parseInt(process.env.MAX_DOCS || '5', 10); // tak samo ostrożnie jak w userscripcie na start
+const MAX_DOCS = parseInt(process.env.MAX_DOCS || '900', 10); // limit normalny (~832 dok./dzień) — próbka zatwierdzona przez koordynatora 2026-09-14
 
 // Długość sesji jest LOSOWANA w tym przedziale przy każdym uruchomieniu —
 // stała wartość (poprzednio sztywne 25 min) jest sama w sobie sygnałem
