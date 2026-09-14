@@ -4,6 +4,45 @@ Robocza notatka z sesji diagnostycznej (2026-09-11), produkt testowy: `0000031`
 (Aromat cytrynowy - HOFFMANN 900g). Podstawa: `automatyzacje/produkty/info/kolumny.txt`
 (141 kolumn tabeli `csItems`).
 
+## csItemsUnits + csItemsBarCodes: jednostki i kody EAN (2026-09-14)
+
+Michał poprosił o dodatkowe dane spoza `csItems`: jednostki przypisane do
+produktu (`csItemsUnits`) i kody EAN przypisane do jednostek
+(`csItemsBarCodes`) — dosłał przykładowy zrzut dla SKU `0025321`
+(`0025321_jednostki.xlsx`, dwa arkusze: „Jednostki" i „EAN").
+
+**Wynik dopasowania — lepszy niż przy `csItems`:** obie listy kolumn od
+Michała pasują **100% 1:1** po nazwie do pól zwracanych przez API — 68/68
+dla `csItemsUnits`, 9/9 dla `csItemsBarCodes`. Zero niedopasowanych.
+
+**Mechanizm zbierania (namierzony i wdrożony w `scrape.js`):**
+- Jednostki: kliknięcie zakładki „Jednostki" na karcie wywołuje trzecie
+  zapytanie API (`DataSetSQLIdent: csitemsunits4item`, ~88 pól, jeden
+  wiersz per jednostka — dla `0025321` 3 wiersze: kg/wiadro/paleta).
+- Kody kreskowe: **osobne, CZWARTE zapytanie PER JEDNOSTKA**
+  (`DataSetSQLIdent: csitemsbarcodes`) — wysyłane dopiero po zaznaczeniu
+  konkretnego wiersza w siatce jednostek. **Ważne:** siatka (Kendo) w
+  ogóle nie reaguje na DOM-owe `.click()` — potrzebny prawdziwy klik myszy
+  Playwrighta (`page.mouse.click(x, y)`) w realnych współrzędnych wiersza,
+  inaczej zaznaczenie się nie zmienia i zapytanie nie leci. Dodatkowo
+  wiersz domyślnie zaznaczony przy otwarciu zakładki nie wysyła nowego
+  zapytania na własny klik (brak zdarzenia zmiany) — scraper najpierw
+  klika ostatni wiersz jako "primer", dopiero potem po kolei od 0.
+- Sprawdzone na `0025321`: 3 jednostki + 1 kod EAN (na jednostce „wiadro",
+  `csUnitsId=218532283`) — **pełna zgodność z przykładem od Michała**,
+  łącznie z `csItemsUnitsId`/`csItemsBarCodesId`/wartościami.
+
+**Zapis do `worek`:** nowy skrypt `wgraj-jednostki-do-worek.js` tworzy
+`dbo.csItemsUnits_test` i `dbo.csItemsBarCodes_test` (typy kolumn 1:1 z
+realnymi tabelami) i wstawia dane z `wynik/results-produkt_*.json`
+(pola `jednostki`/`kodyKreskowe`).
+
+**Do zrobienia:** funkcja została dodana do `scrape.js` już PO
+zescrapowaniu pierwszych ~111 produktów — te starsze pliki JSON nie mają
+jeszcze `jednostki`/`kodyKreskowe` (tylko dane karty). Trzeba je
+doscrapować ponownie, jeśli mają też trafić do `csItemsUnits_test`/
+`csItemsBarCodes_test`.
+
 ## csPhotos: potwierdzone 1:1 na produkcie wielo-zdjęciowym (2026-09-14)
 
 Michał dosłał kolejny plik diagnostyczny — tym razem zrzut z **realnej
