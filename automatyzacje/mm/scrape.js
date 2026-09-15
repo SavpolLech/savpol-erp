@@ -86,6 +86,14 @@ const FILTER_DATE_TO = resolveDateKeyword(process.env.FILTER_DATE_TO || process.
 const USE_DOC_TYPE_FILTER = process.env.USE_DOC_TYPE_FILTER === 'true';
 const MM_DOC_TYPE_FILTER_LABEL = process.env.MM_DOC_TYPE_FILTER_LABEL || 'MM';
 
+// Lista przesunięć miesza podtypy — potwierdzone na żywym ERP (2026-09-15):
+//   269000798 = "Przesunięcie magazynowe"        <- NASZE
+//   410690539 = "Usunięcie blokady produktu"     <- odrzucamy
+// Typ NIE jest pogrubiony w kolumnie DocNumber (jak przy WZ), więc filtrujemy
+// po wartości csDocsTypesId (stabilne id, nie zlokalizowana nazwa). Wartość w
+// gridzie ma spacje jako separatory tysięcy ("269 000 798") — normalizujemy.
+const MM_DOC_TYPE_ID = (process.env.MM_DOC_TYPE_ID || '269000798').replace(/\s/g, '');
+
 // Godziny "pracy" — poza tym oknem (i w weekendy) skrypt się NIE uruchamia.
 const BUSINESS_HOURS_START = parseInt(process.env.BUSINESS_HOURS_START || '7', 10);
 const BUSINESS_HOURS_END = parseInt(process.env.BUSINESS_HOURS_END || '17', 10);
@@ -148,9 +156,10 @@ async function login(page) {
 // metadanymi ze schematu bazy.
 
 async function scrapeMmInPage(opts) {
-  const { maxDocs, headerFields, headerFieldsFromPositions, positionFields, maxSessionMs, alreadyProcessed, docTypes } = opts;
+  const { maxDocs, headerFields, headerFieldsFromPositions, positionFields, maxSessionMs, alreadyProcessed, docTypeId } = opts;
 
-  const DOC_TYPES = docTypes && docTypes.length ? docTypes : ['MM'];
+  const DOC_TYPE_ID = docTypeId; // csDocsTypesId dokumentów, które bierzemy (MM)
+  const normId = s => (s || '').replace(/\s/g, '');
   const MAX_PAGES = 100;
   const MAX_CONSECUTIVE_FAILURES = 3;
 
@@ -194,22 +203,16 @@ async function scrapeMmInPage(opts) {
     const c = row.querySelector('td[data-datafield="' + field + '"]');
     return c ? (c.getAttribute('title') || '') : '';
   }
-  function cellBold(row, field) {
-    const c = row.querySelector('td[data-datafield="' + field + '"]');
-    if (!c) return [];
-    return Array.from(c.querySelectorAll('.cs-style-text-bold')).map(b => (b.textContent || '').trim());
-  }
   function listRows() {
     const grid = getVisibleListGrid();
     if (!grid) return [];
     return Array.from(grid.querySelectorAll('tr.cs-grid-data-row'));
   }
-  function rowDocType(row) {
-    const bold = cellBold(row, 'DocNumber');
-    return bold.length ? bold[0] : null;
-  }
+  // MM: typ dokumentu bierzemy z kolumny csDocsTypesId (NIE z pogrubionego
+  // prefiksu DocNumber — w MM go nie ma). Porównujemy po znormalizowanym id.
+  function rowDocTypeId(row) { return normId(cellTitle(row, 'csDocsTypesId')); }
   function rowDocNumber(row) { return cellTitle(row, 'DocNumber') || null; }
-  function targetRows() { return listRows().filter(r => DOC_TYPES.includes(rowDocType(r))); }
+  function targetRows() { return listRows().filter(r => rowDocTypeId(r) === DOC_TYPE_ID); }
 
   // Rekord nagłówka: surowe stringi pod dokładnie te nazwy pól z Node.
   function extractHeaderRaw(row) {
@@ -225,9 +228,13 @@ async function scrapeMmInPage(opts) {
     const grid = getVisiblePositionsGrid();
     if (!grid) return [];
     return Array.from(grid.querySelectorAll('tr.cs-grid-data-row')).map(row => {
-      const descCell = row.querySelector('td[data-datafield="ItemDesc"]');
-      const skuEl = descCell ? descCell.querySelector('.cs-style-text-bold') : null;
-      if (!skuEl || !(skuEl.textContent || '').trim()) return null;
+      // Filtr "czy to realny wiersz pozycji". W MM ItemDesc NIE ma pogrubienia
+      // (inaczej niż WZ) — nazwa/SKU to zwykły tekst w atrybucie title. Realny
+      // wiersz rozpoznajemy po niepustym ItemDesc + niepustym csItemsId
+      // (technicznych/pustych wierszy siatki tak nie ma).
+      const itemDesc = cellTitle(row, 'ItemDesc');
+      const itemId = cellTitle(row, 'csItemsId');
+      if (!itemDesc.trim() || !itemId.trim()) return null;
 
       const rec = {};
       positionFields.forEach(f => { rec[f] = cellTitle(row, f); });
@@ -680,7 +687,7 @@ async function main() {
         positionFields: F.POSITION_FIELDS,
         maxSessionMs: remainingMs,
         alreadyProcessed: Array.from(processedThisRun),
-        docTypes: [MM_DOC_TYPE_FILTER_LABEL]
+        docTypeId: MM_DOC_TYPE_ID
       });
 
       applyFixedValues(batch);

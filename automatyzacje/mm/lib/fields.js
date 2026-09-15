@@ -9,32 +9,30 @@
 // csWarehousesId (magazyn początkowy) i csWarehousesIdDel (magazyn docelowy).
 // Pełne uzasadnienie które pole skąd bierzemy — patrz automatyzacje/mm/mapowanie-pol.md.
 
-// Pola nagłówka dostępne WPROST w gridzie listy (data-datafield o tej samej
-// nazwie). Identyczne jak dla WZ — csWarehousesId (magazyn początkowy) jest
-// tutaj kluczowe dla MM i jest w gridzie nagłówka listy WZ, więc zakładamy to
-// samo dla listy przesunięć (DO POTWIERDZENIA sondą sonda-lista-kolumn.js na
-// widoku MM — patrz mapowanie-pol.md).
+// Pola nagłówka dostępne WPROST w gridzie listy MM (data-datafield o tej samej
+// nazwie). POTWIERDZONE na żywym ERP (2026-09-15, zalogowana sesja, wszystkie
+// kolumny włączone): wszystkie 30 pól niżej renderują się w wierszu listy z
+// poprawnymi wartościami per dokument — w tym para magazynów csWarehousesId
+// (początkowy) i csWarehousesIdDel (docelowy), różna dla każdego przesunięcia.
+//
+// RÓŻNICA WZGLĘDEM WZ: 7 pól, które przy WZ trzeba było brać z pierwszej
+// pozycji (ExchangeRate, csCurrenciesId, S01Amount, S02Amount, DocWeight,
+// DocGrossWeight, csWarehousesIdDel), w gridzie listy MM są WPROST — więc
+// bierzemy je z nagłówka i nie zależymy od tego, czy dokument ma pozycje.
 const HEADER_FIELDS = [
   'csDocsHeadersId', 'csDocsHeadersG', 'csCompaniesId', 'csDocsTypesId', 'DocNo',
   'DocNumber', 'DocNumberExt', 'CGAmount', 'CNAmount', 'CTAmount', 'FGAmount',
   'FNAmount', 'FTAmount', 'DocDate', 'DocDateExt', 'csCustomersId', 'PaymentDate',
-  'DocSaleDate', 'DocVATDate', 'Stock', 'csWarehousesId', 'FStock', 'DocNumberExtAdd2'
+  'DocSaleDate', 'DocVATDate', 'Stock', 'csWarehousesId', 'FStock', 'DocNumberExtAdd2',
+  // 7 pól, które w gridzie listy MM są wprost (przy WZ były brane z pozycji):
+  'ExchangeRate', 'csCurrenciesId', 'S01Amount', 'S02Amount', 'DocWeight',
+  'DocGrossWeight', 'csWarehousesIdDel'
 ];
 
-// Nie ma własnej kolumny w gridzie nagłówka, ale JEST w gridzie pozycji —
-// dorzucamy do rekordu nagłówka, biorąc wartość z PIERWSZEJ pozycji dokumentu
-// (to samo dla całego dokumentu, więc jedna pozycja wystarcza).
-//
-// RÓŻNICA WZGLĘDEM WZ: dochodzi csWarehousesIdDel (magazyn DOCELOWY) — dla MM
-// pole krytyczne (Michał). W gridzie pozycji karty WZ csWarehousesIdDel już
-// jest (patrz POSITION_FIELDS), więc bezpiecznie bierzemy je z pierwszej
-// pozycji. Jeśli sonda pokaże, że MM ma csWarehousesIdDel WPROST w gridzie
-// nagłówka listy, można je przenieść do HEADER_FIELDS (wtedy nie zależy od
-// tego, czy dokument ma pozycje) — patrz mapowanie-pol.md.
-const HEADER_FIELDS_FROM_FIRST_POSITION = [
-  'ExchangeRate', 'csCurrenciesId', 'S01Amount', 'S02Amount', 'DocWeight', 'DocGrossWeight',
-  'csWarehousesIdDel'
-];
+// Dla MM PUSTE — wszystkie pola nagłówka są w gridzie listy (patrz wyżej).
+// Zostawione jako stały punkt zaczepienia w architekturze wspólnej z WZ:
+// scrape.js iteruje po tej liście i dla MM po prostu nic nie dokłada z pozycji.
+const HEADER_FIELDS_FROM_FIRST_POSITION = [];
 
 // Pola pozycji — IDENTYCZNE jak dla WZ (Michał: ten sam zestaw danych).
 // Część wymaga włączenia w panelu kolumn ERP przed scrapowaniem — patrz
