@@ -7,7 +7,10 @@
 //
 // Uruchomienie: node generate-test-tables.js
 
+// .env: lokalny wz/.env (jeśli jest) ma pierwszeństwo, wspólny automatyzacje/.env
+// uzupełnia brak — jedno źródło danych DB/ERP dla wszystkich automatyzacji.
 require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const sql = require('mssql');
 const fs = require('fs');
 const path = require('path');

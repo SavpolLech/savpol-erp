@@ -12,15 +12,15 @@ Kod MM jest w **tym samym repozytorium** (folder `C:\savpol-automatyzacje`),
 więc **nie klonujesz niczego drugi raz** i **nie instalujesz Node/Git jeszcze
 raz**. Robisz tylko dwie rzeczy:
 
-1. **Wypełnij `.env` dla MM.** Skopiuj wartości z pliku WZ — baza i konto ERP
-   są te same:
+1. **Nie musisz nic wpisywać, jeśli działa już wspólny `.env`.** Dane logowania
+   (baza + ERP) są w JEDNYM pliku `C:\savpol-automatyzacje\automatyzacje\.env`,
+   z którego korzystają wszystkie automatyzacje (WZ, MM, produkty). Jeśli WZ już
+   działa, ten plik jest wypełniony — MM go po prostu użyje, nic nie kopiujesz.
 
-   ```
-   copy C:\savpol-automatyzacje\automatyzacje\wz\.env C:\savpol-automatyzacje\automatyzacje\mm\.env
-   ```
-
-   (jeśli `automatyzacje\mm\.env` jeszcze nie istnieje — `pierwsza-instalacja.bat`
-   z folderu `mm` tworzy pusty szablon z `.env.example`; nadpisz go kopią z WZ).
+   (Gdyby wspólnego pliku jeszcze nie było, utwórz go raz:
+   `copy C:\savpol-automatyzacje\automatyzacje\.env.example C:\savpol-automatyzacje\automatyzacje\.env`
+   i wpisz dane od Lecha. Osobny `automatyzacje\mm\.env` twórz TYLKO, gdy MM ma
+   mieć inne dane niż reszta.)
 
 2. **Zarejestruj OSOBNE zadanie** w Harmonogramie Zadań — tak samo jak dla WZ,
    ale:

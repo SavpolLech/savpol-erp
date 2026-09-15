@@ -25,7 +25,7 @@ function req(name) {
 const { chromium } = req('playwright');
 const dotenv = req('dotenv');
 const localEnv = path.join(__dirname, '.env');
-dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, '..', 'wz', '.env') });
+dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, '..', '.env') });
 
 const { login, CATALOG_URL, HEADLESS, decodeJsonResult, extractCardRecord, scrapeOneProduct } = require('./scrape');
 const { loadState, saveState, appendRunLog } = require('./lib/state');

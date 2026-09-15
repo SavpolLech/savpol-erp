@@ -16,7 +16,10 @@
 //                node generate-test-tables.js         (raz, po ustaleniu DB_NAME)
 //                npm run scrape
 
+// .env: lokalny (jeśli jest) ma pierwszeństwo, wspólny automatyzacje/.env
+// uzupełnia brak — jedno źródło danych DB/ERP dla wszystkich automatyzacji.
 require('dotenv').config();
+require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');

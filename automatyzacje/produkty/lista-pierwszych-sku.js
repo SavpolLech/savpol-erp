@@ -13,7 +13,7 @@ const { chromium } = req('playwright');
 const dotenv = req('dotenv');
 const fs = require('fs');
 const localEnv = path.join(__dirname, '.env');
-dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, '..', 'wz', '.env') });
+dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, '..', '.env') });
 
 const ERP_BASE_URL = process.env.ERP_BASE_URL || 'https://erp.savpol.pl/';
 const CATALOG_URL = process.env.CATALOG_URL || 'https://erp.savpol.pl/pl/katalog/csitems/';

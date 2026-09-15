@@ -21,7 +21,7 @@ function req(name) {
 const sql = req('mssql');
 const dotenv = req('dotenv');
 const localEnv = path.join(__dirname, '.env');
-dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, '..', 'wz', '.env') });
+dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, '..', '.env') });
 
 const { fetchColumnsMeta, buildCreateTableSQL, mssqlType, coerceValue } =
   require(path.join(__dirname, '..', 'wz', 'lib', 'schema'));

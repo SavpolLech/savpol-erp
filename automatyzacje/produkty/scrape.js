@@ -30,10 +30,11 @@ function req(name) {
 const { chromium } = req('playwright');
 const dotenv = req('dotenv');
 
-// .env: najpierw lokalny (produkty/.env), a jak go nie ma — współdzielony z
-// wz/.env (te same dane logowania do ERP). Oba są w .gitignore.
+// .env: najpierw lokalny (produkty/.env), a jak go nie ma — WSPÓLNY
+// automatyzacje/.env (jedno źródło danych DB/ERP dla wszystkich automatyzacji).
+// Oba są w .gitignore.
 const localEnv = path.join(__dirname, '.env');
-dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, '..', 'wz', '.env') });
+dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, '..', '.env') });
 
 const { decodeJsonResult, extractCardRecord } = require('./lib/decode');
 const F = require('./lib/fields');
@@ -63,7 +64,7 @@ async function login(page) {
   const pass = process.env.ERP_PASSWORD;
   if (!user || !pass) {
     throw new Error('Brak ERP_LOGIN / ERP_PASSWORD — uzupełnij automatyzacje/produkty/.env ' +
-      '(albo automatyzacje/wz/.env, z którego ten skrypt korzysta zapasowo).');
+      '(albo wspólny automatyzacje/.env, z którego ten skrypt korzysta zapasowo).');
   }
 
   await page.waitForSelector(LOGIN_SELECTORS.username, { timeout: 15000 });
