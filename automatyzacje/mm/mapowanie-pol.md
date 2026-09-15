@@ -38,16 +38,31 @@ nazwy i żadnego nie brakuje**. Trzy różnice dotyczą LOGIKI DOM, nie nazw pó
    są w `HEADER_FIELDS` (30 pól), a `HEADER_FIELDS_FROM_FIRST_POSITION` jest
    PUSTE — nagłówek nie zależy już od tego, czy dokument ma pozycje.
 
-## Nagłówek (dbo.csDocsHeaders) — 30 pól scrapowanych z gridu listy
+## Nagłówek (dbo.csDocsHeaders) — 40 pól scrapowanych z gridu listy
 
-`HEADER_FIELDS` (30): 23 pola jak WZ + 7 z punktu 3 wyżej. Wszystkie POTWIERDZONE
-jako obecne i wypełnione w gridzie listy MM.
+`HEADER_FIELDS` (40): 23 pola jak WZ + 7 z punktu 3 wyżej + 10 pól, które przy
+WZ były „niedostępne", a w BOGATSZYM gridzie listy MM (337 kolumn) SĄ dostępne.
 
-**17 pól „niedostępnych przez klikanie"** — ta sama lista co przy WZ (patrz
-`automatyzacje/wz/mapowanie-pol.md`, sekcja „❌ Niedostępne"): te same dwa gridy,
-więc te same braki. Decyzja jak przy WZ: mogą zostać NULL / część odzyskiwalna
-z `priceInfo` (XML) po stronie SQL. **Do potwierdzenia przez Michała, czy dla MM
-któreś z nich są krytyczne** — to jedyna otwarta kwestia biznesowa (nie techniczna).
+**Aktualizacja 2026-09-15 — 10 z 17 „niedostępnych" pól WZ jest dostępnych w MM.**
+Sprawdzone w panelu wyboru kolumn na żywej liście MM (337 pól dostępnych vs 163
+przy WZ). Z 17 pól WZ „niedostępnych przez UI":
+- **6 już rozwiązanych przez wartości stałe** (xlsx Michała): `Cor`, `anaKind`,
+  `anaUse`, `IsOffInvoice` = stałe; `ShipmentType` = NULL (decyzja);
+  `TermsFromPayer` = odzyskiwalne z XML `priceInfo`.
+- **10 DOSTĘPNYCH w gridzie listy MM** (były tylko wyłączone) → dodane do
+  `HEADER_FIELDS`, scrapujemy realne wartości: `PaymentDay`, `csPaymentsTypesId`,
+  `csPeriodsId`, `csDocsHeadersStatusId`, `csVATPeriodsId`, `csEmployeesId`,
+  `csB2BPortalsId`, `csB2BPortalsDeliveryMethodsId`, `csPayersId`, `anaDocDate`.
+  Część może być pusta dla przesunięć wewnętrznych (płatności/B2B) — zejdą jako
+  NULL, to poprawne; próbka pokaże, które są wypełnione.
+- **1 NIEDOSTĘPNE w MM**: `DocRecipientDate` (brak kolumny i wariantu w gridzie
+  listy) → zostaje NULL. To jedyne technicznie nieosiągalne pole nagłówka MM.
+
+⚠️ **Krok w ERP wymagany przed scrapowaniem tych 10:** włącz je w panelu kolumn
+listy (`diagnostyka/zostaw-tylko-potrzebne-kolumny.js` → `savpolZostawKolumny(KEEP_LISTA)`,
+już zaktualizowane do 40), a następnie **ZAPISZ nowy układ listy i ustaw go jako
+DOMYŚLNY** — inaczej ERP nie zapamięta włączonych kolumn i po odświeżeniu
+scraper ich nie zobaczy.
 
 ## Pozycje (dbo.csDocsItemsPositions) — 56 pól, wszystkie obecne
 
@@ -66,9 +81,10 @@ nagłówka (reguła w `scrape.js`).
 ## Redukcja kolumn w ERP
 
 Po zdjęciu mapy odchudź gridy do minimum, którego skrypt używa
-(`diagnostyka/zostaw-tylko-potrzebne-kolumny.js`): lista → `KEEP_LISTA` (30),
+(`diagnostyka/zostaw-tylko-potrzebne-kolumny.js`): lista → `KEEP_LISTA` (40),
 karta pozycji → `KEEP_POZYCJE` (57, z `ItemDesc`). 300+ kolumn/wiersz
-niepotrzebnie spowalnia renderowanie.
+niepotrzebnie spowalnia renderowanie. Pamiętaj zapisać układ listy jako
+DOMYŚLNY (patrz wyżej).
 
 ## Następny krok
 
@@ -76,4 +92,9 @@ niepotrzebnie spowalnia renderowanie.
    `_test` w worek).
 2. Próbka `MAX_DOCS=5`, jeden dzień → weryfikacja przez koordynatora ZANIM
    podniesiemy limit do ~900 (jak przy WZ).
-3. (Biznesowe) potwierdzić z Michałem los 17 pól nagłówka niedostępnych przez UI.
+3. W ERP: włączyć 10 nowych pól nagłówka na liście MM i zapisać układ jako
+   DOMYŚLNY (patrz sekcja Nagłówek). Bez tego te 10 kolumn nie renderuje się w
+   wierszach i scraper zapisze je jako NULL.
+4. (Biznesowe, drobne) `DocRecipientDate` jest jedynym polem nagłówka
+   nieosiągalnym przez UI dla MM — potwierdzić z Michałem, czy to problem
+   (dla przesunięcia wewnętrznego raczej nieistotne).

@@ -26,7 +26,15 @@ const HEADER_FIELDS = [
   'DocSaleDate', 'DocVATDate', 'Stock', 'csWarehousesId', 'FStock', 'DocNumberExtAdd2',
   // 7 pól, które w gridzie listy MM są wprost (przy WZ były brane z pozycji):
   'ExchangeRate', 'csCurrenciesId', 'S01Amount', 'S02Amount', 'DocWeight',
-  'DocGrossWeight', 'csWarehousesIdDel'
+  'DocGrossWeight', 'csWarehousesIdDel',
+  // 10 pól, które przy WZ były "niedostępne przez UI", ale w BOGATSZYM gridzie
+  // listy MM (337 kolumn) SĄ dostępne — potwierdzone w panelu kolumn 2026-09-15.
+  // Trzeba je włączyć w ERP i zapisać jako domyślny układ listy (patrz
+  // mapowanie-pol.md). Część może być pusta dla przesunięć wewnętrznych
+  // (płatności/B2B) — wtedy zejdą jako NULL, to poprawne.
+  'PaymentDay', 'csPaymentsTypesId', 'csPeriodsId', 'csDocsHeadersStatusId',
+  'csVATPeriodsId', 'csEmployeesId', 'csB2BPortalsId', 'csB2BPortalsDeliveryMethodsId',
+  'csPayersId', 'anaDocDate'
 ];
 
 // Dla MM PUSTE — wszystkie pola nagłówka są w gridzie listy (patrz wyżej).

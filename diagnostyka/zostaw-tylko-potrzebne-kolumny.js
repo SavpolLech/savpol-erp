@@ -24,10 +24,14 @@
   const WERSJA = '2026-09-15.1';
 
   // Zsynchronizowane z automatyzacje/mm/lib/fields.js (2026-09-15, po
-  // weryfikacji na żywym ERP). KEEP_LISTA = HEADER_FIELDS (30, w tym
-  // csDocsTypesId potrzebny do filtra typu, csWarehousesId/IdDel oraz 6 pól
-  // dawniej branych z pozycji). KEEP_POZYCJE = POSITION_FIELDS + ItemDesc.
-  window.KEEP_LISTA = ["csDocsHeadersId","csDocsHeadersG","csCompaniesId","csDocsTypesId","DocNo","DocNumber","DocNumberExt","CGAmount","CNAmount","CTAmount","FGAmount","FNAmount","FTAmount","DocDate","DocDateExt","csCustomersId","PaymentDate","DocSaleDate","DocVATDate","Stock","csWarehousesId","FStock","DocNumberExtAdd2","ExchangeRate","csCurrenciesId","S01Amount","S02Amount","DocWeight","DocGrossWeight","csWarehousesIdDel"];
+  // weryfikacji na żywym ERP). KEEP_LISTA = HEADER_FIELDS (40): 30 podstawowych
+  // + 10 pól dawniej "niedostępnych", które w bogatszym gridzie listy MM są
+  // dostępne (PaymentDay, csPaymentsTypesId, csPeriodsId, csDocsHeadersStatusId,
+  // csVATPeriodsId, csEmployeesId, csB2BPortalsId, csB2BPortalsDeliveryMethodsId,
+  // csPayersId, anaDocDate). KEEP_POZYCJE = POSITION_FIELDS + ItemDesc.
+  // UWAGA: po zaznaczeniu zapisz nowy układ listy i ustaw jako DOMYŚLNY —
+  // inaczej ERP nie zapamięta włączonych kolumn.
+  window.KEEP_LISTA = ["csDocsHeadersId","csDocsHeadersG","csCompaniesId","csDocsTypesId","DocNo","DocNumber","DocNumberExt","CGAmount","CNAmount","CTAmount","FGAmount","FNAmount","FTAmount","DocDate","DocDateExt","csCustomersId","PaymentDate","DocSaleDate","DocVATDate","Stock","csWarehousesId","FStock","DocNumberExtAdd2","ExchangeRate","csCurrenciesId","S01Amount","S02Amount","DocWeight","DocGrossWeight","csWarehousesIdDel","PaymentDay","csPaymentsTypesId","csPeriodsId","csDocsHeadersStatusId","csVATPeriodsId","csEmployeesId","csB2BPortalsId","csB2BPortalsDeliveryMethodsId","csPayersId","anaDocDate"];
   window.KEEP_POZYCJE = ["ItemDesc","csCompaniesId","csDocsHeadersId","csDocsItemsPositionsId","csDocsItemsPositionsG","Id","csItemsId","csItemsUnitsId","csVATRatesId","QuantityUnits","Quantity","Discount","CUnitPrice","CUnitNetPrice","FUnitNetPrice","CUnitGrossPrice","FUnitGrossPrice","CNetPrice","FNetPrice","CGrossPrice","FGrossPrice","CGAmount","CNAmount","CTAmount","FGAmount","FNAmount","FTAmount","csCurrenciesId","PositionDesc","Rate","FStock","QStock","dCGAmount","dCNAmount","dCTAmount","dFGAmount","dFNAmount","dFTAmount","dQuantity","PStock","csWarehousesId","csWarehousesIdDel","S01Amount","S01Quantity","S02Amount","S02Quantity","CUnitListPrice","CUnitListPriceLimit","CUnitListPriceMin","DocPackageWeight","DocWeight","QuantityPallets","DocGrossWeight","priceInfo","CUnitPriceSuggested","CUnitPriceSuggestedSalesAgr","paramsJSON"];
 
   console.log('[zostaw-kolumny] wersja ' + WERSJA + '. Gotowe listy: KEEP_LISTA (' +
