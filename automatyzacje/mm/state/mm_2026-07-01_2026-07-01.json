@@ -1,0 +1,21 @@
+{
+  "dateFrom": "2026-07-01",
+  "dateTo": "2026-07-01",
+  "processedDocNumbers": [
+    "2026/MM/GUS1/000589",
+    "2026/MM/WAS1/000941",
+    "2026/MM/KRS1/004849",
+    "2026/MM/GUS1/000591",
+    "2026/MM/RAS1/000181"
+  ],
+  "complete": false,
+  "lastUpdated": "2026-09-15T07:34:42.864Z",
+  "runs": [
+    {
+      "ts": "2026-09-15T07:34:42.863Z",
+      "paczkaDok": 5,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    }
+  ]
+}
