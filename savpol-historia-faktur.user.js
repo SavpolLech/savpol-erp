@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.20.1
+// @version      3.21.0
 // @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3142,12 +3142,13 @@
         return;
       }
       const d = czekanie.dane;
-      const zle = opisyDlaNas(d, sku);
-      if (zle) {
-        console.warn('[Opisy] Nie przyjmuję tych opisów: ' + zle);
-        if (ui) ui.detail('Dostałem opisy, ale ich nie przyjmuję: ' + zle);
+      const ocena = opisyDlaNas(d, sku);
+      if (ocena.blad) {
+        console.warn('[Opisy] Nie przyjmuję tych opisów: ' + ocena.blad);
+        if (ui) ui.detail('Dostałem opisy, ale ich nie przyjmuję: ' + ocena.blad);
         return;
       }
+      if (ocena.ostrzezenie) console.warn('[Opisy] ' + ocena.ostrzezenie);
 
       // Sygnał, że jest na co spojrzeć. Zakładka bywa w tle, a panel wtedy
       // nikomu nie mignie przed oczami.
@@ -3170,7 +3171,9 @@
         techniczne: d.short || '',
         seoTytul: d.metaTitle || '',
         seoOpis: d.metaDescription || '',
-        infoTytul: 'Opisy gotowe — sprawdź i zatwierdź',
+        infoTytul: ocena.ostrzezenie
+          ? 'Opisy gotowe — ale uwaga'
+          : 'Opisy gotowe — sprawdź i zatwierdź',
         info: 'Wygenerowane ' + (d.wygenerowano || '?') + '.' + '\n' + '\n'
           + '• Nazwa produktu: ' + ile(d.h1) + '\n'
           + '• Opis produktu: ' + ile(d.long) + '\n'
@@ -3178,6 +3181,7 @@
           + '• Meta tytuł: ' + ile(d.metaTitle) + '\n'
           + '• Meta opis: ' + ile(d.metaDescription) + '\n' + '\n'
           + 'Nic jeszcze nie zapisałem.'
+          + (ocena.ostrzezenie ? '\n\n' + ocena.ostrzezenie : '')
       });
       // Okienko przebiegu zrobiło swoje, a od tej chwili tylko zasłania —
       // siedzi w prawym dolnym rogu, dokładnie tam, gdzie ERP trzyma „Zapisz".
@@ -3237,7 +3241,17 @@
   const POBIERANIE = {
     ENDPOINT: '/api/opis',
     CO_ILE_MS: 15000,
-    NAJDLUZEJ_MS: 10 * 60 * 1000
+    // 45 minut, nie 10.
+    //
+    // Dziesięć wystarczało, dopóki ktoś robił jeden produkt naraz. Realnie
+    // pracuje się w trzech oknach jednocześnie: odpalasz trzy przebiegi, potem
+    // obsługujesz apkę produkt po produkcie — i zanim wrócisz do pierwszego,
+    // jego nasłuch dawno się poddał. Objaw wyglądał jak „przechwytywanie nie
+    // działa", a to był po prostu zegar.
+    //
+    // Koszt dłuższego czekania jest mały: jedno zapytanie na 15 s, 404 jest
+    // normalną odpowiedzią, a limit API GitHuba po stronie apki ma zapas.
+    NAJDLUZEJ_MS: 45 * 60 * 1000
   };
 
   async function czekajNaOpisy(sku, przyPostepie) {
@@ -3260,15 +3274,29 @@
 
   // Sprawdzenia, zanim cokolwiek pokażemy człowiekowi jako gotowe.
   function opisyDlaNas(dane, sku) {
+    // TWARDY warunek jest jeden: zgodność produktu. Tylko on chroni przed
+    // zapisaniem opisu A do produktu B, czyli przed jedyną szkodą, której nie
+    // da się zauważyć gołym okiem.
     if (String(dane.sku || '') !== String(sku)) {
-      return 'apka oddała opisy produktu ' + dane.sku + ', a pracuję nad ' + sku;
+      return { blad: 'apka oddała opisy produktu ' + dane.sku + ', a pracuję nad ' + sku };
     }
-    // `przebieg` bywa nieobecny (apka wdrożyła kontrakt przed tym polem).
-    // Gdy jest — musi się zgadzać; gdy go nie ma, ufamy SKU i świeżości.
+
+    // Niezgodny `przebieg` to OSTRZEŻENIE, nie odmowa.
+    //
+    // Dotąd odrzucał wynik i to była nadgorliwość, która zabolała dopiero przy
+    // pracy w trzech oknach naraz: wystarczy, że apka zapamięta identyfikator
+    // z innego zgłoszenia, a dwa z trzech okien po cichu wyrzucały gotowe
+    // opisy. Objaw wyglądał jak „przechwytywanie nie działa".
+    //
+    // Sam w sobie niezgodny przebieg niczym nie grozi: treść i tak dotyczy
+    // TEGO produktu, bo numer się zgadza, a zapis i tak wymaga zatwierdzenia
+    // przez człowieka. Jedyne, co tu naprawdę może być nie tak, to że wynik
+    // pochodzi ze starszego zgłoszenia — i o tym wystarczy powiedzieć.
     if (dane.przebieg && String(dane.przebieg) !== PRZEBIEG_ID) {
-      return 'te opisy zamówiła inna zakładka przeglądarki';
+      return { ostrzezenie: 'Te opisy zamówiło inne okno przeglądarki. '
+        + 'Numer produktu się zgadza, ale sprawdź datę wygenerowania.' };
     }
-    return null;
+    return {};
   }
 
   // ---------- Migawka stanu ERP z chwili generowania ----------
@@ -6282,6 +6310,8 @@
       '           style="' + pole + ';width:110px;flex:0 0 auto">',
       '    <div data-role="ktoTo" style="flex:1;min-width:0;font-size:12px;opacity:.85;',
       '         overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>',
+      '    <button data-role="pobierz" title="Pobierz gotowe opisy z apki dla tego SKU"',
+      '            style="' + guzik + ';background:#3e4c59;color:#f5f7fa;flex:0 0 auto">Pobierz z apki</button>',
       '  </div>',
       '</div>',
 
@@ -6449,6 +6479,7 @@
       pracuje = tak;
       el('zapisz').disabled = tak;
       el('seo').disabled = tak;
+      el('pobierz').disabled = tak;
       el('zapisz').style.opacity = tak ? '.5' : '1';
       el('seo').style.opacity = tak ? '.5' : '1';
       el('zapisz').style.cursor = tak ? 'default' : 'pointer';
@@ -6552,6 +6583,61 @@
       }
     }
 
+    // Ręczne pobranie z apki.
+    //
+    // Automatyczny nasłuch po przebiegu pokrywa zwykłą pracę, ale nie każdą:
+    // wygasa, nie przeżywa odświeżenia strony i nie istnieje, gdy panel
+    // otworzysz sam. Bez tej drogi jedynym wyjściem było przeklejanie ręką —
+    // czyli dokładnie to, co mieliśmy zlikwidować.
+    async function pobierzZApki() {
+      if (pracuje) return;
+      const sku = el('sku').value.trim();
+      if (!sku) { notice('error', 'Podaj numer produktu.'); return; }
+      zajete(true, 'Pytam apkę…');
+      try {
+        const r = await apkaZadanie('GET',
+          POBIERANIE.ENDPOINT + '?sku=' + encodeURIComponent(sku));
+        if (r.status === 404) {
+          notice('info', 'Apka nie ma jeszcze gotowych opisów dla ' + sku + '.', '');
+          return;
+        }
+        if (r.status < 200 || r.status >= 300 || !r.body || !r.body.ok) {
+          notice('error', 'Apka odpowiedziała ' + r.status + '.');
+          return;
+        }
+        const d = r.body;
+        // Zgodność produktu sprawdzamy nadal — to jedyny guard, który chroni
+        // przed zapisaniem opisu A do produktu B. Identyfikatora przebiegu tu
+        // NIE wymagamy: numer wpisał człowiek, więc to on mówi, o co prosi.
+        if (String(d.sku || '') !== String(sku)) {
+          notice('error', 'Apka oddała opisy produktu ' + d.sku + ', a pytam o ' + sku + '.');
+          return;
+        }
+        el('nazwa').value = d.h1 || '';
+        schowaneWartosci.opis = d.long || '';
+        schowaneWartosci.techniczne = d.short || '';
+        if (el('opis')) el('opis').value = schowaneWartosci.opis;
+        if (el('techniczne')) el('techniczne').value = schowaneWartosci.techniczne;
+        el('seoTytul').value = d.metaTitle || '';
+        el('seoOpis').value = d.metaDescription || '';
+        odswiezBlok('opis', 'Opis produktu');
+        odswiezBlok('techniczne', 'Dane techniczne');
+        el('ktoTo').textContent = String(d.h1 || '').trim().slice(0, 90);
+        const ile = t => (t ? String(t).length.toLocaleString('pl-PL') + ' znaków' : 'brak');
+        notice('info', 'Wygenerowane ' + (d.wygenerowano || '?') + '.'
+          + '\n\n• Nazwa produktu: ' + ile(d.h1)
+          + '\n• Opis produktu: ' + ile(d.long)
+          + '\n• Dane techniczne: ' + ile(d.short)
+          + '\n• Meta tytuł: ' + ile(d.metaTitle)
+          + '\n• Meta opis: ' + ile(d.metaDescription)
+          + '\n\nNic jeszcze nie zapisałem.', 'Pobrane z apki');
+      } catch (e) {
+        notice('error', String(e && e.message || e));
+      } finally {
+        zajete(false);
+      }
+    }
+
     async function pokazPoprzednie() {
       if (pracuje) return;
       const sku = el('sku').value.trim();
@@ -6631,6 +6717,7 @@
     el('min').addEventListener('click', () => ustawZwiniecie(!zwiniety));
     el('zapisz').addEventListener('click', () => uruchom());
     el('seo').addEventListener('click', () => wpiszSeoZPanelu());
+    el('pobierz').addEventListener('click', () => pobierzZApki());
     el('kopie').addEventListener('click', () => pokazPoprzednie());
     el('sku').focus();
     return box;
