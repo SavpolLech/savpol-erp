@@ -115,13 +115,58 @@ dokumentów. Do rozważenia po zatwierdzeniu próbki: odchudzić grid do
 `HEADER_FIELDS`/`POSITION_FIELDS` (`diagnostyka/zostaw-tylko-potrzebne-kolumny.js`
 z nowymi listami `KEEP_LISTA_PZ`/`KEEP_POZYCJE_PZ`), jak przy MM.
 
+## Próbka wykonana na żywo (2026-09-18) — dwa błędy znalezione i naprawione
+
+Pierwsze uruchomienie na próbce (`MAX_DOCS=5`, `FILTER_DATE=2026-07-01`)
+kończyło się za każdym razem `docs: 0` mimo że lista miała 178 dokumentów.
+Dwa niezależne błędy, oba naprawione w `scrape.js`:
+
+1. **Nawigacja do listy wyłącznie przez menu.** `page.goto()` bezpośrednio na
+   adres listy PZ (nawet po "rozgrzaniu" SPA inną stroną) zawsze ląduje z
+   powrotem na dashboardzie — grid się nie renderuje. Działa tylko klik przez
+   menu: Logistyka -> "Przychody zewnętrzne" (`navigateToPzList()`). Nieznane,
+   czy to specyfika tej konkretnej podstrony, czy dotyczy też innych — WZ/MM
+   nawigują przez `page.goto()` bez problemu.
+2. **Paginacja wielostronicowa w JEDNYM `page.evaluate()` była niestabilna w
+   tej sesji ERP** (dużo błędów WebSocket/socket.io w tle) — funkcja
+   `scrapePzInPage` potrafiła przejść "wirtualnie" przez wszystkie 9 stron
+   (pageNum rosnący w logu) z zerem zebranych dokumentów, mimo że niezależny
+   skan tych samych stron (osobne, krótkie `page.evaluate()` per strona)
+   niezmiennie znajdował dziesiątki dokumentów PZ od strony 2. Naprawa:
+   `scrapePzInPage` rozbite na `scanCurrentPageForDocs` (działa WYŁĄCZNIE na
+   aktualnie załadowanej stronie) + `advanceToNextPage` (osobne, krótkie
+   wywołanie — tylko klik "dalej"), wołane na przemian z `main()`. Przy okazji
+   naprawiony pomniejszy bug: `rowsChanged` w starym `goToNextPage` porównywał
+   tylko wiersze pasujące do filtra typu (`targetRows()`), nie wszystkie
+   wiersze strony (`listRows()`) — fałszywie widział "brak zmiany" na
+   przejściu między dwiema stronami bez żadnego "PZ".
+3. **Zły selektor przycisku otwierającego dokument.** Prawdziwy błąd, nie
+   related do niestabilności środowiska: `.csButtonAction` wewnątrz komórki
+   `DocNumber` NIE ISTNIEJE w tym widoku — ta komórka to zwykły tekst.
+   Prawdziwy przycisk "Pokaż" jest wewnątrz komórki **`DocDate`** (potwierdzone
+   zrzutem HTML), i to pierwszy z dwóch `.csButtonAction` w tej komórce (drugi
+   to link "Nr dok.", inna akcja — link do powiązanego dokumentu zakupowego).
+   To inny układ DOM niż WZ (gdzie przycisk jest wprost w komórce `DocNumber`)
+   — zapisany dla przyszłych typów dokumentów, żeby nie zakładać z góry.
+
+Dodatkowo: `pagerHasNextPage()` bywał niestabilny (pojedynczy odczyt "false"
+mimo że strona miała kolejną) — dodano drugi odczyt po 400ms zanim uznamy
+listę za wyczerpaną.
+
+**Wynik po naprawie**: 5 dokumentów PZ, 18 pozycji, zebrane poprawnie z
+`2026-07-01` (`2026/PZ/WLS1/003573`…`003577`). CSV wysłany do weryfikacji.
+
 ## Następny krok
 
 1. **Potwierdzić z Michałem nazwę tabeli testowej** (wspólna z WZ/MM czy
-   osobna) — blokuje `generate-test-tables.js`.
-2. `node generate-test-tables.js` → `schema-test-tables.json` (typy z
-   prawdziwych tabel testowych w `worek`).
-3. Próbka `MAX_DOCS=5` (już domyślne w `scrape.js`), jeden dzień → weryfikacja
-   przez koordynatora ZANIM podniesiemy limit do ~900 (jak przy WZ i MM).
+   osobna) — blokuje ostateczny zapis do bazy (na razie próbka szła do CSV).
+2. Po potwierdzeniu: `node generate-test-tables.js` → `schema-test-tables.json`
+   (typy z prawdziwych tabel testowych w `worek`) i zapis próbki bezpośrednio
+   do bazy zamiast CSV.
+3. Wysłać CSV z próbką do Michała do porównania 1:1 z danymi produkcyjnymi
+   (`2026/PZ/WLS1/003573`…`003577`, dzień `2026-07-01`).
 4. (Biznesowe, drobne) `DocRecipientDate` jest jedynym polem nagłówka PZ
    nieosiągalnym przez UI — potwierdzić z Michałem, czy to problem.
+5. Do rozważenia: czy problem #1 (nawigacja tylko przez menu) dotyczy też
+   innych podstron poza listą PZ — jeśli tak, warto to odnotować jako ogólną
+   wskazówkę dla przyszłych typów dokumentów w `SZABLON-prompt-nowy-scraper.md`.

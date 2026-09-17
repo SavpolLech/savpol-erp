@@ -48,9 +48,10 @@ const { pushLogs } = require('./lib/git-log-push');
 
 const HEADLESS = process.env.HEADLESS === 'true'; // domyślnie WIDOCZNA przeglądarka
 const ERP_BASE_URL = process.env.ERP_BASE_URL || 'https://erp.savpol.pl/';
-// Lista przyjęć zewnętrznych. Potwierdzone na żywo 2026-09-17 (sonda-pz-dom.js).
-const PZ_LIST_URL = process.env.PZ_LIST_URL ||
-  'https://erp.savpol.pl/pl/przychody-zewnetrzne/csdocsheaders4goodsreceivednotes';
+// UWAGA: w przeciwieństwie do WZ/MM nie ma tu stałej *_LIST_URL — bezpośrednia
+// nawigacja page.goto() na adres listy PZ zawsze ląduje z powrotem na
+// dashboardzie (odkryte 2026-09-18). Dotarcie do listy wymaga kliknięcia w
+// menu tak jak robi to człowiek — patrz navigateToPzList().
 // TRYB OSTROŻNY: próbka 5 dokumentów do weryfikacji przez koordynatora, ZANIM
 // podniesiemy limit. Po zatwierdzeniu próbki MAX_DOCS wraca do ~900 (tak samo
 // jak przy WZ/MM) — ustawiane przez zmienną środowiskową, bez zmiany kodu.
@@ -86,7 +87,7 @@ const FILTER_DATE_TO = resolveDateKeyword(process.env.FILTER_DATE_TO || process.
 // filtry na liście to "Przychody zewnętrzne" (miesza WSZYSTKIE podtypy: PZ,
 // PZW, PZI, PZK, PZT, PZUE, PZZ...) i dwa "xx..." (widoki administracyjne).
 // DOMYŚLNIE WYŁĄCZONY — filtrujemy WYŁĄCZNIE po naszej stronie, po kolumnie
-// DocType (patrz scrapePzInPage). Zostaje jako opcja na przyszłość, gdyby
+// DocType (patrz scanCurrentPageForDocs). Zostaje jako opcja na przyszłość, gdyby
 // ktoś kiedyś dodał zapisany filtr "PZ" w ERP.
 const USE_DOC_TYPE_FILTER = process.env.USE_DOC_TYPE_FILTER === 'true';
 const PZ_DOC_TYPE_FILTER_LABEL = process.env.PZ_DOC_TYPE_FILTER_LABEL || 'PZ';
@@ -147,13 +148,63 @@ async function login(page) {
   console.log('[login] Zalogowano. URL:', page.url());
 }
 
+// ---------- Nawigacja do listy PZ (WYŁĄCZNIE przez menu, NIE przez page.goto) ----------
+// Odkryte debugowaniem 2026-09-18: w przeciwieństwie do WZ i MM, bezpośrednia
+// nawigacja page.goto() na adres listy PZ (nawet po "rozgrzaniu" SPA inną
+// stroną) KAŻDORAZOWO ląduje z powrotem na dashboardzie (panel-sterowania/
+// csdashboard) — grid się nie renderuje. Ta sama strona działa poprawnie,
+// gdy dotrzeć do niej klikając w menu tak jak robi to człowiek: Logistyka -> "Przychody
+// zewnętrzne" (pozycja menu Kendo, li[role="menuitem"], nie zwykły <a href>).
+// Adres URL zmienia się na docelowy z opóźnieniem (asynchroniczny router) —
+// stąd waitForFunction na treść URL, a nie tylko na klik.
+async function navigateToPzList(page) {
+  const logistykaItem = page.locator('li[role="menuitem"]', { hasText: 'Logistyka' }).first();
+  await logistykaItem.waitFor({ timeout: 15000 });
+  await logistykaItem.click();
+  await humanClickDelay(page);
+
+  // Wśród wielu li z tekstem "Przychody zewnętrzne" (nagłówek "Logistyka" w
+  // Kendo Menu zawiera sklejony tekst WSZYSTKICH swoich pozycji potomnych)
+  // wybieramy liść, którego WŁASNY tekst to dokładnie ta fraza.
+  const pzItem = page.locator('li[role="menuitem"]').filter({ hasText: /^Przychody zewnętrzne$/ }).first();
+  await pzItem.waitFor({ state: 'visible', timeout: 10000 });
+  await pzItem.click();
+
+  await page.waitForFunction(
+    () => location.href.includes('csdocsheaders4goodsreceivednotes'),
+    { timeout: 15000 }
+  );
+  await page.waitForSelector('td[data-datafield="DocNumber"]', { timeout: 30000 });
+}
+
 // ---------- Scraping PZ (logika DOM 1:1 ze scraperem WZ) ----------
 // Ta funkcja jest wstrzykiwana do przeglądarki przez page.evaluate — działa
 // w kontekście strony ERP. Zwraca SUROWE STRINGI (dokładnie to, co jest w
 // atrybucie title komórki) — bez parsowania liczb/dat, to robi Node po stronie,
 // metadanymi ze schematu bazy.
 
-async function scrapePzInPage(opts) {
+// BŁĄD naprawiony 2026-09-18 (PZ): wcześniej JEDNO wywołanie page.evaluate()
+// robiło całą wielostronicową pętlę (skanuj stronę -> otwórz pasujące ->
+// kliknij "dalej" -> powtórz), potrafiąc trwać wiele minut w tej niestabilnej
+// sesji ERP (ciągłe błędy WebSocket/socket.io w tle). W praktyce taki
+// długo działający, ciągły skrypt w przeglądarce kończył się przedwcześnie
+// (funkcja zwracała allPagesExhausted mimo dalszych stron z dziesiątkami
+// pasujących dokumentów) — powtarzalne na żywym ERP, przyczyna nieustalona
+// (podejrzenie: coś w środowisku psuje długo trwające page.evaluate).
+// Niezależne, KRÓTKIE wywołania page.evaluate() z Node (jedno na stronę)
+// działały niezawodnie w tych samych warunkach. Dlatego funkcja jest
+// rozbita na dwie: scanCurrentPageForDocs (skanuje/otwiera dokumenty
+// WYŁĄCZNIE na aktualnie załadowanej stronie, nic nie klika w pagerze) i
+// advanceToNextPage (osobne, krótkie wywołanie — tylko klik "dalej" +
+// czekanie na zmianę treści). Node (main()) woła je na przemian w pętli.
+//
+// Dodatkowy błąd naprawiony przy okazji: `rowsChanged` w dawnym
+// goToNextPage porównywał tylko wiersze typu PZ (targetRows()), nie
+// wszystkie wiersze strony (listRows()) — na stronie bez żadnego "PZ"
+// (lista miesza PZ/PZK/PZUE/PZZ/...) dawało to fałszywe "brak zmiany"
+// (''===''), mimo realnego przejścia strony.
+
+async function scanCurrentPageForDocs(opts) {
   const { maxDocs, headerFields, headerFieldsFromPositions, positionFields, maxSessionMs, alreadyProcessed } = opts;
 
   // Lista "przychody-zewnetrzne" miesza podtypy (PZ, PZW, PZI, PZK, PZT,
@@ -164,14 +215,10 @@ async function scrapePzInPage(opts) {
   // sygnał niż pogrubiony tekst (WZ) albo csDocsTypesId (MM), bo to gotowy
   // tekstowy skrót typu, nie wymaga normalizacji ani stałej per instalację.
   const DOC_TYPE = 'PZ';
-  const MAX_PAGES = 100;
   const MAX_CONSECUTIVE_FAILURES = 3;
 
-  // Przedziały zamiast stałych wartości — identyczne opóźnienie powtórzone
-  // na każdym kroku jest samo w sobie sygnałem "to nie jest człowiek".
   const DELAY_AFTER_OPEN = [400, 1100];
   const DELAY_AFTER_CLOSE = [350, 900];
-  const DELAY_AFTER_PAGE = [500, 1400];
   const LONG_PAUSE_CHANCE = 0.12;
   const LONG_PAUSE_RANGE = [2000, 5000];
 
@@ -218,17 +265,12 @@ async function scrapePzInPage(opts) {
   function rowDocNumber(row) { return cellTitle(row, 'DocNumber') || null; }
   function targetRows() { return listRows().filter(r => rowDocType(r) === DOC_TYPE); }
 
-  // Rekord nagłówka: surowe stringi pod dokładnie te nazwy pól, które
-  // dostaliśmy z Node (headerFields).
   function extractHeaderRaw(row) {
     const rec = {};
     headerFields.forEach(f => { rec[f] = cellTitle(row, f); });
     return rec;
   }
 
-  // Pozycje: surowe stringi pod nazwy z positionFields. csDocsHeadersId
-  // pozycji NADPISUJEMY wartością z nagłówka (link do dokumentu) — musi się
-  // zgadzać z rekordem nagłówka 1:1, żeby FK się trzymał.
   function extractPositionsRaw(headerId) {
     const grid = getVisiblePositionsGrid();
     if (!grid) return [];
@@ -246,137 +288,166 @@ async function scrapePzInPage(opts) {
     }).filter(Boolean);
   }
 
-  function getVisiblePager() {
-    return Array.from(document.querySelectorAll('.csDataPager')).find(el => el.offsetParent !== null) || null;
-  }
-  function pagerHasNextPage(pager) {
+  function pagerHasNextPageOnce() {
+    const pager = Array.from(document.querySelectorAll('.csDataPager')).find(el => el.offsetParent !== null);
     if (!pager) return false;
     const next = pager.querySelector('.NextPageButton');
     return !!next && !next.className.split(/\s+/).includes('inactive');
   }
-  // Czekamy, aż treść wierszy (nie tylko numer strony) FAKTYCZNIE się zmieni,
-  // zanim uznamy przejście strony za zakończone (bug naprawiony przy WZ
-  // 2026-09-10: ERP aktualizuje numer strony zanim doładuje wiersze).
-  async function goToNextPage(pager) {
-    const pageNoBefore = pager.querySelector('.ActivePageNoInput');
-    const beforeVal = pageNoBefore ? pageNoBefore.value : null;
-    const rowsBefore = targetRows().map(rowDocNumber).join('|');
-
-    const pageChanged = () => {
-      const p = getVisiblePager();
-      const inp = p && p.querySelector('.ActivePageNoInput');
-      return inp && inp.value !== beforeVal;
-    };
-    const rowsChanged = () => {
-      const now = targetRows().map(rowDocNumber).join('|');
-      return now.length > 0 && now !== rowsBefore;
-    };
-
-    const next = pager.querySelector('.NextPageButton');
-    if (!next) return false;
-
-    next.click();
-    if (!await waitFor(pageChanged, 40, 250)) return false;
-    if (!await waitFor(rowsChanged, 60, 250)) {
-      return false;
-    }
-
-    await humanPause(DELAY_AFTER_PAGE);
-    return true;
+  // Odczyt pagera bywa niestabilny (chwilowy stan DOM w tej ciężkiej siatce,
+  // 378 pól/wiersz) — POJEDYNCZY odczyt "false" potrafi być fałszywy, co
+  // przedwcześnie kończyłoby skanowanie z allPagesExhausted mimo dalszych
+  // stron. Dwa zgodne odczyty z rzędu (z krótką przerwą) zamiast jednego.
+  async function pagerHasNextPage() {
+    const first = pagerHasNextPageOnce();
+    if (first) return true;
+    await sleep(400);
+    return pagerHasNextPageOnce();
   }
 
   const headers = [];
   const positions = [];
   const completedDocNumbers = [];
-  // Wznowienie: dokumenty z poprzedniego (przerwanego) przebiegu na ten sam
-  // zakres dat są od razu w processedDocs — pętla ich nie otworzy ponownie.
   const processedDocs = new Set(alreadyProcessed || []);
   let consecutiveFailures = 0;
   let processed = 0;
-  let pageNum = 1;
 
-  while (processed < maxDocs && pageNum <= MAX_PAGES) {
-    if (sessionTimeUp()) {
-      return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'session_time_limit' };
-    }
-    if (targetRows().length === 0) {
-      await waitFor(() => targetRows().length > 0, 20, 300);
-    }
-
-    const docsOnPage = targetRows().map(rowDocNumber).filter(doc => doc && !processedDocs.has(doc));
-
-    for (const targetDoc of docsOnPage) {
-      if (processed >= maxDocs) break;
-      if (sessionTimeUp()) {
-        return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'session_time_limit' };
-      }
-
-      const row = targetRows().find(r => rowDocNumber(r) === targetDoc);
-      if (!row) continue;
-
-      processedDocs.add(targetDoc);
-      const headerRec = extractHeaderRaw(row);
-      const headerId = headerRec.csDocsHeadersId;
-
-      const btn = row.querySelector('td[data-datafield="DocNumber"] .csButtonAction');
-      if (!btn) continue;
-
-      btn.click();
-
-      const grid = await waitFor(() => getVisiblePositionsGrid());
-      if (!grid) {
-        consecutiveFailures++;
-        const stray = document.querySelector('li.k-state-active .csCloseButton_span');
-        if (stray) stray.click();
-        await waitFor(() => getVisibleListGrid());
-        // Narastający backoff: pierwsza porażka to zwykła pauza, kolejne z
-        // rzędu czekają coraz dłużej.
-        await sleep(jitter(DELAY_AFTER_CLOSE) * consecutiveFailures);
-        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-          return { headers, positions, completedDocNumbers, docs: processed, partial: true };
-        }
-        continue;
-      }
-
-      consecutiveFailures = 0;
-      await humanPause(DELAY_AFTER_OPEN);
-
-      const posRows = extractPositionsRaw(headerId);
-
-      // Dla PZ headerFieldsFromPositions jest PUSTE (wszystkie pola nagłówka
-      // są wprost w gridzie listy — patrz lib/fields.js) — ta pętla nic nie
-      // dokłada, zostaje jako punkt zaczepienia wspólny z WZ.
-      const posGridRow = grid.querySelector('tr.cs-grid-data-row');
-      if (posGridRow) {
-        headerFieldsFromPositions.forEach(f => { headerRec[f] = cellTitle(posGridRow, f); });
-      }
-
-      headers.push(headerRec);
-      positions.push(...posRows);
-      completedDocNumbers.push(targetDoc);
-      processed++;
-
-      const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
-      if (closeBtn) closeBtn.click();
-      await waitFor(() => getVisibleListGrid());
-      await humanPause(DELAY_AFTER_CLOSE);
-    }
-
-    if (processed >= maxDocs) {
-      return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'batch_limit' };
-    }
-
-    const pager = getVisiblePager();
-    if (!pagerHasNextPage(pager)) {
-      return { headers, positions, completedDocNumbers, docs: processed, partial: false, allPagesExhausted: true };
-    }
-    if (!await goToNextPage(pager)) {
-      return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'pagination_stuck' };
-    }
-    pageNum++;
+  if (targetRows().length === 0) {
+    await waitFor(() => listRows().length > 0, 20, 300);
   }
 
-  return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'max_pages_safety_limit' };
+  const docsOnPage = targetRows().map(rowDocNumber).filter(doc => doc && !processedDocs.has(doc));
+
+  for (const targetDoc of docsOnPage) {
+    if (processed >= maxDocs) break;
+    if (sessionTimeUp()) {
+      return { headers, positions, completedDocNumbers, docs: processed, partial: true, stoppedReason: 'session_time_limit', hasNextPage: await pagerHasNextPage() };
+    }
+
+    const row = targetRows().find(r => rowDocNumber(r) === targetDoc);
+    if (!row) continue;
+
+    processedDocs.add(targetDoc);
+    const headerRec = extractHeaderRaw(row);
+    const headerId = headerRec.csDocsHeadersId;
+
+    // BŁĄD naprawiony 2026-09-18: przycisk otwierający dokument NIE jest w
+    // komórce DocNumber (ta jest zwykłym tekstem, bez elementu klikalnego w
+    // tym widoku) — jest w komórce DocDate, pierwszy .csButtonAction (drugi
+    // .csButtonAction w tej samej komórce to link "Nr dok.", inna akcja).
+    // Potwierdzone zrzutem HTML: <td data-datafield="DocDate">...<div
+    // class="...csButtonAction...">2026/PZZR/.../000139 [Pokaż]</div>
+    // <div class="...csButtonAction...">Nr dok. [Pokaż]</div>...</td>.
+    const btn = row.querySelector('td[data-datafield="DocDate"] .csButtonAction');
+    if (!btn) continue;
+
+    btn.click();
+
+    const grid = await waitFor(() => getVisiblePositionsGrid());
+    if (!grid) {
+      consecutiveFailures++;
+      const stray = document.querySelector('li.k-state-active .csCloseButton_span');
+      if (stray) stray.click();
+      await waitFor(() => getVisibleListGrid());
+      await sleep(jitter(DELAY_AFTER_CLOSE) * consecutiveFailures);
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        return { headers, positions, completedDocNumbers, docs: processed, partial: true, hasNextPage: await pagerHasNextPage() };
+      }
+      continue;
+    }
+
+    consecutiveFailures = 0;
+    await humanPause(DELAY_AFTER_OPEN);
+
+    const posRows = extractPositionsRaw(headerId);
+
+    // Dla PZ headerFieldsFromPositions jest PUSTE (wszystkie pola nagłówka
+    // są wprost w gridzie listy — patrz lib/fields.js) — ta pętla nic nie
+    // dokłada, zostaje jako punkt zaczepienia wspólny z WZ.
+    const posGridRow = grid.querySelector('tr.cs-grid-data-row');
+    if (posGridRow) {
+      headerFieldsFromPositions.forEach(f => { headerRec[f] = cellTitle(posGridRow, f); });
+    }
+
+    headers.push(headerRec);
+    positions.push(...posRows);
+    completedDocNumbers.push(targetDoc);
+    processed++;
+
+    const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
+    if (closeBtn) closeBtn.click();
+    await waitFor(() => getVisibleListGrid());
+    await humanPause(DELAY_AFTER_CLOSE);
+  }
+
+  return {
+    headers, positions, completedDocNumbers, docs: processed,
+    partial: processed >= maxDocs,
+    stoppedReason: processed >= maxDocs ? 'batch_limit' : null,
+    hasNextPage: await pagerHasNextPage()
+  };
+}
+
+// Osobne, KRÓTKIE wywołanie: tylko klik "dalej" + czekanie na realną zmianę
+// treści strony (nie tylko numeru strony — ERP potrafi zaktualizować numer
+// strony zanim doładuje wiersze, patrz historia WZ 2026-09-10). Porównanie
+// idzie po WSZYSTKICH wierszach strony (nie tylko dopasowanych do filtra
+// typu) — patrz komentarz nad scanCurrentPageForDocs wyżej.
+async function advanceToNextPage() {
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  async function waitFor(fn, tries = 40, interval = 250) {
+    for (let i = 0; i < tries; i++) {
+      const v = fn();
+      if (v) return v;
+      await sleep(interval);
+    }
+    return null;
+  }
+  function visibleGrids() {
+    return Array.from(document.querySelectorAll('.cs-grid-data-table')).filter(t => t.offsetParent !== null);
+  }
+  function getVisibleListGrid() {
+    return visibleGrids().find(t => t.querySelector('td[data-datafield="DocNumber"]')) || null;
+  }
+  function cellTitle(row, field) {
+    const c = row.querySelector('td[data-datafield="' + field + '"]');
+    return c ? (c.getAttribute('title') || '') : '';
+  }
+  function listRows() {
+    const grid = getVisibleListGrid();
+    if (!grid) return [];
+    return Array.from(grid.querySelectorAll('tr.cs-grid-data-row'));
+  }
+  function rowDocNumber(row) { return cellTitle(row, 'DocNumber') || null; }
+  function getVisiblePager() {
+    return Array.from(document.querySelectorAll('.csDataPager')).find(el => el.offsetParent !== null) || null;
+  }
+
+  const pager = getVisiblePager();
+  if (!pager) return false;
+  const next = pager.querySelector('.NextPageButton');
+  if (!next || next.className.split(/\s+/).includes('inactive')) return false;
+
+  const pageNoBefore = pager.querySelector('.ActivePageNoInput');
+  const beforeVal = pageNoBefore ? pageNoBefore.value : null;
+  const rowsBefore = listRows().map(rowDocNumber).join('|');
+
+  const pageChanged = () => {
+    const p = getVisiblePager();
+    const inp = p && p.querySelector('.ActivePageNoInput');
+    return inp && inp.value !== beforeVal;
+  };
+  const rowsChanged = () => {
+    const now = listRows().map(rowDocNumber).join('|');
+    return now.length > 0 && now !== rowsBefore;
+  };
+
+  next.click();
+  if (!await waitFor(pageChanged, 40, 250)) return false;
+  if (!await waitFor(rowsChanged, 60, 250)) return false;
+
+  await sleep(500 + Math.random() * 900);
+  return true;
 }
 
 // ---------- Zapis wyniku ----------
@@ -663,8 +734,7 @@ async function main() {
   try {
     await login(page);
 
-    await page.goto(PZ_LIST_URL, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('td[data-datafield="DocNumber"]', { timeout: 30000 });
+    await navigateToPzList(page);
 
     if (USE_DOC_TYPE_FILTER) {
       await setDocTypeFilter(page, PZ_DOC_TYPE_FILTER_LABEL);
@@ -690,6 +760,12 @@ async function main() {
     console.log('[pz] Lista załadowana. Startuję zbieranie w paczkach po ' + BATCH_SIZE + ' dok. ' +
       '(max ' + MAX_DOCS + ' łącznie w tej sesji)...');
 
+    // Pętla iteruje PO STRONACH listy, nie po "paczkach" rozmiaru BATCH_SIZE —
+    // każde wywołanie page.evaluate() ogranicza się do JEDNEJ, aktualnie
+    // załadowanej strony (patrz komentarz nad scanCurrentPageForDocs), żeby
+    // uniknąć długo trwających, niestabilnych wywołań w tej sesji ERP.
+    // BATCH_SIZE nadal ogranicza, ile dokumentów otwieramy w JEDNYM
+    // wywołaniu (dopóki starczy ich na bieżącej stronie).
     let collectedThisSession = 0;
     while (collectedThisSession < MAX_DOCS) {
       const remainingMs = sessionDeadline - Date.now();
@@ -699,7 +775,7 @@ async function main() {
       }
 
       const batchMaxDocs = Math.min(BATCH_SIZE, MAX_DOCS - collectedThisSession);
-      const batch = await page.evaluate(scrapePzInPage, {
+      const batch = await page.evaluate(scanCurrentPageForDocs, {
         maxDocs: batchMaxDocs,
         headerFields: F.HEADER_FIELDS,
         headerFieldsFromPositions: F.HEADER_FIELDS_FROM_FIRST_POSITION,
@@ -715,7 +791,10 @@ async function main() {
       totalHeaders += batch.headers.length;
       totalPositions += batch.positions.length;
       collectedThisSession += batch.headers.length;
-      allPagesExhausted = !!batch.allPagesExhausted;
+      // "Wyczerpane" dopiero gdy bieżąca (ostatnia zeskanowana) strona nie ma
+      // kolejnej — samo `docs===0` na TEJ stronie nic nie mówi o reszcie listy
+      // (lista miesza podtypy, strona bez "PZ" jest normalna, patrz wyżej).
+      allPagesExhausted = !batch.hasNextPage;
       lastStoppedReason = batch.stoppedReason || null;
 
       if (dateFrom || dateTo) {
@@ -729,13 +808,16 @@ async function main() {
             stoppedReason: batch.stoppedReason || null
           }
         });
-        console.log('[paczka] +' + batch.headers.length + ' PZ (łącznie w stanie: ' +
+        console.log('[strona] +' + batch.headers.length + ' PZ (łącznie w stanie: ' +
           saved.processedDocNumbers.length + (expectedTotal ? '/' + expectedTotal : '') + '), complete=' + saved.complete);
       }
 
+      if (collectedThisSession >= MAX_DOCS) { lastStoppedReason = 'batch_limit'; break; }
+      if (lastStoppedReason === 'session_time_limit') break;
       if (allPagesExhausted) break;
-      if (batch.headers.length === 0 && !batch.partial) break;
-      if (lastStoppedReason && lastStoppedReason !== 'batch_limit') break;
+
+      const advanced = await page.evaluate(advanceToNextPage);
+      if (!advanced) { lastStoppedReason = 'pagination_stuck'; break; }
     }
 
     console.log('[pz] Koniec sesji. Zebrano w tej sesji: ' + totalHeaders + ' PZ, ' + totalPositions + ' pozycji.' +
