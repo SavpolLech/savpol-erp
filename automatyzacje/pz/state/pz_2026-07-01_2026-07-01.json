@@ -3,7 +3,7 @@
   "dateTo": "2026-07-01",
   "processedDocNumbers": [],
   "complete": true,
-  "lastUpdated": "2026-09-17T13:35:08.940Z",
+  "lastUpdated": "2026-09-17T13:38:03.783Z",
   "runs": [
     {
       "ts": "2026-09-17T13:33:56.170Z",
@@ -25,6 +25,48 @@
     },
     {
       "ts": "2026-09-17T13:35:08.939Z",
+      "paczkaDok": 0,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-09-17T13:35:22.768Z",
+      "paczkaDok": 0,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-09-17T13:36:05.622Z",
+      "paczkaDok": 0,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-09-17T13:36:42.333Z",
+      "paczkaDok": 0,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-09-17T13:36:42.963Z",
+      "paczkaDok": 0,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-09-17T13:37:26.141Z",
+      "paczkaDok": 0,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-09-17T13:37:29.621Z",
+      "paczkaDok": 0,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-09-17T13:38:03.783Z",
       "paczkaDok": 0,
       "partial": false,
       "stoppedReason": null
