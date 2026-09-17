@@ -1,83 +1,95 @@
 # Mapowanie pól: PZ (Przyjęcie zewnętrzne) ↔ ERP (UI)
 
-Źródło: Michał, wiadomość + `PZ_pola_wymagane.xlsx` (2026-09-17). Pełny zrzut
-arkusza: `automatyzacje/pz/info/od-michala-1.txt`.
+Źródło: Michał, wiadomość + `PZ_pola_wymagane.xlsx` (2026-09-17) + sonda na
+żywym ERP tego samego dnia (`diagnostyka/sonda-pz-dom.js`, wyniki w
+`diagnostyka/PZ/*.txt`, dokument testowy `2026/PZ/WLS1/004716`).
 
 Rodzaj dokumentu: **Przyjęcie zewnętrzne (PZ)**.
 Widok/lista w ERP: `https://erp.savpol.pl/pl/przychody-zewnetrzne/csdocsheaders4goodsreceivednotes`
-(z hrefa w treści zadania — **do potwierdzenia przy pierwszym wejściu**, patrz
-info/od-michala-1.txt).
+— potwierdzone na żywo, ładuje listę PZ poprawnie.
 
-Tabele docelowe: **`dbo.csDocsHeaders` / `dbo.csDocsItemsPositions`** — Michał
-wprost: "ten sam zestaw co dla WZ, zmieni się przede wszystkim csDocsTypesId"
-(dokładnie ten sam wzorzec co przy MM). **Tabele testowe: DO USTALENIA z
-Michałem** — czy wspólne `csDocsHeaders_test` / `csDocsItemsPositions_test`
-(używane już przez WZ i MM, rozróżnienie przez `csDocsTypesId`) obsłużą też PZ,
-czy PZ dostanie własne testowe tabele. Nie blokuje to reszty mapowania (pola są
-te same niezależnie od nazwy tabeli), ale blokuje `generate-test-tables.js` —
-rozstrzygnąć przed krokiem 4.
+Tabele docelowe: **`dbo.csDocsHeaders` / `dbo.csDocsItemsPositions`** — te same
+co WZ i MM (Michał: ten sam zestaw danych, różni się `csDocsTypesId`,
+potwierdzone na żywym dokumencie: `csDocsTypesId = 213 217 940`). Testowo:
+`..._test`. **Nadal DO USTALENIA z Michałem**: czy wspólne
+`csDocsHeaders_test` / `csDocsItemsPositions_test` (już używane przez WZ i MM)
+obsłużą też próbkę PZ, czy PZ dostanie własne testowe tabele — kod
+(`lib/fields.js`) zakłada wspólne, zgodnie ze wzorcem MM, ale to założenie
+trzeba potwierdzić przed `generate-test-tables.js`.
 
-**Status: ROBOCZE.** Pola przejęte 1:1 z `automatyzacje/wz/lib/fields.js`
-(Michał potwierdza identyczny zestaw) — to jest DECYZJA, nie "do ustalenia",
-ale wymaga potwierdzenia na żywym gridzie PZ w kroku diagnostyki (krok 2), bo
-każdy typ dokumentu renderuje inny zestaw kolumn zależnie od uprawnień/widoku
-(WZ: 163 pola w panelu nagłówka; MM: 337 — grid PZ może być inny niż oba).
-Zero pól ma tu status "nie wiem skąd wziąć" — każde ma przypisaną kategorię
-niżej, ewentualne korekty po sondzie idą jako aktualizacja tego pliku (tak jak
-przy MM, sekcja "3 różnice MM vs WZ").
+**Status: KOMPLETNE (0 „do ustalenia").** Zweryfikowane na żywym ERP
+2026-09-17 (zalogowana sesja, wszystkie kolumny włączone — potwierdzone w
+`diagnostyka/PZ/savpolPzSondaKolumny.txt`, panel pozycji: 172/172 pól
+WŁĄCZONE). Grid PZ okazał się **bogaty jak MM**, nie ubogi jak WZ — prawie
+wszystkie pola z listy Michała renderują się wprost w gridzie listy, bez
+potrzeby brania czegokolwiek z pierwszej pozycji.
 
-## Nagłówek (dbo.csDocsHeaders) — plan 1:1 z WZ, do potwierdzenia sondą
+## Co się różni od WZ (wykryte na żywym ERP, analogicznie do sekcji MM)
 
-### Prawdopodobnie wprost w gridzie listy PZ (23 pola, jak WZ)
+1. **Filtr typu dokumentu — po kolumnie `DocType`, nie po pogrubieniu ani
+   `csDocsTypesId`.** Lista `csdocsheaders4goodsreceivednotes` miesza podtypy
+   (PZ, PZW, PZI, PZK, PZT, PZUE, PZZ...). Kolumna `DocType` w gridzie listy
+   zawiera gotowy tekstowy skrót (potwierdzone: `DocType="PZ"`,
+   `DocTypeTranslatedDesc="Przyjęcie zewnętrzne"` na dokumencie
+   `2026/PZ/WLS1/004716`) — czystszy sygnał niż pogrubiony tekst (WZ) albo
+   `csDocsTypesId` (MM, wymaga stałej per instalację). `scrape.js` filtruje
+   wiersze po `DocType === 'PZ'`.
+2. **Brak zapisanego filtra ERP o nazwie „PZ".** Sonda (sekcja "Zapisane
+   filtry") pokazała tylko: "Przychody zewnętrzne" (miesza wszystkie podtypy),
+   "xxKatalog", "xxPrzychody zewnętrzne" (widoki administracyjne). Dlatego
+   `USE_DOC_TYPE_FILTER=false` domyślnie — filtrujemy wyłącznie po naszej
+   stronie (`DocType`), jak przy MM. Konsekwencja: licznik ERP na starcie
+   przebiegu (`expectedTotal`) liczy WSZYSTKIE podtypy PZ*, nie tylko "PZ" —
+   kontrola "zgadza się/niekompletne" na końcu przebiegu jest więc orientacyjna,
+   nie twardym dowodem (opisane w komentarzu `scrape.js`).
+3. **Wiersz pozycji — rozpoznawany po pogrubionym SKU w `ItemDesc`, jak WZ
+   (NIE jak MM).** Potwierdzone `diagnostyka/PZ/savpolPzSondaSurowyWiersz.txt`:
+   `ItemDesc bold=[0000261]` (numer SKU pogrubiony). Filtr WZ (SKU w
+   pogrubieniu) działa więc bez zmian.
+4. **7 pól, które przy WZ trzeba było brać z pierwszej pozycji, są wprost w
+   gridzie listy PZ** (jak przy MM): `ExchangeRate`, `csCurrenciesId`,
+   `S01Amount`, `S02Amount`, `DocWeight`, `DocGrossWeight`, `csWarehousesIdDel`.
+   Potwierdzone wartościami na żywym dokumencie: `ExchangeRate=1`,
+   `csCurrenciesId=401807`, `DocWeight=2560`, `DocGrossWeight=2560,4`
+   (`csWarehousesIdDel` obecne, ale puste — PZ nie ma "drugiego" magazynu).
+   `HEADER_FIELDS_FROM_FIRST_POSITION` jest więc PUSTE — nagłówek nie zależy
+   od tego, czy dokument ma pozycje.
 
-`csDocsHeadersId`, `csDocsHeadersG`, `csCompaniesId`, `csDocsTypesId`, `DocNo`,
-`DocNumber`, `DocNumberExt`, `CGAmount`, `CNAmount`, `CTAmount`, `FGAmount`,
-`FNAmount`, `FTAmount`, `DocDate`, `DocDateExt`, `csCustomersId`, `PaymentDate`,
-`DocSaleDate`, `DocVATDate`, `Stock`, `csWarehousesId`, `FStock`, `DocNumberExtAdd2`
+## Nagłówek (dbo.csDocsHeaders) — 41 pól scrapowanych z gridu listy
 
-### Prawdopodobnie z pierwszej pozycji dokumentu (6 pól, jak WZ)
+`HEADER_FIELDS` (41): 23 pola jak WZ + 7 z punktu 4 wyżej + 11 pól, które przy
+WZ były „niedostępne przez UI", a w BOGATSZYM gridzie listy PZ SĄ dostępne.
 
-`ExchangeRate`, `csCurrenciesId`, `S01Amount`, `S02Amount`, `DocWeight`,
-`DocGrossWeight` — **UWAGA**: przy MM te same 6 pól okazały się WPROST w
-gridzie listy (grid MM bogatszy niż WZ) — sonda rozstrzygnie, czy PZ zachowuje
-się jak WZ czy jak MM. Jeśli wprost w liście, `HEADER_FIELDS_FROM_FIRST_POSITION`
-zostaje puste i te pola przechodzą do `HEADER_FIELDS` (dokładnie jak w MM).
+**16 z 17 „niedostępnych" pól WZ jest dostępnych w PZ** (jeszcze więcej niż w
+MM, gdzie było 10/17). Z 17 pól WZ „niedostępnych przez UI":
+- **5 rozwiązanych przez wartości stałe** (xlsx Michała, `Dh`, potwierdzone
+  identyczne wartości na żywym dokumencie): `Cor=0`, `anaKind=0`, `anaUse=0`,
+  `ShipmentType=0`, `IsOffInvoice=0` — świadomie ZOSTAJĄ jako stałe w
+  `lib/fixed-values.js` mimo że są też widoczne w gridzie (Michał podaje je
+  jako atrybuty TYPU dokumentu, nie per-dokument; `applyFixedValues` w
+  `scrape.js` i tak by je nadpisał, więc nie dublujemy odczytu).
+- **11 DOSTĘPNYCH i SCRAPOWANYCH** (realne wartości per dokument, potwierdzone
+  na żywo): `PaymentDay=21`, `csPaymentsTypesId`, `csPeriodsId`,
+  `csDocsHeadersStatusId`, `csVATPeriodsId`, `csEmployeesId` (puste dla tego
+  dokumentu, kolumna jednak istnieje), `csB2BPortalsId`,
+  `csB2BPortalsDeliveryMethodsId`, `csPayersId`, `anaDocDate`,
+  `TermsFromPayer=0` (przy WZ „odzyskiwalne z XML priceInfo" — dla PZ jest
+  wprost w gridzie, więc scrapujemy bezpośrednio, bez parsowania XML).
+- **1 NIEDOSTĘPNE w PZ** (jak w MM): `DocRecipientDate` — sprawdzone w liście i
+  w karcie dokumentu, brak w obu. Zostaje NULL. Jedyne technicznie
+  nieosiągalne pole nagłówka PZ.
 
-### Niedostępne przy WZ — status do potwierdzenia sondą, NIE zakładamy z góry
+## Pozycje (dbo.csDocsItemsPositions) — 55 pól, wszystkie obecne
 
-17 pól, które przy WZ nie istniały w żadnym gridzie: `PaymentDay`,
-`csPaymentsTypesId`, `csPeriodsId`, `DocRecipientDate`, `csDocsHeadersStatusId`,
-`csVATPeriodsId`, `Cor`, `csEmployeesId`, `ShipmentType`, `IsOffInvoice`,
-`csB2BPortalsId`, `csB2BPortalsDeliveryMethodsId`, `csPayersId`,
-`TermsFromPayer`, `anaKind`, `anaUse`, `anaDocDate`.
+`POSITION_FIELDS` identyczne jak WZ i MM. Potwierdzone na karcie PZ (dokument
+`2026/PZ/WLS1/004716`, panel kolumn 172/172 pól WŁĄCZONE): wszystkie 55 pól
+obecne z realnymi wartościami per pozycja, `ItemDesc` z pogrubionym SKU
+(potrzebne do wykrycia gridu i filtra realnych wierszy — patrz punkt 3 wyżej).
 
-Rozstrzygnięcie per pole (żeby "0 do ustalenia" już teraz — sonda tylko
-POTWIERDZA lub koryguje, nie jest warunkiem wstępnym):
+## Wartości stałe per typ (nie scrapowane) — `lib/fixed-values.js`
 
-- `Cor`, `anaKind`, `anaUse`, `IsOffInvoice`, `ShipmentType` → **wartość stała**
-  (patrz sekcja niżej) — Michał podał je w arkuszu `Dh`, nie trzeba ich
-  scrapować niezależnie od tego, co pokaże grid.
-- `TermsFromPayer` → **odzyskiwalne z XML** w kolumnie `priceInfo` pozycji
-  (jak przy WZ) — nie parsujemy w scraperze, dostępne downstream przez SQL.
-- Pozostałe 10 (`PaymentDay`, `csPaymentsTypesId`, `csPeriodsId`,
-  `DocRecipientDate`, `csDocsHeadersStatusId`, `csVATPeriodsId`,
-  `csEmployeesId`, `csB2BPortalsId`, `csB2BPortalsDeliveryMethodsId`,
-  `csPayersId`, `anaDocDate`) → **domyślnie NULL** (niedostępne), ALE sonda w
-  kroku 2 sprawdzi, czy grid PZ jest bogatszy (jak MM, gdzie 10 z tych samych
-  17 pól okazało się dostępnych po włączeniu kolumn) — jeśli tak, przechodzą
-  do `HEADER_FIELDS` ze scrapowaną wartością, tak jak przy MM.
-
-## Pozycje (dbo.csDocsItemsPositions) — plan 1:1 z WZ (55 pól)
-
-`POSITION_FIELDS` identyczne jak WZ i MM — Michał: ten sam zestaw danych.
-Potwierdzone w arkuszu "Przykladowe pozycje" — wszystkie nazwy kolumn 1:1.
-Które z nich trzeba włączyć w panelu kolumn PZ (jak przy WZ: 10 pól trzeba było
-włączyć) — do sprawdzenia sondą, nie zgadujemy.
-
-## Wartości stałe per typ (nie scrapowane) — `lib/fixed-values.js` (do zapisania w kroku 3)
-
-Źródło: arkusz `Dh`/`Dip` w `PZ_pola_wymagane.xlsx` — to są PRAWDZIWE wartości z
-bazy (zrzut, nie zgadywanie), nie wymagają potwierdzenia sondą w przeglądarce.
+Źródło: arkusz `Dh`/`Dip` w `PZ_pola_wymagane.xlsx` — PRAWDZIWE wartości z
+bazy, **potwierdzone identyczne na żywym dokumencie** (sonda 2026-09-17).
 
 **Różnice względem WZ (5 pól):**
 
@@ -90,65 +102,26 @@ bazy (zrzut, nie zgadywanie), nie wymagają potwierdzenia sondą w przeglądarce
 | `PricesPrecision` | 2 | **6** |
 
 Reszta flag nagłówka (43 pola) — identyczne jak WZ, w tym `Cor`=0,
-`ShipmentType`=0 (dopisane analogicznie do WZ, wartości z arkusza `Dh` — kolumna
-`IsOffInvoice` występuje w arkuszu dwukrotnie, ta sama wartość 0 za każdym razem,
-traktujemy jako jeden klucz).
+`ShipmentType`=0. Flagi pozycji (`Dip`) — **identyczne jak WZ**:
+`IsFromDiscountCodes`=0, `IsPosVat`=1, `OperationKind`=0, `SEZKind`=0,
+`ShowAddInfo`=0. `createdDate` pozycji = `DocDate` nagłówka tego samego
+dokumentu (reguła, liczona w `scrape.js`).
 
-Flagi pozycji (`Dip`) — **identyczne jak WZ**: `IsFromDiscountCodes`=0,
-`IsPosVat`=1, `OperationKind`=0, `SEZKind`=0, `ShowAddInfo`=0.
+## Redukcja kolumn w ERP
 
-`createdDate` pozycji = `DocDate` nagłówka tego samego dokumentu (reguła, nie
-stała — jak WZ/MM, liczone w `scrape.js`).
-
-## Filtr typu dokumentu — do ustalenia sondą (nie zgadujemy)
-
-Per przykładowy `DocNumber` w arkuszu (`2026/PZ/WLS1/003731`) etykieta typu to
-najpewniej `PZ`, ale z tabeli `anaKind`/`anaUse` per typ dokumentu (mail Michała
-z WZ, 2026-09-09) widać, że lista dokumentów "przychody zewnętrzne" może mieszać
-podtypy: `PZ`, `PZW`, `PZI`, `PZIK`, `PZK`, `PZT`, `PZUE`, `PZUEK`, `PZZ`,
-`PZZk`, `PZZR`. Bierzemy **tylko `PZ`** (jak WZ brał tylko `WZ`, nie `WZZ`),
-chyba że Michał powie inaczej.
-
-Dwa możliwe mechanizmy filtrowania (rozstrzyga sonda, jak przy MM):
-
-1. **Jak WZ** — pogrubiony tekst w komórce `DocNumber` (`.cs-style-text-bold`)
-   równy `"PZ"`, ewentualnie zapisany filtr ERP o nazwie "PZ" (jak
-   `setDocTypeFilter(page, 'WZ')`).
-2. **Jak MM** — typ NIE jest pogrubiony, trzeba filtrować po znormalizowanym
-   `csDocsTypesId` (stała per instalacja ERP, MM miał `269000798`) zamiast po
-   tekście.
-
-Domyślnie w kodzie zakładamy wariant 1 (jak WZ, bo lista Michała używa
-klasycznego układu listy "csdocsheaders4..." podobnego do WZ, nie do
-przesunięć), ale **scrape.js nie może zostać napisany, dopóki sonda tego nie
-potwierdzi** — błędne założenie znaczy zbieranie złych dokumentów (np. razem z
-korektami PZK albo zwrotami PZZ).
-
-## Wiersz pozycji — do ustalenia sondą
-
-WZ rozpoznawał realny wiersz pozycji po pogrubionym SKU w `ItemDesc`; MM — po
-niepustym `ItemDesc` (bez pogrubienia). Dla PZ nie zakładamy z góry, sonda
-(`savpolPzSondaKarta()` / `savpolPzSondaSurowyWiersz()`) pokaże, czy `ItemDesc`
-ma `.cs-style-text-bold` na karcie PZ.
+Nie wymagana teraz — użytkownik już włączył wszystkie kolumny na czas sondy
+(diagnostyka), co jest wystarczające i nie spowalnia scrapowania próbki 5
+dokumentów. Do rozważenia po zatwierdzeniu próbki: odchudzić grid do
+`HEADER_FIELDS`/`POSITION_FIELDS` (`diagnostyka/zostaw-tylko-potrzebne-kolumny.js`
+z nowymi listami `KEEP_LISTA_PZ`/`KEEP_POZYCJE_PZ`), jak przy MM.
 
 ## Następny krok
 
-1. **Włącz wszystkie kolumny** w panelu kolumn ERP (lista PZ i karta pozycji
-   PZ) — bez tego sonda nie zobaczy pól, które istnieją, ale są wyłączone
-   (patrz `diagnostyka/wlacz-wszystkie-kolumny.js`).
-2. Wklej `diagnostyka/sonda-pz-dom.js` w konsoli:
-   - na liście PZ → `savpolPzSondaLista()`
-   - po otwarciu jednego dokumentu PZ → `savpolPzSondaKarta()` i
-     `savpolPzSondaSurowyWiersz()`
-   - jeśli otwarty jest panel wyboru kolumn (osobno dla listy i dla karty
-     pozycji) → `savpolPzSondaKolumny()`
-   - `savpolPzSondaKopiuj()` → wynik do schowka, wklej tutaj.
-3. Na podstawie sondy: zaktualizować ten plik (sekcje "do potwierdzenia" wyżej)
-   i dopiero wtedy napisać `lib/fields.js` + `lib/fixed-values.js` +
-   `scrape.js` (klon `automatyzacje/wz/`, różnice wyłącznie: URL listy, treść
-   `lib/fields.js`, treść `lib/fixed-values.js`, ewentualnie logika filtra typu
-   dokumentu/wiersza pozycji jeśli sonda pokaże wariant MM zamiast WZ).
-4. `node generate-test-tables.js` na PRAWDZIWYM schemacie (po ustaleniu nazwy
-   tabeli testowej z Michałem) → `schema-test-tables.json`.
-5. Próbka `MAX_DOCS=5`, jeden dzień → weryfikacja przez koordynatora ZANIM
-   podniesiemy limit (jak przy WZ i MM).
+1. **Potwierdzić z Michałem nazwę tabeli testowej** (wspólna z WZ/MM czy
+   osobna) — blokuje `generate-test-tables.js`.
+2. `node generate-test-tables.js` → `schema-test-tables.json` (typy z
+   prawdziwych tabel testowych w `worek`).
+3. Próbka `MAX_DOCS=5` (już domyślne w `scrape.js`), jeden dzień → weryfikacja
+   przez koordynatora ZANIM podniesiemy limit do ~900 (jak przy WZ i MM).
+4. (Biznesowe, drobne) `DocRecipientDate` jest jedynym polem nagłówka PZ
+   nieosiągalnym przez UI — potwierdzić z Michałem, czy to problem.
