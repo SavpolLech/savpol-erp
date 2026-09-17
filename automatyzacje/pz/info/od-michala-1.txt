@@ -1,0 +1,84 @@
+Źródło: wiadomość Michała w wątku PZ (2026-09-17) + załącznik PZ_pola_wymagane.xlsx.
+
+=== Treść wiadomości ===
+
+Cześć, analogicznie jak przy MM, musimy też pobrać informacji o przychodach
+zewnętrznych (PZ), które w ERP zobaczymy na oknie Przychody zewnętrzne.
+Pobieramy analogicznie ten sam zestaw co dla dokumentów WZ, zmieni się
+przede wszystkim csDocsHeaders.csDocsTypesId.
+
+W załączeniu przesyłam arkusz zawierający pola NOT NULL, które musimy
+uzupełniać oraz zawartość przykładowego dokumentu PZ.
+
+=== Widok w ERP (od Lecha, z zadania) ===
+
+Link w treści zadania był markdown-linkiem, gdzie tekst i href się różnią:
+tekst = przesunięcia-magazynowe/csdocsheaders4goodstransfers (adres MM, kopiuj-wklej
+z poprzedniego promptu), href = przychody-zewnetrzne/csdocsheaders4goodsreceivednotes.
+Traktujemy href jako właściwy adres:
+https://erp.savpol.pl/pl/przychody-zewnetrzne/csdocsheaders4goodsreceivednotes
+
+Do potwierdzenia przy pierwszym wejściu (krok diagnostyki), nie zgadujemy dalej.
+
+=== Arkusz PZ_pola_wymagane.xlsx — zrzut zawartości (openpyxl, 2026-09-17) ===
+
+--- Sheet "Dh" (dbo.csDocsHeaders — kolumny NOT NULL bez wartości ze scrapowania) ---
+Kolumny (48, w tej kolejności):
+anaKind, anaUse, CAddressType, csDocumentsGenType, CUnitPriceGetMethod, CVATMethod,
+DAddressType, DiscountGetMethod, DocsHeadersPaymentsPaymentBalance,
+DocsHeadersPaymentsPositionsPaymentBalance, doNotAutoCalcByKSeF, FVATMethod,
+IsAcceptanceRequired, IsAssetsDim, IsCompanyCustomer, IsConfidential,
+IsCustomerOwnsStocks, IsCustomerVisible, IsDocNumberExtAdd2Visible,
+IsDocNumberExtVisible, IsDuplicate, IsHeaderDimensionsRequired, IsIncomeSettled,
+IsManySettlements, IsNot4TimeAndAttendance, IsOfficeDoc, IsOffInvoice, IsPaidFull,
+IsPaidFullDocsHeadersPaymentsPositions, IsPositionDimensionsRequired,
+IsProcessingPersonalDataByCeneoAccepted, IsRelatedTransactionsDim, IsRequestsDim,
+isSplitPaymentRequired, IsThreeWayTransaction, IsTransactionWithinUE,
+IsVATOnlyAccounting, IsVerified, NoCheckVATRate, noSettlementGen, PricesPrecision,
+RAddressType, ResStatus, SAddressType, updCount, UseRecyclingFee, Warehousing,
+Cor, ShipmentType, IsOffInvoice (ponownie — duplikat kolumny w arkuszu, wartość ta sama)
+
+Wartości (jeden wiersz przykładowy z bazy):
+0, 0, 0, 0, 0, 0, 0, 0, 0.000000, 0.000000, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0,
+0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 2, 0, 0, 0, 0, 0, 0, 0, 0
+
+--- Sheet "Dip" (dbo.csDocsItemsPositions — kolumny NOT NULL bez wartości ze scrapowania) ---
+IsFromDiscountCodes, IsPosVat, OperationKind, SEZKind, ShowAddInfo
+0, 1, 0, 0, 0
+
+(IDENTYCZNE jak WZ — bez zmian.)
+
+--- Sheet "Przykladowy naglowek" — PEŁNY zrzut jednego wiersza dbo.csDocsHeaders (nie tylko
+    pola NOT NULL, cała tabela — materiał referencyjny do sprawdzenia realnych wartości) ---
+csDocsHeadersId=29684051427, csDocsHeadersG=c9be8fce-a33f-4b6e-bbd7-b9f2122d13db,
+csCompaniesId=213217693, csDocsTypesId=213217940, DocNo=3731,
+DocNumber=2026/PZ/WLS1/003731, DocNumberExt=FVAT/23124/W/2026, ExchangeRate=1.0000,
+DocDate=2026-07-15, DocDateExt=2026-07-14, csCustomersId=218472388,
+PaymentDate=2026-08-13, DocSaleDate=2026-07-15, DocVATDate=2026-07-15,
+csWarehousesId=... (patrz pełny zrzut w historii rozmowy / xlsx źródłowy, jeśli
+potrzebna dokładna kolumna po kolumnie — arkusz ma ~300 kolumn, nie przepisuję tu
+całości ręcznie żeby nie wprowadzić błędu przy przepisywaniu; xlsx zostaje
+źródłem prawdy, ten plik to tylko notatka orientacyjna).
+
+WAŻNE: csDocsTypesId=213217940 w tym przykładzie to REALNY numer podtypu PZ w tej
+instalacji ERP — ale csDocsTypesId i tak jest SCRAPOWANE per-dokument (pole w
+HEADER_FIELDS), nie stała w fixed-values.js — dokładnie jak przy WZ. Ten numer
+tylko potwierdza, że pole nie jest puste i ma sensowną wartość.
+
+--- Sheet "Przykladowe pozycje" — PEŁNY zrzut wierszy dbo.csDocsItemsPositions
+    (4 przykładowe pozycje jednego dokumentu PZ, materiał referencyjny) ---
+Zawiera te same 55 pól co POSITION_FIELDS z WZ + pola techniczne spoza naszej
+listy (QuantityInUnit, DocItem, DocPartNo, GId, itd. — nie scrapujemy, nie są na
+liście Michała). Potwierdza że nazwy kolumn pozycji 1:1 z WZ.
+
+=== Wniosek dla mapowania ===
+
+Zestaw pól: Michał wprost potwierdza "ten sam zestaw co WZ" — czyli
+HEADER_FIELDS / HEADER_FIELDS_FROM_FIRST_POSITION / POSITION_FIELDS z
+automatyzacje/wz/lib/fields.js przenosimy 1:1 jako punkt startowy, do
+potwierdzenia na żywym gridzie PZ (krok diagnostyki — może się okazać, że PZ ma
+bogatszy/uboższy grid niż WZ, tak jak MM miał bogatszy).
+
+Wartości stałe (fixed-values): RÓŻNIĄ SIĘ od WZ w 5 polach (patrz
+mapowanie-pol.md) — to jest już ROZSTRZYGNIĘTE z arkusza (dane z bazy, nie
+zgadywanie), nie wymaga sondy w przeglądarce.
