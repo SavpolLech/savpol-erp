@@ -8,23 +8,17 @@
     "2026/PZ/WLS1/003574",
     "2026/PZ/WLS1/003573"
   ],
-  "complete": true,
-  "lastUpdated": "2026-09-17T13:43:08.236Z",
+  "complete": false,
+  "lastUpdated": "2026-09-17T13:45:18.101Z",
   "runs": [
     {
-      "ts": "2026-09-17T13:41:14.090Z",
+      "ts": "2026-09-17T13:44:29.957Z",
       "paczkaDok": 0,
       "partial": false,
       "stoppedReason": null
     },
     {
-      "ts": "2026-09-17T13:42:01.717Z",
-      "paczkaDok": 0,
-      "partial": false,
-      "stoppedReason": null
-    },
-    {
-      "ts": "2026-09-17T13:43:08.235Z",
+      "ts": "2026-09-17T13:45:18.101Z",
       "paczkaDok": 5,
       "partial": true,
       "stoppedReason": "batch_limit"
