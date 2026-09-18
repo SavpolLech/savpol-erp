@@ -257,10 +257,21 @@ async function scrapeMmInPage(opts) {
   // Czekamy, aż treść wierszy (nie tylko numer strony) FAKTYCZNIE się zmieni,
   // zanim uznamy przejście strony za zakończone (bug naprawiony przy WZ
   // 2026-09-10: ERP aktualizuje numer strony zanim doładuje wiersze).
+  //
+  // BŁĄD naprawiony 2026-09-18: porównanie musi iść po WSZYSTKICH wierszach
+  // strony (listRows()), NIE po targetRows() (tylko dopasowane do
+  // MM_DOC_TYPE_ID). Lista miesza "Przesunięcie magazynowe" z "Usunięcie
+  // blokady produktu" — strona bez ŻADNEGO przesunięcia ma targetRows()===[]
+  // PRZED i CZĘSTO TAKŻE PO przejściu, więc rowsChanged() oparte na
+  // targetRows() fałszywie widziało "brak zmiany" (''===''), mimo realnego
+  // przejścia strony — pętla kończyła się przedwcześnie z allPagesExhausted
+  // i częściowym/zerowym wynikiem, bez błędu w logu. Znalezione i naprawione
+  // przy analogicznym scraperze PZ (automatyzacje/pz/scrape.js), ten sam wzorzec
+  // kodu tu i w automatyzacje/wz/scrape.js.
   async function goToNextPage(pager) {
     const pageNoBefore = pager.querySelector('.ActivePageNoInput');
     const beforeVal = pageNoBefore ? pageNoBefore.value : null;
-    const rowsBefore = targetRows().map(rowDocNumber).join('|');
+    const rowsBefore = listRows().map(rowDocNumber).join('|');
 
     const pageChanged = () => {
       const p = getVisiblePager();
@@ -268,7 +279,7 @@ async function scrapeMmInPage(opts) {
       return inp && inp.value !== beforeVal;
     };
     const rowsChanged = () => {
-      const now = targetRows().map(rowDocNumber).join('|');
+      const now = listRows().map(rowDocNumber).join('|');
       return now.length > 0 && now !== rowsBefore;
     };
 
