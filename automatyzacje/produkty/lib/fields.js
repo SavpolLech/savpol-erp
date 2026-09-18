@@ -74,8 +74,22 @@ const DOPASOWANE_EAN = [
 ];
 const EAN_TABLE = 'csItemsBarCodes';
 
+// Grupy produktowe przypisane do produktu (csItemsGroupsItems) — Michał,
+// 2026-09-18, bez listy kolumn (był w wyjeździe), tylko nazwa tabeli
+// docelowej. Namierzone przez zakładkę „Grupy" na karcie — jedno zapytanie
+// API, bez klikania per-wiersz (inaczej niż EAN). 15/15 kolumn realnej
+// tabeli pasuje 1:1 po nazwie do API — sprawdzone w INFORMATION_SCHEMA na
+// `worek` (tabela tam już istnieje, replika ERP).
+const DOPASOWANE_GRUPY = [
+  'csItemsGroupsItemsId', 'csItemsGroupsItemsG', 'csCompaniesId', 'csItemsGroupsId',
+  'csItemsId', 'IsFromETIM', 'Ord', 'IsAutoKind', 'Def4Prices', 'Def4Analysis',
+  'isMain', 'csWarehousesId', 'purchaseDiscount', 'comment', 'purchasePrice'
+];
+const GRUPY_TABLE = 'csItemsGroupsItems';
+
 module.exports = {
   DOPASOWANE, PROD_TABLE,
   DOPASOWANE_JEDNOSTKI, JEDNOSTKI_TABLE,
-  DOPASOWANE_EAN, EAN_TABLE
+  DOPASOWANE_EAN, EAN_TABLE,
+  DOPASOWANE_GRUPY, GRUPY_TABLE
 };

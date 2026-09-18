@@ -171,6 +171,20 @@ async function openZdjeciaTabInPage() {
   return { ok: true };
 }
 
+// Klika zakładkę "Grupy" — osobne zapytanie API (DataSetSQLIdent:
+// csitemsgroupsitems). Michał, 2026-09-18: grupy produktowe przypisane do
+// produktu. Prostsze niż jednostki/kody kreskowe — jedno zapytanie zwraca
+// wszystkie przypisane grupy naraz, bez potrzeby klikania per-wiersz.
+async function openGrupyTabInPage() {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const tab = Array.from(document.querySelectorAll('li[title="Grupy"]'))
+    .find(li => li.offsetParent !== null);
+  if (!tab) return { ok: false, blad: 'nie widzę zakładki „Grupy" na karcie' };
+  tab.click();
+  await sleep(1500);
+  return { ok: true };
+}
+
 // Klika zakładkę "Jednostki" — osobne zapytanie API (DataSetSQLIdent:
 // csitemsunits4item), analogicznie do openZdjeciaTabInPage.
 async function openJednostkiTabInPage() {
@@ -243,7 +257,7 @@ function escCsv(v) {
 // rekordem i metadanymi. CSV nazwane results-* → łapie je istniejąca reguła
 // .gitignore (automatyzacje/**/results-*.csv), więc dane handlowe nie wejdą
 // do repo. Nazwy pól w nagłówku, wartości w jednym wierszu (jeden produkt).
-function saveResult(sku, rekord, fieldNames, zdjecia, jednostki, kodyKreskowe) {
+function saveResult(sku, rekord, fieldNames, zdjecia, jednostki, kodyKreskowe, grupy) {
   if (!fs.existsSync(OUT_DIR)) fs.mkdirSync(OUT_DIR, { recursive: true });
   const id = String(rekord.Item || sku).replace(/[^A-Za-z0-9_-]/g, '_');
 
@@ -275,14 +289,16 @@ function saveResult(sku, rekord, fieldNames, zdjecia, jednostki, kodyKreskowe) {
     wszystkie: rekord,
     zdjecia: zdjecia || [],
     jednostki: jednostki || [],
-    kodyKreskowe: kodyKreskowe || []
+    kodyKreskowe: kodyKreskowe || [],
+    grupy: grupy || []
   }, null, 2), 'utf8');
 
   console.log('[wynik] Zapisano:');
   console.log('  ' + jsonPath);
   console.log('  ' + dopasowanePath + '  (' + F.DOPASOWANE.length + ' kolumn, ' + brakujaceDopasowane.length + ' pustych/brakujących)');
   console.log('  ' + wszystkiePath + '  (' + fieldNames.length + ' pól API)');
-  console.log('  zdjęcia: ' + (zdjecia || []).length + ', jednostki: ' + (jednostki || []).length + ', kody kreskowe: ' + (kodyKreskowe || []).length);
+  console.log('  zdjęcia: ' + (zdjecia || []).length + ', jednostki: ' + (jednostki || []).length +
+    ', kody kreskowe: ' + (kodyKreskowe || []).length + ', grupy: ' + (grupy || []).length);
   if (brakujaceDopasowane.length) {
     console.log('[wynik] Pola z listy dopasowanych, których to zapytanie NIE zwróciło: ' +
       brakujaceDopasowane.join(', '));
@@ -339,6 +355,22 @@ async function scrapeOneProduct(page, captured, sku) {
     console.log('[produkt] ' + sku + ': zdjęcia — znaleziono ' + zdjecia.length + '.');
   }
 
+  // --- Grupy produktowe (csItemsGroupsItems) ---
+  // Michał, 2026-09-18: bez listy kolumn (wyjazd), tylko nazwa tabeli
+  // docelowej — namierzone samodzielnie przez zakładkę "Grupy" na karcie.
+  const grupyOtwarcie = await page.evaluate(openGrupyTabInPage);
+  let grupy = [];
+  if (!grupyOtwarcie.ok) {
+    console.warn('[produkt] ' + sku + ': ' + grupyOtwarcie.blad + ' — zapisuję bez grup.');
+  } else {
+    const csItemsId = trafienie.rekord.csItemsId;
+    for (let i = 0; i < 30 && !grupy.length; i++) {
+      grupy = pickGroupRecords(captured, csItemsId);
+      if (!grupy.length) await page.waitForTimeout(300);
+    }
+    console.log('[produkt] ' + sku + ': grupy — znaleziono ' + grupy.length + '.');
+  }
+
   // --- Jednostki (csItemsUnits) + kody kreskowe per jednostka (csItemsBarCodes) ---
   // Michał 2026-09-14: potrzebne oprócz danych karty. Jednostki to trzecie
   // zapytanie API (csitemsunits4item, ta sama zakładka, którą już znaliśmy z
@@ -381,7 +413,7 @@ async function scrapeOneProduct(page, captured, sku) {
       ', kody kreskowe — ' + kodyKreskowe.length + ' (sprawdzono ' + liczbaWierszy + ' wierszy jednostek).');
   }
 
-  saveResult(sku, trafienie.rekord, trafienie.fieldNames, zdjecia, jednostki, kodyKreskowe);
+  saveResult(sku, trafienie.rekord, trafienie.fieldNames, zdjecia, jednostki, kodyKreskowe, grupy);
 
   // Zamknij kartę PRZED przejściem do kolejnego SKU — inaczej pole
   // wyszukiwania katalogu zostaje zasłonięte/niewidoczne dla następnego
@@ -466,6 +498,24 @@ function pickUnitRecords(captured, csItemsId) {
       if (String(r.csItemsId) !== String(csItemsId)) continue;
       if (widziane.has(r.csItemsUnitsId)) continue;
       widziane.add(r.csItemsUnitsId);
+      wynik.push(r);
+    }
+  }
+  wynik.sort((a, b) => (a.Ord || 0) - (b.Ord || 0));
+  return wynik;
+}
+
+// Wybiera z bufora WSZYSTKIE rekordy csitemsgroupsitems danego produktu.
+// Jedno zapytanie, jeden zestaw wierszy — bez klikania per-wiersz.
+function pickGroupRecords(captured, csItemsId) {
+  const wynik = [];
+  const widziane = new Set();
+  for (const c of captured) {
+    if (c.dataSetIdent !== 'csitemsgroupsitems') continue;
+    for (const r of c.records) {
+      if (String(r.csItemsId) !== String(csItemsId)) continue;
+      if (widziane.has(r.csItemsGroupsItemsId)) continue;
+      widziane.add(r.csItemsGroupsItemsId);
       wynik.push(r);
     }
   }
