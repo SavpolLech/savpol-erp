@@ -3,10 +3,16 @@
   "dateTo": "2026-09-19",
   "processedDocNumbers": [],
   "complete": false,
-  "lastUpdated": "2026-09-22T14:49:34.735Z",
+  "lastUpdated": "2026-09-22T14:50:40.996Z",
   "runs": [
     {
       "ts": "2026-09-22T14:49:34.735Z",
+      "paczkaDok": 0,
+      "partial": true,
+      "stoppedReason": "pagination_stuck"
+    },
+    {
+      "ts": "2026-09-22T14:50:40.994Z",
       "paczkaDok": 0,
       "partial": true,
       "stoppedReason": "pagination_stuck"
