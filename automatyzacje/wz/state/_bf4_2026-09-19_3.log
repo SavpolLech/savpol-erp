@@ -1,0 +1,33 @@
+[sesja] Długość tej sesji: 58.3 min (losowo z przedziału 30-60).
+[strona] ?LoadBaseSkin=0&NS=def52f60-f017-4de3-a4e4-5b0c1ffdf70f&Skin=CePixel&CPG=72203914-A31D-4B25-7735-F18BE44421C2&WORKLOCAL=4004&LocateCompany=1&Title=Savpol&DoNotUseAutoZoom=1&NG=1&countOpensWindows=1&includeOnlyUsableMenuItems=1
+[błąd strony] Avoided redundant navigation to current location: "/".
+[strona] [portal-vue]: Target c-grid-cell-tooltip already exists
+[strona] [portal-vue]: Target c-chatter-tooltip already exists
+[strona] [portal-vue]: Target c-manager-close-confirm-popup already exists
+[strona] [portal-vue]: Target c-popovers already exists
+[strona] Failed to load resource: the server responded with a status of 404 ()
+[login] Zalogowano. URL: https://erp.savpol.pl/pl/panel-sterowania/csdashboard/213217693
+[strona] WebSocket connection to 'wss://erp.savpol.pl/csAPIServer/socket.io/?sessionId=e487d2ef-1e33-4546-2deb-b8bbecbc8bd1&LanguageSuffix=PL&csUsrId=29270321220&csCompaniesId=213217693&EIO=3&transport=websocket&sid=kYwSNsp53oRy-YFUAAKl' failed: Error during WebSocket handshake: Unexpected response code: 400
+[strona] ?LoadBaseSkin=0&NS=def52f60-f017-4de3-a4e4-5b0c1ffdf70f&Skin=CePixel&CPG=72203914-A31D-4B25-7735-F18BE44421C2&WORKLOCAL=4004&LocateCompany=1&Title=Savpol&DoNotUseAutoZoom=1&NG=1&countOpensWindows=1&includeOnlyUsableMenuItems=1
+[strona] Failed to load resource: the server responded with a status of 404 ()
+[strona] Failed to load resource: the server responded with a status of 400 ()
+[strona] SOCKET ERROR Error: xhr poll error
+    at n.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:31238)
+    at i.<anonymous> (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:26201)
+    at n.emit (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:6309)
+    at i.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27872)
+    at https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27504
+[strona] WebSocket connection to 'wss://erp.savpol.pl/csAPIServer/socket.io/?sessionId=e487d2ef-1e33-4546-2deb-b8bbecbc8bd1&LanguageSuffix=PL&csUsrId=29270321220&csCompaniesId=213217693&EIO=3&transport=websocket&sid=thaDQeNc-lo1fecyAAKm' failed: WebSocket is closed before the connection is established.
+[filtr-typ] Zastosowano zapisany filtr "WZ". Rekordów: przed=, po=0
+[filtr] Wartości pól po wpisaniu: {"od":"2026-09-19","do":"2026-09-19"}
+[filtr] Licznik rekordów nie zmienił się w 15s po kliknięciu ".ButtonRefresh" — możliwe, że filtr się nie zastosował.
+[filtr] Ustawiono zakres 2026-09-19..2026-09-19, kliknięto ".ButtonRefresh". Rekordów: przed=0, po=0
+[wz] UWAGA: nie udało się odczytać liczby dokumentów z pagera (dostałem "0") — kontrola na koniec przebiegu będzie pominięta.
+[wz] ERP zgłasza 0 dokumentów dla tego filtra. Mamy już 0 z poprzednich sesji.
+[wz] Lista załadowana. Startuję zbieranie w paczkach po 15 dok. (max 900 łącznie w tej sesji)...
+(node:50328) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[wynik] Zapisano do bazy "worek": 0 wierszy w csDocsHeaders_test, 0 wierszy w csDocsItemsPositions_test.
+[paczka] +0 WZ (łącznie w stanie: 0), complete=false
+[wz] Koniec sesji. Zebrano w tej sesji: 0 WZ, 0 pozycji. Powód zatrzymania: pagination_stuck.
+[git-log-push] Log i stan wypchnięte do repo.
