@@ -23,3 +23,10 @@
 [filtr] Ustawiono zakres 2026-09-18..2026-09-18, kliknięto ".ButtonRefresh". Rekordów: przed=0, po=850
 [wz] ERP zgłasza 850 dokumentów dla tego filtra. Mamy już 845 z poprzednich sesji.
 [wz] Lista załadowana. Startuję zbieranie w paczkach po 15 dok. (max 900 łącznie w tej sesji)...
+(node:20820) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[wynik] Zapisano do bazy "worek": 5 wierszy w csDocsHeaders_test, 21 wierszy w csDocsItemsPositions_test.
+[paczka] +5 WZ (łącznie w stanie: 850/850), complete=true
+[wz] Koniec sesji. Zebrano w tej sesji: 5 WZ, 21 pozycji. (lista wyczerpana).
+[kontrola] ZGADZA SIĘ: mamy 850 dok., ERP zgłaszał 850.
+[git-log-push] Log i stan wypchnięte do repo.
