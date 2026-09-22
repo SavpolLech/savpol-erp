@@ -4,6 +4,42 @@ Robocza notatka z sesji diagnostycznej (2026-09-11), produkt testowy: `0000031`
 (Aromat cytrynowy - HOFFMANN 900g). Podstawa: `automatyzacje/produkty/info/kolumny.txt`
 (141 kolumn tabeli `csItems`).
 
+## Przejście na tabele PRAWDZIWE, bez `_test` (2026-09-22)
+
+Michał: "Mógłbyś wrzucić dane do tabel docelowych? To znaczy już bez
+końcówki _test", potem "Albo jednak ja je przerzucę". W praktyce zrobił
+oba: **sam przerzucił `csItems`/`csItemsUnits`/`csItemsGroupsItems`** ze
+stanu `_test` do prawdziwych tabel (sprawdzone zapytaniem: dokładnie te
+same liczby wierszy co w `_test` na moment przejęcia). **`csPhotos` i
+`csItemsBarCodes` zostały puste** w wersji bez `_test`.
+
+Niezależnie dostaliśmy maila od Krystiana Kotuli (migracja do Odoo) —
+jego `import_produktów_v2.sql` robi `INNER JOIN` do `csItemsUnits` i
+`OUTER APPLY` do `csItemsBarCodes` (realnych, nie `_test`); brak wpisów w
+tych tabelach zmuszał go do "neutralizowania" (osłabiania) zapytania. To
+się idealnie zbiegło z lukami, które właśnie znaleźliśmy.
+
+**Zrobione:** wszystkie 4 skrypty `wgraj-*.js` dostały flagę `--realne` —
+bez niej dalej piszą do `_test` (bezpieczny domyślny tryb), z nią piszą
+wprost do `csItems`/`csPhotos`/`csItemsUnits`/`csItemsBarCodes`/
+`csItemsGroupsItems`. Uzupełnione realne EAN i zdjęcia dla całej setki +
+nowych produktów.
+
+**Odkrycie przy okazji — `csPhotos` ma 2 kolumny `NOT NULL` bez
+domyślnej wartości, których API w ogóle nie zwraca:**
+- `csPhotosG` (uniqueidentifier) — **odzyskane bez re-scrapingu**: to
+  dokładnie ten sam GUID, co w `urlPhoto` (`.../Download/csPhotos_Photo_
+  <GUID>_1.png`), potwierdzone 1:1 na próbce. `imageSourceType` (tinyint)
+  — dodane do `scrape.js` (2026-09-22), dla starszych danych fallback na
+  `0` (jedyna wartość zaobserwowana we wszystkich dotychczasowych
+  próbkach).
+- `IsPrevGenerated`, `SkipPrevGenerate` (oba int) — **ustawione na `0`,
+  ale to NIE jest potwierdzone przez Michała**, tylko nasze najbezpieczniejsze
+  założenie (Lech, 2026-09-22), żeby insert w ogóle przeszedł. To flagi
+  wewnętrzne dot. generowania miniaturek — warto zapytać Michała, czy `0`
+  jest właściwą wartością, zwłaszcza jeśli ERP ma jakiś proces, który na
+  podstawie tych flag faktycznie generuje/pomija miniaturki.
+
 ## csItemsUnits + csItemsBarCodes: jednostki i kody EAN (2026-09-14)
 
 Michał poprosił o dodatkowe dane spoza `csItems`: jednostki przypisane do
