@@ -40,3 +40,28 @@
 [paczka] +15 WZ (łącznie w stanie: 645/818), complete=false
 [wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 94 wierszy w csDocsItemsPositions_test.
 [paczka] +15 WZ (łącznie w stanie: 660/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 90 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 675/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 105 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 690/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 127 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 705/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 129 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 720/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 75 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 735/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 104 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 750/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 59 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 765/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 67 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 780/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 88 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 795/818), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 96 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 810/818), complete=false
+[wynik] Zapisano do bazy "worek": 8 wierszy w csDocsHeaders_test, 45 wierszy w csDocsItemsPositions_test.
+[paczka] +8 WZ (łącznie w stanie: 818/818), complete=true
+[wz] Koniec sesji. Zebrano w tej sesji: 263 WZ, 1807 pozycji. (lista wyczerpana).
+[kontrola] ZGADZA SIĘ: mamy 818 dok., ERP zgłaszał 818.
+[git-log-push] Log i stan wypchnięte do repo.
