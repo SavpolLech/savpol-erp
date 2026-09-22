@@ -122,3 +122,16 @@
 [paczka] +15 WZ (łącznie w stanie: 765/850), complete=false
 [wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 147 wierszy w csDocsItemsPositions_test.
 [paczka] +15 WZ (łącznie w stanie: 780/850), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 117 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 795/850), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 56 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 810/850), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 97 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 825/850), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 73 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 840/850), complete=false
+[wynik] Zapisano do bazy "worek": 5 wierszy w csDocsHeaders_test, 38 wierszy w csDocsItemsPositions_test.
+[paczka] +5 WZ (łącznie w stanie: 845/850), complete=false
+[wz] Koniec sesji. Zebrano w tej sesji: 845 WZ, 5369 pozycji. Powód zatrzymania: session_time_limit.
+[kontrola] NIEKOMPLETNE: mamy 845 z 850 zgłaszanych przez ERP (brakuje 5). Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.
+[git-log-push] Log i stan wypchnięte do repo.
