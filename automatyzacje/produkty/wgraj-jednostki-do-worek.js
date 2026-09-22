@@ -9,8 +9,10 @@
 // csItemsBarCodes) pasują 1:1 do pól zwracanych przez API — zero
 // niedopasowanych, w przeciwieństwie do csItems.
 //
-// Uruchomienie: node wgraj-jednostki-do-worek.js [SKU...]
+// Uruchomienie: node wgraj-jednostki-do-worek.js [SKU...] [--realne]
 // Bez argumentów bierze wszystkie pliki wynik/results-produkt_*.json.
+// Flaga --realne: pisz do PRAWDZIWYCH csItemsUnits/csItemsBarCodes (bez
+// _test) — Michał, 2026-09-22, potwierdził że dane są dobre.
 
 const path = require('path');
 const fs = require('fs');
@@ -127,7 +129,7 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
 }
 
 async function main() {
-  const skuFilter = process.argv.slice(2);
+  const skuFilter = process.argv.slice(2).filter(a => !a.startsWith('--'));
   const produkty = loadResults(skuFilter);
   const wszystkieJednostki = [];
   const wszystkieEan = [];
@@ -146,13 +148,14 @@ async function main() {
     options: { encrypt: true, trustServerCertificate: true }, connectionTimeout: 15000
   });
 
+  const REALNE = process.argv.includes('--realne');
   try {
     await wgrajTabele(pool, database, {
-      realTable: F.JEDNOSTKI_TABLE, testTable: F.JEDNOSTKI_TABLE + '_test',
+      realTable: F.JEDNOSTKI_TABLE, testTable: REALNE ? F.JEDNOSTKI_TABLE : F.JEDNOSTKI_TABLE + '_test',
       dopasowaneCols: F.DOPASOWANE_JEDNOSTKI, idCol: 'csItemsUnitsId', rekordy: wszystkieJednostki
     });
     await wgrajTabele(pool, database, {
-      realTable: F.EAN_TABLE, testTable: F.EAN_TABLE + '_test',
+      realTable: F.EAN_TABLE, testTable: REALNE ? F.EAN_TABLE : F.EAN_TABLE + '_test',
       dopasowaneCols: F.DOPASOWANE_EAN, idCol: 'csItemsBarCodesId', rekordy: wszystkieEan
     });
   } finally {

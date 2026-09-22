@@ -468,6 +468,7 @@ function pickPhotoRecords(captured, csItemsId) {
       if (String(r.csSourceId) !== String(csItemsId)) continue;
       wynik.push({
         csPhotosId: r.csPhotosId,
+        csPhotosG: r.csPhotosG,
         csCompaniesId: r.csCompaniesId,
         csSourceId: r.csSourceId,
         ord: r.Ord,
@@ -476,6 +477,7 @@ function pickPhotoRecords(captured, csItemsId) {
         remoteFileName: r.RemoteFileName,
         remoteIdent: r.RemoteIdent,
         csPhotosTypesG: r.csPhotosTypesG,
+        imageSourceType: r.imageSourceType,
         urlPhoto: budujUrlDoZdjecia(r.PhotoUrl)
       });
     }

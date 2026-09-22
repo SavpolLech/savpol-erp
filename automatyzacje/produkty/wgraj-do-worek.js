@@ -9,8 +9,11 @@
 // więc csItems_test ma dokładnie te typy, co produkcja — tylko ograniczone do
 // pól z listy DOPASOWANE (te, które faktycznie umiemy wypełnić ze scrapera).
 //
-// Uruchomienie: node wgraj-do-worek.js [SKU...]
+// Uruchomienie: node wgraj-do-worek.js [SKU...] [--realne]
 // Bez argumentów bierze wszystkie pliki wynik/results-produkt_*.json.
+// Flaga --realne: pisz do PRAWDZIWEJ dbo.csItems (bez _test) — Michał,
+// 2026-09-22, potwierdził że dane są dobre. Bez tej flagi — domyślnie,
+// bezpiecznie — nadal csItems_test.
 
 const path = require('path');
 const fs = require('fs');
@@ -28,7 +31,8 @@ const { fetchColumnsMeta, buildCreateTableSQL, mssqlType, coerceValue } =
 const F = require('./lib/fields');
 const { ITEMS_FIXED_VALUES, ITEMS_SQL_NOW_COLUMNS, ITEMS_FIXED_FIELDS } = require('./lib/fixed-values');
 
-const TEST_TABLE = 'csItems_test';
+const REALNE = process.argv.includes('--realne');
+const TEST_TABLE = REALNE ? F.PROD_TABLE : 'csItems_test';
 const OUT_DIR = path.join(__dirname, 'wynik');
 
 function loadResults(skuFilter) {
@@ -77,7 +81,7 @@ async function insertRows(pool, columnsMeta, fixedColumnsMeta, rows) {
 }
 
 async function main() {
-  const skuFilter = process.argv.slice(2);
+  const skuFilter = process.argv.slice(2).filter(a => !a.startsWith('--'));
   const results = loadResults(skuFilter);
   if (!results.length) throw new Error('Brak wyników do wgrania w ' + OUT_DIR + ' (uruchom najpierw scrape.js).');
   console.log('[wgraj] Znaleziono ' + results.length + ' zescrapowanych produktów do wgrania: ' +

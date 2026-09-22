@@ -9,8 +9,9 @@
 // csItemsGroupsItems. Namierzone samodzielnie: zakładka "Grupy" na karcie,
 // 15/15 kolumn realnej tabeli pasuje 1:1 po nazwie do API.
 //
-// Uruchomienie: node wgraj-grupy-do-worek.js [SKU...]
+// Uruchomienie: node wgraj-grupy-do-worek.js [SKU...] [--realne]
 // Bez argumentów bierze wszystkie pliki wynik/results-produkt_*.json.
+// Flaga --realne: pisz do PRAWDZIWEJ csItemsGroupsItems (bez _test).
 
 const path = require('path');
 const fs = require('fs');
@@ -27,7 +28,8 @@ const { fetchColumnsMeta, mssqlType, coerceValue } =
   require(path.join(__dirname, '..', 'wz', 'lib', 'schema'));
 const F = require('./lib/fields');
 
-const TEST_TABLE = F.GRUPY_TABLE + '_test';
+const REALNE = process.argv.includes('--realne');
+const TEST_TABLE = REALNE ? F.GRUPY_TABLE : F.GRUPY_TABLE + '_test';
 const OUT_DIR = path.join(__dirname, 'wynik');
 
 function loadResults(skuFilter) {
@@ -42,7 +44,7 @@ function loadResults(skuFilter) {
 }
 
 async function main() {
-  const skuFilter = process.argv.slice(2);
+  const skuFilter = process.argv.slice(2).filter(a => !a.startsWith('--'));
   const produkty = loadResults(skuFilter);
   const wszystkieGrupy = [];
   produkty.forEach(p => (p.grupy || []).forEach(g => wszystkieGrupy.push(g)));

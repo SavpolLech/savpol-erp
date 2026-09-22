@@ -9,8 +9,14 @@
 // produkcyjną (której nie ma — PhotoUrl to pole liczone przez API, nie
 // kolumna w bazie).
 //
-// Uruchomienie: node wgraj-zdjecia-do-worek.js [SKU...]
+// Uruchomienie: node wgraj-zdjecia-do-worek.js [SKU...] [--realne]
 // Bez argumentów bierze wszystkie pliki wynik/results-produkt_*.json.
+// Flaga --realne: pisz do PRAWDZIWEJ dbo.csPhotos (bez _test). UWAGA: real
+// csPhotos ma 2 kolumny NOT NULL bez wartości domyślnej, których API w
+// ogóle nie zwraca — IsPrevGenerated i SkipPrevGenerate (flagi wewnętrzne
+// dot. generowania miniaturek). Lech, 2026-09-22: ustawiamy obie na 0 jako
+// najbezpieczniejsze założenie — NIE potwierdzone przez Michała, do
+// zweryfikowania przy pierwszej okazji.
 
 const path = require('path');
 const fs = require('fs');
@@ -26,13 +32,20 @@ dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, 
 const { fetchColumnsMeta, mssqlType, coerceValue } =
   require(path.join(__dirname, '..', 'wz', 'lib', 'schema'));
 
-const TEST_TABLE = 'csPhotos_test';
+const REALNE = process.argv.includes('--realne');
+const TEST_TABLE = REALNE ? 'csPhotos' : 'csPhotos_test';
 const OUT_DIR = path.join(__dirname, 'wynik');
 
 // Kolumny 1:1 z produkcyjną dbo.csPhotos (sprawdzone w INFORMATION_SCHEMA,
 // 2026-09-14) — typy bierzemy z NIEJ, nie zgadujemy.
-const REAL_COLUMNS = ['csPhotosId', 'csCompaniesId', 'csSourceId', 'Ord',
-  'DoNotShow4Items', 'LocalFileName', 'RemoteFileName', 'RemoteIdent', 'csPhotosTypesG'];
+const REAL_COLUMNS = ['csPhotosId', 'csPhotosG', 'csCompaniesId', 'csSourceId', 'Ord',
+  'DoNotShow4Items', 'LocalFileName', 'RemoteFileName', 'RemoteIdent', 'csPhotosTypesG', 'imageSourceType'];
+
+// Kolumny NOT NULL bez wartości domyślnej w realnej csPhotos, których API
+// nie zwraca w ogóle — patrz zastrzeżenie w nagłówku pliku. Dotyczy tylko
+// --realne (w _test te kolumny w ogóle nie istnieją, bo _test ma tylko
+// REAL_COLUMNS).
+const FIXED_ONLY_REALNE = { IsPrevGenerated: 0, SkipPrevGenerate: 0 };
 
 function loadResults(skuFilter) {
   const files = fs.readdirSync(OUT_DIR).filter(f => f.startsWith('results-produkt_') && f.endsWith('.json'));
@@ -46,7 +59,7 @@ function loadResults(skuFilter) {
 }
 
 async function main() {
-  const skuFilter = process.argv.slice(2);
+  const skuFilter = process.argv.slice(2).filter(a => !a.startsWith('--'));
   const produkty = loadResults(skuFilter);
   const wszystkieZdjecia = [];
   produkty.forEach(p => p.zdjecia.forEach(z => wszystkieZdjecia.push(z)));
@@ -81,6 +94,14 @@ async function main() {
       console.log('[wgraj-zdjecia] Tabela dbo.' + TEST_TABLE + ' już istnieje — wstawiam do niej.');
     }
 
+    let fixedColumnsMeta = [];
+    if (REALNE) {
+      const fixedNames = Object.keys(FIXED_ONLY_REALNE);
+      const fx = await fetchColumnsMeta(pool, 'dbo', 'csPhotos', fixedNames);
+      if (fx.missing.length) console.warn('[wgraj-zdjecia] Nie znalazłem: ' + fx.missing.join(', '));
+      fixedColumnsMeta = fx.found.filter(c => !c.IS_COMPUTED);
+    }
+
     // Dedup po csPhotosId, tak jak w wgraj-do-worek.js.
     const idCol = columnsMeta.find(c => c.COLUMN_NAME === 'csPhotosId');
     let existing = new Set();
@@ -98,6 +119,23 @@ async function main() {
     const nowe = wszystkieZdjecia.filter(z => !existing.has(String(z.csPhotosId)));
     if (existing.size) console.log('[wgraj-zdjecia] Pominięto ' + existing.size + ' już obecnych (ten sam csPhotosId).');
 
+    // Dane zescrapowane PRZED 2026-09-22 nie mają csPhotosG/imageSourceType
+    // (dodane do scrape.js tego dnia) — csPhotosG odzyskujemy z urlPhoto,
+    // bo GUID w URL-u (Download/csPhotos_Photo_<GUID>_1.png) to dokładnie
+    // ten sam identyfikator (potwierdzone: sprawdzone 1:1 na produkcie
+    // 0000031 we wcześniejszej sesji). imageSourceType — brak sposobu na
+    // odzyskanie, ale w KAŻDYM dotąd zaobserwowanym rekordzie było 0, więc
+    // to bezpieczny fallback, nie zgadywanie z powietrza.
+    function uzupelnijBrakujace(z) {
+      if (!z.csPhotosG && z.urlPhoto) {
+        const m = z.urlPhoto.match(/csPhotos_Photo_([0-9A-Fa-f-]{36})_/);
+        if (m) z.csPhotosG = m[1];
+      }
+      if (z.imageSourceType === undefined || z.imageSourceType === null) z.imageSourceType = 0;
+      return z;
+    }
+    nowe.forEach(uzupelnijBrakujace);
+
     let wstawione = 0;
     for (const z of nowe) {
       const request = pool.request();
@@ -112,9 +150,19 @@ async function main() {
         colNames.push('[' + col.COLUMN_NAME + ']');
         paramNames.push('@' + paramName);
       });
-      request.input('pUrl', sql.NVarChar(500), z.urlPhoto || null);
-      colNames.push('[UrlPhotoScraped]');
-      paramNames.push('@pUrl');
+      fixedColumnsMeta.forEach((col, i) => {
+        const paramName = 'fx' + i;
+        request.input(paramName, mssqlType(col), FIXED_ONLY_REALNE[col.COLUMN_NAME]);
+        colNames.push('[' + col.COLUMN_NAME + ']');
+        paramNames.push('@' + paramName);
+      });
+      if (!REALNE) {
+        // UrlPhotoScraped jest tylko w _test (poza schematem produkcyjnym) —
+        // realna csPhotos nie ma tej kolumny, patrz nagłówek pliku.
+        request.input('pUrl', sql.NVarChar(500), z.urlPhoto || null);
+        colNames.push('[UrlPhotoScraped]');
+        paramNames.push('@pUrl');
+      }
       await request.query('INSERT INTO dbo.' + TEST_TABLE + ' (' + colNames.join(', ') + ') VALUES (' + paramNames.join(', ') + ')');
       wstawione++;
     }
