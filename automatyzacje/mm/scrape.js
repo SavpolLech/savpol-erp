@@ -81,12 +81,14 @@ function resolveDateKeyword(v) {
 const FILTER_DATE_FROM = resolveDateKeyword(process.env.FILTER_DATE_FROM || process.env.FILTER_DATE || null);
 const FILTER_DATE_TO = resolveDateKeyword(process.env.FILTER_DATE_TO || process.env.FILTER_DATE || null);
 
-// Zapisany filtr ERP typu dokumentu (jak "WZ" przy wydaniach). Dla MM URL listy
-// już zawęża do przesunięć magazynowych, więc DOMYŚLNIE wyłączony — DOC_TYPES
-// w scrapeMmInPage zostaje jako filtr po naszej stronie. Włącz (=true) tylko
-// jeśli sonda pokaże, że lista miesza podtypy i istnieje zapisany filtr o
-// nazwie z MM_DOC_TYPE_FILTER_LABEL.
-const USE_DOC_TYPE_FILTER = process.env.USE_DOC_TYPE_FILTER === 'true';
+// Zapisany filtr ERP typu dokumentu. Lista przesunięć MIESZA podtypy (MM +
+// "Usunięcie blokady" + "Blokada"), więc bez tego filtra scraper przewija masę
+// cudzych dokumentów, żeby wyłuskać MM. Użytkownik zapisał w ERP filtr "MM"
+// (zawęża serwerowo do csDocsTypesId=269000798 — potwierdzone 2026-09-23:
+// 2719 → 634 rekordów, strona czysto MM). DOMYŚLNIE WŁĄCZONY. Filtr po naszej
+// stronie (csDocsTypesId w scrapeMmInPage) zostaje jako druga linia obrony,
+// gdyby zapisany filtr kiedyś zniknął/zmienił nazwę.
+const USE_DOC_TYPE_FILTER = process.env.USE_DOC_TYPE_FILTER !== 'false';
 const MM_DOC_TYPE_FILTER_LABEL = process.env.MM_DOC_TYPE_FILTER_LABEL || 'MM';
 
 // Lista przesunięć miesza podtypy — potwierdzone na żywym ERP (2026-09-15):
@@ -667,7 +669,18 @@ async function main() {
     await page.waitForSelector('td[data-datafield="DocNumber"]', { timeout: 30000 });
 
     if (USE_DOC_TYPE_FILTER) {
-      await setDocTypeFilter(page, MM_DOC_TYPE_FILTER_LABEL);
+      // Nie-krytyczny: to optymalizacja (mniej stron), nie warunek poprawności —
+      // filtr csDocsTypesId w scrapeMmInPage i tak odsiewa obce podtypy. Gdyby
+      // zapisany filtr "MM" zniknął/zmienił nazwę, logujemy i lecimy dalej bez
+      // niego, zamiast wywalać cały przebieg.
+      try {
+        await setDocTypeFilter(page, MM_DOC_TYPE_FILTER_LABEL);
+      } catch (e) {
+        console.warn('[filtr-typ] Nie udało się zastosować zapisanego filtra "' +
+          MM_DOC_TYPE_FILTER_LABEL + '" (' + e.message + '). Jadę dalej bez niego — ' +
+          'filtr po stronie skryptu (csDocsTypesId) nadal odsiewa obce podtypy, ' +
+          'tylko wolniej (więcej stron do przewinięcia).');
+      }
     }
 
     if (dateFrom || dateTo) {
@@ -765,9 +778,10 @@ async function main() {
     // całej listy), nie porównanie z pagerem. (Przy WZ lista była jednorodna,
     // więc tam porównanie z pagerem miało sens — tu już nie.)
     if (allPagesExhausted) {
-      console.log('[kontrola] Przewinięto CAŁĄ listę. Zebrano ' + processedThisRun.size +
-        ' dok. typu MM. Pager ERP (' + (expectedTotal ?? '?') + ') liczy wszystkie podtypy ' +
-        'przesunięć, więc różnica jest normalna — to NIE brak danych.');
+      console.log('[kontrola] Przewinięto CAŁĄ listę — komplet MM dla tego filtra. Zebrano ' +
+        processedThisRun.size + ' dok. typu MM (pager ERP: ' + (expectedTotal ?? '?') + '). ' +
+        'Bez zapisanego filtra "MM" pager liczy też inne podtypy przesunięć, więc bywa większy — ' +
+        'to nie brak danych.');
     } else {
       console.warn('[kontrola] Przerwane przed końcem listy (' + (lastStoppedReason || '?') +
         '): zebrano ' + processedThisRun.size + ' dok. typu MM, nie przewinięto całej listy. ' +
