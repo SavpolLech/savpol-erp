@@ -168,3 +168,16 @@
     at i.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27872)
     at https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27504
 [strona] WebSocket connection to 'wss://erp.savpol.pl/csAPIServer/socket.io/?sessionId=d83fe29c-1f26-4a83-d18e-2d0c3eb60e83&LanguageSuffix=PL&csUsrId=29270321220&csCompaniesId=213217693&EIO=3&transport=websocket&sid=CHhd91VwRfUjTRCtAAd-' failed: WebSocket is closed before the connection is established.
+(node:35236) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 80 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 674/707), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 110 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 689/707), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 95 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 704/707), complete=false
+[wynik] Zapisano do bazy "worek": 3 wierszy w csDocsHeaders_test, 22 wierszy w csDocsItemsPositions_test.
+[paczka] +3 WZ (łącznie w stanie: 707/707), complete=true
+[wz] Koniec sesji. Zebrano w tej sesji: 48 WZ, 307 pozycji. (lista wyczerpana).
+[kontrola] ZGADZA SIĘ: mamy 707 dok., ERP zgłaszał 707.
+[git-log-push] Log i stan wypchnięte do repo.

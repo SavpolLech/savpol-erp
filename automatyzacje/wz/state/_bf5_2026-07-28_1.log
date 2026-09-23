@@ -1,0 +1,54 @@
+[sesja] Długość tej sesji: 39.9 min (losowo z przedziału 30-60).
+[strona] ?LoadBaseSkin=0&NS=def52f60-f017-4de3-a4e4-5b0c1ffdf70f&Skin=CePixel&CPG=72203914-A31D-4B25-7735-F18BE44421C2&WORKLOCAL=4004&LocateCompany=1&Title=Savpol&DoNotUseAutoZoom=1&NG=1&countOpensWindows=1&includeOnlyUsableMenuItems=1
+[strona] Failed to load resource: the server responded with a status of 400 ()
+[strona] SOCKET ERROR Error: xhr poll error
+    at n.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:31238)
+    at i.<anonymous> (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:26201)
+    at n.emit (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:6309)
+    at i.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27872)
+    at https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27504
+[strona] WebSocket connection to 'wss://erp.savpol.pl/csAPIServer/socket.io/?sessionId=f51fb510-a4eb-449c-4add-0ac152d53eca&LanguageSuffix=PL&csUsrId=954110883&csCompaniesId=213217693&EIO=3&transport=websocket&sid=UAkiVhzNCMJTcCMCAAdM' failed: WebSocket is closed before the connection is established.
+[błąd strony] Avoided redundant navigation to current location: "/".
+[strona] [portal-vue]: Target c-grid-cell-tooltip already exists
+[strona] [portal-vue]: Target c-chatter-tooltip already exists
+[strona] [portal-vue]: Target c-manager-close-confirm-popup already exists
+[strona] [portal-vue]: Target c-popovers already exists
+[strona] Failed to load resource: the server responded with a status of 400 ()
+[strona] SOCKET ERROR Error: xhr poll error
+    at n.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:31238)
+    at i.<anonymous> (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:26201)
+    at n.emit (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:6309)
+    at i.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27872)
+    at https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27504
+[strona] WebSocket connection to 'wss://erp.savpol.pl/csAPIServer/socket.io/?sessionId=f51fb510-a4eb-449c-4add-0ac152d53eca&LanguageSuffix=PL&csUsrId=29270321220&csCompaniesId=213217693&EIO=3&transport=websocket&sid=d3y4Uuc0DcL-lUd7AAfA' failed: WebSocket is closed before the connection is established.
+[strona] Failed to load resource: the server responded with a status of 404 ()
+[login] Zalogowano. URL: https://erp.savpol.pl/pl/panel-sterowania/csdashboard/213217693
+[strona] ?LoadBaseSkin=0&NS=def52f60-f017-4de3-a4e4-5b0c1ffdf70f&Skin=CePixel&CPG=72203914-A31D-4B25-7735-F18BE44421C2&WORKLOCAL=4004&LocateCompany=1&Title=Savpol&DoNotUseAutoZoom=1&NG=1&countOpensWindows=1&includeOnlyUsableMenuItems=1
+[strona] Failed to load resource: the server responded with a status of 404 ()
+[filtr-typ] Zastosowano zapisany filtr "WZ". Rekordów: przed=, po=0
+[filtr] Wartości pól po wpisaniu: {"od":"2026-07-28","do":"2026-07-28"}
+[filtr] Ustawiono zakres 2026-07-28..2026-07-28, kliknięto ".ButtonRefresh". Rekordów: przed=0, po=942
+[wz] ERP zgłasza 942 dokumentów dla tego filtra. Mamy już 0 z poprzednich sesji.
+[wz] Lista załadowana. Startuję zbieranie w paczkach po 15 dok. (max 900 łącznie w tej sesji)...
+(node:49460) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 39 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 15/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 83 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 30/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 98 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 45/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 114 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 60/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 93 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 75/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 168 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 90/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 164 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 105/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 131 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 120/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 94 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 135/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 96 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 150/942), complete=false
