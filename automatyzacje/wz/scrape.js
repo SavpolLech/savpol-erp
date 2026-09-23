@@ -87,6 +87,16 @@ const FILTER_DATE_TO = resolveDateKeyword(process.env.FILTER_DATE_TO || process.
 // DOC_TYPES w scrapeWzInPage zostaje jako druga linia obrony niezależnie od tego.
 const USE_DOC_TYPE_FILTER = process.env.USE_DOC_TYPE_FILTER !== 'false';
 
+// Tabela docelowa zapisu. DOMYŚLNIE `*_test` — bezpieczne dla testów i
+// ręcznego `node scrape.js`. SCRAPE_TARGET=prod (ustawiane w
+// serwer/uruchom.bat dla dziennego przebiegu) przełącza na PRODUKCYJNE
+// csDocsHeaders/csDocsItemsPositions. Zapis do produkcji jest zweryfikowany:
+// _test ma te same 273 kolumny co prod, a wszystkie NOT NULL bez defaultu są
+// pokryte przez pola scrapowane ∪ fixed-values (patrz load-to-prod.js).
+const WRITE_TO_PROD = process.env.SCRAPE_TARGET === 'prod';
+const TARGET_HEADERS = WRITE_TO_PROD ? F.PROD_TABLE_HEADERS : F.TEST_TABLE_HEADERS;
+const TARGET_POSITIONS = WRITE_TO_PROD ? F.PROD_TABLE_POSITIONS : F.TEST_TABLE_POSITIONS;
+
 // Godziny "pracy" — poza tym oknem (i w weekendy) skrypt się NIE uruchamia,
 // nawet jeśli coś go odpali (harmonogram, ręcznie, źle skonfigurowany cron).
 // To zabezpieczenie w samym kodzie, niezależne od tego, JAK i KIEDY go
@@ -441,7 +451,7 @@ async function findExistingHeaderIds(pool, headerIdColMeta, rows) {
   const request = pool.request();
   const placeholders = ids.map((id, i) => { request.input('id' + i, mssqlType(headerIdColMeta), id); return '@id' + i; });
   const result = await request.query(
-    'SELECT [csDocsHeadersId] AS id FROM dbo.' + F.TEST_TABLE_HEADERS + ' WHERE [csDocsHeadersId] IN (' + placeholders.join(', ') + ')'
+    'SELECT [csDocsHeadersId] AS id FROM dbo.' + TARGET_HEADERS + ' WHERE [csDocsHeadersId] IN (' + placeholders.join(', ') + ')'
   );
   return new Set(result.recordset.map(r => String(r.id)));
 }
@@ -530,10 +540,13 @@ async function saveResult(result, label) {
       console.log('[wynik] Pominięto ' + existingIds.size + ' dokumentów, które już były w bazie (ochrona przed duplikatem).');
     }
 
-    const insertedHeaders = await insertRows(pool, F.TEST_TABLE_HEADERS, schema.headers, newHeaders);
-    const insertedPositions = await insertRows(pool, F.TEST_TABLE_POSITIONS, schema.positions, newPositions);
+    if (WRITE_TO_PROD) {
+      console.log('[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (' + TARGET_HEADERS + '/' + TARGET_POSITIONS + ').');
+    }
+    const insertedHeaders = await insertRows(pool, TARGET_HEADERS, schema.headers, newHeaders);
+    const insertedPositions = await insertRows(pool, TARGET_POSITIONS, schema.positions, newPositions);
     console.log('[wynik] Zapisano do bazy "' + DB_NAME + '": ' + insertedHeaders + ' wierszy w ' +
-      F.TEST_TABLE_HEADERS + ', ' + insertedPositions + ' wierszy w ' + F.TEST_TABLE_POSITIONS + '.');
+      TARGET_HEADERS + ', ' + insertedPositions + ' wierszy w ' + TARGET_POSITIONS + '.');
   } finally {
     await pool.close();
   }

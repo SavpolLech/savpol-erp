@@ -73,6 +73,9 @@ REM Weekend NIE jest pusty (bywaja pojedyncze WZ w sob/nd) - dopuszczamy start
 REM w weekend, inaczej scrape.js sam odmowilby. Bez tego przy triggerze
 REM codziennym piatek/sobota/niedziela zostawaly poza pokryciem "wczoraj".
 set ALLOW_WEEKEND=true
+REM Dzienny przebieg pisze WPROST do tabel PRODUKCYJNYCH (csDocsHeaders/
+REM csDocsItemsPositions). Bez tego scrape.js domyslnie pisze do *_test.
+set SCRAPE_TARGET=prod
 
 echo [%date% %time%] node scrape.js (sesja scrapowania, limit 75 min)...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0odpal-z-timeoutem.ps1" -TimeoutSec 4500
