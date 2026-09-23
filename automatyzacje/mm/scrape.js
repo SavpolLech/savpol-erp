@@ -40,8 +40,8 @@ function applyFixedValues(batch) {
     p.createdDate = docDateByHeaderId.get(p.csDocsHeadersId) || null;
   });
 }
-const { loadState, saveState, appendRunLog } = require('./lib/state');
-const { pushLogs } = require('./lib/git-log-push');
+const { loadState, saveState, appendRunLog } = require('../lib-wspolne/state')(__dirname, 'mm');
+const { pushLogs } = require('../lib-wspolne/git-log-push');
 
 // ---------- Konfiguracja ----------
 
@@ -807,7 +807,7 @@ async function main() {
 
     await browser.close();
     releaseLock();
-    pushLogs(dateFrom ? (dateFrom + '..' + dateTo) : null);
+    pushLogs('mm', dateFrom ? (dateFrom + '..' + dateTo) : null);
   }
 }
 
