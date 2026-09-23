@@ -92,3 +92,32 @@
 [paczka] +15 WZ (łącznie w stanie: 645/942), complete=false
 [wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 103 wierszy w csDocsItemsPositions_test.
 [paczka] +15 WZ (łącznie w stanie: 660/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 119 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 675/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 50 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 690/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 102 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 705/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 127 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 720/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 96 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 735/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 103 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 750/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 72 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 765/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 140 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 780/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 80 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 795/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 97 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 810/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 93 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 825/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 76 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 840/942), complete=false
+[wynik] Zapisano do bazy "worek": 5 wierszy w csDocsHeaders_test, 44 wierszy w csDocsItemsPositions_test.
+[paczka] +5 WZ (łącznie w stanie: 845/942), complete=false
+[wz] Koniec sesji. Zebrano w tej sesji: 680 WZ, 4279 pozycji. Powód zatrzymania: session_time_limit.
+[kontrola] NIEKOMPLETNE: mamy 845 z 942 zgłaszanych przez ERP (brakuje 97). Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.
+[git-log-push] Log i stan wypchnięte do repo.
