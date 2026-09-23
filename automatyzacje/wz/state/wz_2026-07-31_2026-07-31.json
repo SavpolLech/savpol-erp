@@ -894,10 +894,16 @@
     "2026/WZ/GDS1/013234",
     "2026/WZ/GDS1/013233",
     "2026/WZ/GDS1/013232",
-    "2026/WZ/GDS1/013231"
+    "2026/WZ/GDS1/013231",
+    "2026/WZ/GDS1/013230",
+    "2026/WZ/GDS1/013229",
+    "2026/WZ/GDS1/013228",
+    "2026/WZ/GDS1/013227",
+    "2026/WZ/GDS1/013226",
+    "2026/WZ/GDS1/013225"
   ],
-  "complete": false,
-  "lastUpdated": "2026-09-23T11:43:26.171Z",
+  "complete": true,
+  "lastUpdated": "2026-09-23T11:46:38.723Z",
   "runs": [
     {
       "ts": "2026-09-23T10:51:23.046Z",
@@ -1258,6 +1264,12 @@
       "paczkaDok": 8,
       "partial": true,
       "stoppedReason": "session_time_limit"
+    },
+    {
+      "ts": "2026-09-23T11:46:38.722Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
     }
   ]
 }
