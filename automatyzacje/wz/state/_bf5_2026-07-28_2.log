@@ -1,0 +1,94 @@
+[sesja] Długość tej sesji: 41.8 min (losowo z przedziału 30-60).
+[wznowienie] Znaleziono stan dla 2026-07-28..2026-07-28: 165 dok. już zebranych wcześniej.
+[strona] ?LoadBaseSkin=0&NS=def52f60-f017-4de3-a4e4-5b0c1ffdf70f&Skin=CePixel&CPG=72203914-A31D-4B25-7735-F18BE44421C2&WORKLOCAL=4004&LocateCompany=1&Title=Savpol&DoNotUseAutoZoom=1&NG=1&countOpensWindows=1&includeOnlyUsableMenuItems=1
+[strona] Failed to load resource: the server responded with a status of 400 ()
+[strona] SOCKET ERROR Error: xhr poll error
+    at n.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:31238)
+    at i.<anonymous> (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:26201)
+    at n.emit (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:6309)
+    at i.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27872)
+    at https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27504
+[strona] WebSocket connection to 'wss://erp.savpol.pl/csAPIServer/socket.io/?sessionId=ff0bc5ec-67be-49f9-1192-c3ccdb1df2de&LanguageSuffix=PL&csUsrId=954110883&csCompaniesId=213217693&EIO=3&transport=websocket&sid=EnkAho-0sG8cC8dOAAhH' failed: WebSocket is closed before the connection is established.
+[strona] Failed to load resource: the server responded with a status of 400 ()
+[strona] [portal-vue]: Target c-grid-cell-tooltip already exists
+[strona] [portal-vue]: Target c-chatter-tooltip already exists
+[strona] [portal-vue]: Target c-manager-close-confirm-popup already exists
+[strona] [portal-vue]: Target c-popovers already exists
+[strona] Failed to load resource: the server responded with a status of 404 ()
+[login] Zalogowano. URL: https://erp.savpol.pl/pl/panel-sterowania/csdashboard/213217693
+[strona] ?LoadBaseSkin=0&NS=def52f60-f017-4de3-a4e4-5b0c1ffdf70f&Skin=CePixel&CPG=72203914-A31D-4B25-7735-F18BE44421C2&WORKLOCAL=4004&LocateCompany=1&Title=Savpol&DoNotUseAutoZoom=1&NG=1&countOpensWindows=1&includeOnlyUsableMenuItems=1
+[strona] Failed to load resource: the server responded with a status of 404 ()
+[filtr-typ] Zastosowano zapisany filtr "WZ". Rekordów: przed=, po=0
+[filtr] Wartości pól po wpisaniu: {"od":"2026-07-28","do":"2026-07-28"}
+[filtr] Ustawiono zakres 2026-07-28..2026-07-28, kliknięto ".ButtonRefresh". Rekordów: przed=0, po=942
+[wz] ERP zgłasza 942 dokumentów dla tego filtra. Mamy już 165 z poprzednich sesji.
+[wz] Lista załadowana. Startuję zbieranie w paczkach po 15 dok. (max 900 łącznie w tej sesji)...
+(node:50720) [DEP0123] DeprecationWarning: Setting the TLS ServerName to an IP address is not permitted by RFC 6066. This will be ignored in a future version.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+[wynik] Pominięto 15 dokumentów, które już były w bazie (ochrona przed duplikatem).
+[wynik] Zapisano do bazy "worek": 0 wierszy w csDocsHeaders_test, 0 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 180/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 131 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 195/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 74 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 210/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 77 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 225/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 101 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 240/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 103 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 255/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 73 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 270/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 69 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 285/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 72 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 300/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 49 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 315/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 67 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 330/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 111 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 345/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 82 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 360/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 106 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 375/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 115 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 390/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 108 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 405/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 157 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 420/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 162 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 435/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 100 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 450/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 70 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 465/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 57 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 480/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 103 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 495/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 97 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 510/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 58 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 525/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 151 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 540/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 137 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 555/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 99 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 570/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 92 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 585/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 37 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 600/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 64 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 615/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 69 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 630/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 78 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 645/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 103 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 660/942), complete=false

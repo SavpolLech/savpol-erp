@@ -52,3 +52,29 @@
 [paczka] +15 WZ (łącznie w stanie: 135/942), complete=false
 [wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 96 wierszy w csDocsItemsPositions_test.
 [paczka] +15 WZ (łącznie w stanie: 150/942), complete=false
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 98 wierszy w csDocsItemsPositions_test.
+[paczka] +15 WZ (łącznie w stanie: 165/942), complete=false
+[git-log-push] Log i stan wypchnięte do repo.
+[BŁĄD] RequestError: Timeout: Request failed to complete in 15000ms
+    at C:\Users\l.dudkiewicz\Documents\savpol-erp\savpol-erp\automatyzacje\wz\node_modules\mssql\lib\tedious\request.js:449:19
+    at Array.forEach (<anonymous>)
+    at Request.userCallback (C:\Users\l.dudkiewicz\Documents\savpol-erp\savpol-erp\automatyzacje\wz\node_modules\mssql\lib\tedious\request.js:446:46)
+    at Request.callback (C:\Users\l.dudkiewicz\Documents\savpol-erp\savpol-erp\automatyzacje\wz\node_modules\tedious\lib\request.js:239:14)
+    at C:\Users\l.dudkiewicz\Documents\savpol-erp\savpol-erp\automatyzacje\wz\node_modules\tedious\lib\connection.js:2692:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  code: 'ETIMEOUT',
+  originalError: RequestError: Timeout: Request failed to complete in 15000ms
+      at Connection.requestTimeout (C:\Users\l.dudkiewicz\Documents\savpol-erp\savpol-erp\automatyzacje\wz\node_modules\tedious\lib\connection.js:1245:21)
+      at Timeout._onTimeout (C:\Users\l.dudkiewicz\Documents\savpol-erp\savpol-erp\automatyzacje\wz\node_modules\tedious\lib\connection.js:1194:14)
+      at listOnTimeout (node:internal/timers:605:17)
+      at process.processTimers (node:internal/timers:541:7) {
+    code: 'ETIMEOUT'
+  },
+  number: 'ETIMEOUT',
+  lineNumber: undefined,
+  state: undefined,
+  class: undefined,
+  serverName: undefined,
+  procName: undefined,
+  precedingErrors: []
+}
