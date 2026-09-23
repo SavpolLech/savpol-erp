@@ -116,12 +116,13 @@ To zadanie odpala się **tylko raz dziennie, o 7:00** — cały dzień pracy
      zalogowany"** (Run whether user is logged on or not) — inaczej zadanie
      nie odpali się, gdy nikt nie jest zalogowany na ten komputer.
 4. Zakładka **Wyzwalacze** (Triggers) → **Nowy...** (New):
-   - Zaczynaj zadanie: **Cotygodniowo** (Weekly).
+   - Zaczynaj zadanie: **Codziennie** (Daily).
    - Godzina startu: **7:00:00**.
-   - Zaznacz dni: **poniedziałek, wtorek, środa, czwartek, piątek** (bez
-     soboty i niedzieli).
-   - Powtarzanie zadania **wyłączone** (to zadanie odpala się raz na dzień
-     roboczy — pętlę wewnątrz dnia robi sam skrypt).
+   - Powtarzaj co: **1 dzień** (czyli każdego dnia, łącznie z sobotą i
+     niedzielą — w weekend też powstają pojedyncze dokumenty i muszą być
+     złapane; bez tego piątek/sobota/niedziela wypadałyby z pokrycia).
+   - Powtarzanie zadania w ciągu dnia **wyłączone** (to zadanie odpala się raz
+     na dzień — pętlę wewnątrz dnia robi sam skrypt).
 5. Zakładka **Akcje** (Actions) → **Nowa...** (New) → Uruchom program (Start
    a program) → **Program/skrypt**: wskaż plik
    `C:\savpol-automatyzacje\automatyzacje\wz\serwer\uruchom.bat`
@@ -136,16 +137,19 @@ To zadanie odpala się **tylko raz dziennie, o 7:00** — cały dzień pracy
      zwykle jest to domyślne ustawienie, tylko sprawdź.
 7. Zapisz (OK) — może zapytać o hasło konta Windows, na którym to ma działać.
 
-**To wszystko.** Zadanie odpali się raz, o 7:00, w dni robocze. Sam plik
+**To wszystko.** Zadanie odpali się raz, o 7:00, każdego dnia (też w weekend). Sam plik
 `uruchom.bat` czeka najpierw losowo 0–15 minut (żeby logowanie do ERP nie
 wypadało zawsze punktualnie o 7:00), potem wykonuje sesje scrapowania jedna
 po drugiej z losowymi przerwami 5–15 minut między nimi. Godzina 17:00 jest
 sprawdzana tylko przed **rozpoczęciem kolejnej** sesji, nie w jej trakcie —
 sesja, która już trwa o 17:00, kończy się normalnie (tak jak pracownik,
 który czasem zostaje odrobinę dłużej, a nie przerywa pracę w połowie).
-`scrape.js` dodatkowo sam odmawia **zaczęcia nowej** sesji poza 7:00–17:00 i
-w weekendy, niezależnie od tego wszystkiego — nawet gdyby coś było źle
-skonfigurowane w Harmonogramie.
+`scrape.js` dodatkowo sam odmawia **zaczęcia nowej** sesji poza 7:00–17:00,
+niezależnie od tego wszystkiego — nawet gdyby coś było źle skonfigurowane w
+Harmonogramie. Weekendy są DOPUSZCZONE (bo bywają niepuste): `uruchom.bat`
+ustawia `ALLOW_WEEKEND=true`. Bez tego ustawienia `scrape.js` odmówiłby startu
+w sobotę/niedzielę — to domyślne, bezpieczne zachowanie przy ręcznym
+`node scrape.js`, świadomie zdejmowane tylko na serwerze.
 
 Każda sesja jest dodatkowo odpalana przez `odpal-z-timeoutem.ps1` z limitem
 75 minut — jeśli sesja się zawiesi (np. ERP przestanie odpowiadać), zostaje

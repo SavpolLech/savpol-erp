@@ -103,13 +103,14 @@ const MM_DOC_TYPE_ID = (process.env.MM_DOC_TYPE_ID || '269000798').replace(/\s/g
 const BUSINESS_HOURS_START = parseInt(process.env.BUSINESS_HOURS_START || '7', 10);
 const BUSINESS_HOURS_END = parseInt(process.env.BUSINESS_HOURS_END || '17', 10);
 const IGNORE_BUSINESS_HOURS = process.env.IGNORE_BUSINESS_HOURS === 'true';
+const ALLOW_WEEKEND = process.env.ALLOW_WEEKEND === 'true'; // serwer scrapuje tez weekendy — sob/nd bywaja niepuste (patrz serwer/uruchom.bat)
 
 function checkBusinessHours() {
   if (IGNORE_BUSINESS_HOURS) return { ok: true, reason: 'IGNORE_BUSINESS_HOURS=true — pominięto sprawdzenie' };
   const now = new Date();
   const day = now.getDay(); // 0=niedziela, 6=sobota
   const hour = now.getHours();
-  if (day === 0 || day === 6) {
+  if ((day === 0 || day === 6) && !ALLOW_WEEKEND) {
     return { ok: false, reason: 'weekend (dzień tygodnia=' + day + ')' };
   }
   if (hour < BUSINESS_HOURS_START || hour >= BUSINESS_HOURS_END) {

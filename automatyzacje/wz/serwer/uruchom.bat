@@ -1,7 +1,8 @@
 @echo off
 REM ============================================================
 REM  Automatyzacja WZ (Savpol) - uruchamiane przez Harmonogram Zadan,
-REM  JEDEN raz dziennie o 7:00 (dni robocze). Harmonogram Zadan NIE
+REM  JEDEN raz dziennie o 7:00 (CODZIENNIE, lacznie z weekendem - patrz
+REM  ALLOW_WEEKEND nizej i INSTRUKCJA-TOMEK.md). Harmonogram Zadan NIE
 REM  odpala tego pliku co godzine - ten skrypt sam sobie powtarza
 REM  sesje scrapowania przez caly dzien, w petli, az minie okno pracy.
 REM  NIE trzeba tego nigdy recznie modyfikowac ani odpalac.
@@ -33,9 +34,10 @@ REM                                    blokada (.scrape.lock) usuwana, a
 REM                                    petla PO PRZERWIE odpala kolejna,
 REM                                    swieza sesje - bez recznej reakcji
 REM         d) przerwa 5-15 min (losowo) przed kolejna sesja
-REM    3) scrape.js i tak sam odmawia startu poza godzinami 7-17 i w
-REM       weekendy (niezaleznie od tej petli) - to tylko dodatkowe
-REM       zabezpieczenie w samym skrypcie.
+REM    3) scrape.js i tak sam odmawia startu poza godzinami 7-17 (niezaleznie
+REM       od tej petli) - to tylko dodatkowe zabezpieczenie w samym skrypcie.
+REM       Weekendy sa DOPUSZCZONE przez ALLOW_WEEKEND=true (nizej), bo sob/nd
+REM       bywaja niepuste; bez tego scrape.js odmowilby startu w weekend.
 REM ============================================================
 
 setlocal
@@ -67,6 +69,10 @@ node generate-test-tables.js
 
 set FILTER_DATE=wczoraj
 set HEADLESS=true
+REM Weekend NIE jest pusty (bywaja pojedyncze WZ w sob/nd) - dopuszczamy start
+REM w weekend, inaczej scrape.js sam odmowilby. Bez tego przy triggerze
+REM codziennym piatek/sobota/niedziela zostawaly poza pokryciem "wczoraj".
+set ALLOW_WEEKEND=true
 
 echo [%date% %time%] node scrape.js (sesja scrapowania, limit 75 min)...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0odpal-z-timeoutem.ps1" -TimeoutSec 4500
