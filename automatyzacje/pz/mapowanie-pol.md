@@ -34,14 +34,16 @@ potrzeby brania czegokolwiek z pierwszej pozycji.
    `2026/PZ/WLS1/004716`) — czystszy sygnał niż pogrubiony tekst (WZ) albo
    `csDocsTypesId` (MM, wymaga stałej per instalację). `scrape.js` filtruje
    wiersze po `DocType === 'PZ'`.
-2. **Brak zapisanego filtra ERP o nazwie „PZ".** Sonda (sekcja "Zapisane
-   filtry") pokazała tylko: "Przychody zewnętrzne" (miesza wszystkie podtypy),
-   "xxKatalog", "xxPrzychody zewnętrzne" (widoki administracyjne). Dlatego
-   `USE_DOC_TYPE_FILTER=false` domyślnie — filtrujemy wyłącznie po naszej
-   stronie (`DocType`), jak przy MM. Konsekwencja: licznik ERP na starcie
-   przebiegu (`expectedTotal`) liczy WSZYSTKIE podtypy PZ*, nie tylko "PZ" —
-   kontrola "zgadza się/niekompletne" na końcu przebiegu jest więc orientacyjna,
-   nie twardym dowodem (opisane w komentarzu `scrape.js`).
+2. **Zapisany filtr ERP o nazwie „PZ" — dodany przez użytkownika 2026-09-23.**
+   Pierwotna sonda (2026-09-17) nie znalazła żadnego takiego filtra (tylko
+   "Przychody zewnętrzne" mieszające wszystkie podtypy + dwa "xx..." widoki
+   administracyjne) — `USE_DOC_TYPE_FILTER` zaczynało jako `false`. Po
+   dodaniu filtra "PZ" w ERP przetestowane na żywo: zawęża listę
+   **2581 → 2175 rekordów**, wszystkie widoczne wiersze mają `DocType="PZ"`.
+   `USE_DOC_TYPE_FILTER` jest teraz **domyślnie włączony** (jak WZ) —
+   filtrowanie po `DocType` w `scanCurrentPageForDocs` zostaje jako druga
+   linia obrony niezależnie od tego (gdyby zapisany filtr kiedyś zniknął albo
+   zmienił nazwę), dokładnie tak jak `DOC_TYPES` przy WZ.
 3. **Wiersz pozycji — rozpoznawany po pogrubionym SKU w `ItemDesc`, jak WZ
    (NIE jak MM).** Potwierdzone `diagnostyka/PZ/savpolPzSondaSurowyWiersz.txt`:
    `ItemDesc bold=[0000261]` (numer SKU pogrubiony). Filtr WZ (SKU w

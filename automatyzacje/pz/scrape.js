@@ -83,13 +83,15 @@ const FILTER_DATE_FROM = resolveDateKeyword(process.env.FILTER_DATE_FROM || proc
 const FILTER_DATE_TO = resolveDateKeyword(process.env.FILTER_DATE_TO || process.env.FILTER_DATE || null);
 
 // Zapisany filtr ERP typu dokumentu (jak "WZ" przy wydaniach). Sonda
-// (2026-09-17) NIE znalazła zapisanego filtra o nazwie "PZ" — jedyne zapisane
-// filtry na liście to "Przychody zewnętrzne" (miesza WSZYSTKIE podtypy: PZ,
-// PZW, PZI, PZK, PZT, PZUE, PZZ...) i dwa "xx..." (widoki administracyjne).
-// DOMYŚLNIE WYŁĄCZONY — filtrujemy WYŁĄCZNIE po naszej stronie, po kolumnie
-// DocType (patrz scanCurrentPageForDocs). Zostaje jako opcja na przyszłość, gdyby
-// ktoś kiedyś dodał zapisany filtr "PZ" w ERP.
-const USE_DOC_TYPE_FILTER = process.env.USE_DOC_TYPE_FILTER === 'true';
+// (2026-09-17) NIE znalazła zapisanego filtra o nazwie "PZ" — wtedy jedyne
+// zapisane filtry na liście to "Przychody zewnętrzne" (miesza WSZYSTKIE
+// podtypy: PZ, PZW, PZI, PZK, PZT, PZUE, PZZ...) i dwa "xx..." (widoki
+// administracyjne). Użytkownik zapisał filtr "PZ" w ERP 2026-09-23 —
+// potwierdzone na żywo: zawęża 2581 -> 2175 rekordów, wszystkie DocType="PZ".
+// DOMYŚLNIE WŁĄCZONY (jak WZ) — mniej stron do przewijania. DocType w
+// scanCurrentPageForDocs zostaje jako druga linia obrony niezależnie od tego
+// (gdyby zapisany filtr kiedyś zniknął/zmienił nazwę).
+const USE_DOC_TYPE_FILTER = process.env.USE_DOC_TYPE_FILTER !== 'false';
 const PZ_DOC_TYPE_FILTER_LABEL = process.env.PZ_DOC_TYPE_FILTER_LABEL || 'PZ';
 
 // Godziny "pracy" — poza tym oknem (i w weekendy) skrypt się NIE uruchamia,
