@@ -758,16 +758,20 @@ async function main() {
     console.log('[mm] Koniec sesji. Zebrano w tej sesji: ' + totalHeaders + ' MM, ' + totalPositions + ' pozycji.' +
       (lastStoppedReason ? ' Powód zatrzymania: ' + lastStoppedReason + '.' : ' (lista wyczerpana).'));
 
-    if (expectedTotal) {
-      const haveTotal = processedThisRun.size;
-      if (haveTotal >= expectedTotal) {
-        console.log('[kontrola] ZGADZA SIĘ: mamy ' + haveTotal + ' dok., ERP zgłaszał ' + expectedTotal + '.');
-      } else {
-        console.warn('[kontrola] NIEKOMPLETNE: mamy ' + haveTotal + ' z ' + expectedTotal +
-          ' zgłaszanych przez ERP (brakuje ' + (expectedTotal - haveTotal) + '). ' +
-          (allPagesExhausted ? 'Lista była wyczerpana mimo to — sprawdź ręcznie, coś się nie zgadza.' :
-            'Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.'));
-      }
+    // UWAGA (MM vs WZ): pager ERP (expectedTotal) liczy WSZYSTKIE podtypy listy
+    // przesunięć — MM (269000798) + "Usunięcie blokady" + "Blokada" — a my
+    // zbieramy tylko MM. Dlatego przy MM haveTotal < expectedTotal jest NORMĄ i
+    // NIE oznacza braku danych. Miarodajny jest allPagesExhausted (przewinięcie
+    // całej listy), nie porównanie z pagerem. (Przy WZ lista była jednorodna,
+    // więc tam porównanie z pagerem miało sens — tu już nie.)
+    if (allPagesExhausted) {
+      console.log('[kontrola] Przewinięto CAŁĄ listę. Zebrano ' + processedThisRun.size +
+        ' dok. typu MM. Pager ERP (' + (expectedTotal ?? '?') + ') liczy wszystkie podtypy ' +
+        'przesunięć, więc różnica jest normalna — to NIE brak danych.');
+    } else {
+      console.warn('[kontrola] Przerwane przed końcem listy (' + (lastStoppedReason || '?') +
+        '): zebrano ' + processedThisRun.size + ' dok. typu MM, nie przewinięto całej listy. ' +
+        'Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.');
     }
   } catch (err) {
     errorMsg = err.message;
