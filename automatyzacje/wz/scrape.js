@@ -765,8 +765,13 @@ async function main() {
     // na koniec z tym, ile faktycznie zebraliśmy (łącznie, przez wszystkie
     // sesje na ten zakres, nie tylko tę jedną).
     const expectedRaw = await readPagerCountStable(page);
-    expectedTotal = expectedRaw ? parseInt(expectedRaw.replace(/[\s ]/g, ''), 10) : null;
-    if (!expectedTotal) {
+    // Rozróżniamy "pager pokazał 0" (dzień pusty — poprawny wynik) od "nie
+    // dało się odczytać pagera" (null — kontrola pominięta). Wcześniej oba
+    // wpadały w to samo `!expectedTotal` i 0 udawało błąd odczytu.
+    const expectedParsed = (expectedRaw != null && String(expectedRaw).trim() !== '')
+      ? parseInt(String(expectedRaw).replace(/[\s ]/g, ''), 10) : NaN;
+    expectedTotal = Number.isNaN(expectedParsed) ? null : expectedParsed;
+    if (expectedTotal === null) {
       console.warn('[wz] UWAGA: nie udało się odczytać liczby dokumentów z pagera (dostałem "' + expectedRaw + '") — kontrola na koniec przebiegu będzie pominięta.');
     }
     console.log('[wz] ERP zgłasza ' + (expectedTotal ?? '?') + ' dokumentów dla tego filtra.' +
@@ -775,8 +780,25 @@ async function main() {
     console.log('[wz] Lista załadowana. Startuję zbieranie w paczkach po ' + BATCH_SIZE + ' dok. ' +
       '(max ' + MAX_DOCS + ' łącznie w tej sesji)...');
 
+    // Pusty dzień (ERP zgłasza 0 dokumentów) to KOMPLETNY wynik, nie błąd —
+    // bez tego pętla poniżej kończyła się z 'pagination_stuck' na pustej
+    // siatce i dzień raportował allPagesExhausted=false. Backfill (zewnętrzna
+    // pętla ponawiająca do skutku) mielił wtedy pusty dzień w kółko. Weekendy
+    // bywają NIEPUSTE (patrz pamięć), więc pustkę stwierdzamy z licznika ERP,
+    // nie z założenia o dniu tygodnia.
+    if (expectedTotal === 0) {
+      allPagesExhausted = true;
+      console.log('[wz] ERP zgłasza 0 dokumentów dla tego filtra — dzień pusty, zaliczam jako kompletny.');
+      if (dateFrom || dateTo) {
+        saveState(dateFrom, dateTo, {
+          complete: true,
+          runSummary: { ts: new Date().toISOString(), paczkaDok: 0, partial: false, stoppedReason: null }
+        });
+      }
+    }
+
     let collectedThisSession = 0;
-    while (collectedThisSession < MAX_DOCS) {
+    while (!allPagesExhausted && collectedThisSession < MAX_DOCS) {
       const remainingMs = sessionDeadline - Date.now();
       if (remainingMs <= 0) {
         lastStoppedReason = 'session_time_limit';
