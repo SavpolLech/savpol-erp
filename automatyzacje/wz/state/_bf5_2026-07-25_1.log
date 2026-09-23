@@ -37,3 +37,17 @@
 [strona] WebSocket connection to 'wss://erp.savpol.pl/csAPIServer/socket.io/?sessionId=5e0aa58a-c17d-4b50-eeb2-19607a3d374b&LanguageSuffix=PL&csUsrId=29270321220&csCompaniesId=213217693&EIO=3&transport=websocket&sid=B_RlDz5or3RyrO5OAAST' failed: Error during WebSocket handshake: Unexpected response code: 400
 [filtr-typ] Zastosowano zapisany filtr "WZ". Rekordów: przed=, po=0
 [filtr] Wartości pól po wpisaniu: {"od":"2026-07-25","do":"2026-07-25"}
+[filtr] Licznik rekordów nie zmienił się w 15s po kliknięciu ".ButtonRefresh" — możliwe, że filtr się nie zastosował.
+[filtr] Ustawiono zakres 2026-07-25..2026-07-25, kliknięto ".ButtonRefresh". Rekordów: przed=0, po=0
+[strona] Failed to load resource: the server responded with a status of 400 ()
+[strona] SOCKET ERROR Error: xhr post error
+    at n.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:31238)
+    at i.<anonymous> (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:26032)
+    at n.emit (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:6309)
+    at i.onError (https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27872)
+    at https://erp.savpol.pl/Default_006_413_part_6_2fd89947e067cc286c868cc0c58c3d81.min.js:186:27504
+[wz] ERP zgłasza 0 dokumentów dla tego filtra. Mamy już 0 z poprzednich sesji.
+[wz] Lista załadowana. Startuję zbieranie w paczkach po 15 dok. (max 900 łącznie w tej sesji)...
+[wz] ERP zgłasza 0 dokumentów dla tego filtra — dzień pusty, zaliczam jako kompletny.
+[wz] Koniec sesji. Zebrano w tej sesji: 0 WZ, 0 pozycji. (lista wyczerpana).
+[git-log-push] Log i stan wypchnięte do repo.
