@@ -42,3 +42,8 @@
 [paczka] +15 WZ (łącznie w stanie: 904/930), complete=false
 [wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders_test, 130 wierszy w csDocsItemsPositions_test.
 [paczka] +15 WZ (łącznie w stanie: 919/930), complete=false
+[wynik] Zapisano do bazy "worek": 11 wierszy w csDocsHeaders_test, 79 wierszy w csDocsItemsPositions_test.
+[paczka] +11 WZ (łącznie w stanie: 930/930), complete=true
+[wz] Koniec sesji. Zebrano w tej sesji: 191 WZ, 1351 pozycji. (lista wyczerpana).
+[kontrola] ZGADZA SIĘ: mamy 930 dok., ERP zgłaszał 930.
+[git-log-push] Log i stan wypchnięte do repo.
