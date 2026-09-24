@@ -98,3 +98,54 @@
 [wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
 [wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 86 wierszy w csDocsItemsPositions.
 [paczka] +15 WZ (łącznie w stanie: 285/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 125 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 300/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 151 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 315/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 119 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 330/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 91 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 345/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 69 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 360/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 128 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 375/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 71 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 390/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 108 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 405/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 93 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 420/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 111 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 435/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 97 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 450/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 101 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 465/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 36 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 480/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 101 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 495/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 67 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 510/802), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 5 wierszy w csDocsHeaders, 10 wierszy w csDocsItemsPositions.
+[paczka] +5 WZ (łącznie w stanie: 515/802), complete=false
+[wz] Koniec sesji. Zebrano w tej sesji: 515 WZ, 3246 pozycji. Powód zatrzymania: session_time_limit.
+[kontrola] NIEKOMPLETNE: mamy 515 z 802 zgłaszanych przez ERP (brakuje 287). Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.
+[git-log-push] Log i stan wypchnięte do repo.
