@@ -214,3 +214,18 @@
 [wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
 [wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 99 wierszy w csDocsItemsPositions.
 [paczka] +15 WZ (łącznie w stanie: 645/835), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 145 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 660/835), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 91 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 675/835), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 15 wierszy w csDocsHeaders, 204 wierszy w csDocsItemsPositions.
+[paczka] +15 WZ (łącznie w stanie: 690/835), complete=false
+[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (csDocsHeaders/csDocsItemsPositions).
+[wynik] Zapisano do bazy "worek": 12 wierszy w csDocsHeaders, 80 wierszy w csDocsItemsPositions.
+[paczka] +12 WZ (łącznie w stanie: 702/835), complete=false
+[wz] Koniec sesji. Zebrano w tej sesji: 702 WZ, 4580 pozycji. Powód zatrzymania: session_time_limit.
+[kontrola] NIEKOMPLETNE: mamy 702 z 835 zgłaszanych przez ERP (brakuje 133). Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.
+[git-log-push] Log i stan wypchnięte do repo.
