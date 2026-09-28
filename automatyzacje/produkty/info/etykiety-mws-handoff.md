@@ -115,27 +115,21 @@ jest nietypowa). Ręczny proces:
   `scal-finalny-etykiety.js` zostawia samą wartość produktu, bez
   dziedziczenia po kategorii.
 
-## Harmonogram — cotygodniowe odświeżenie (od 2026-09-28)
+## Etykiety na esavpol.pl — codzienna aktualizacja (od 2026-09-28)
 
 Te same etykiety zasilają też cross-sell i notki na esavpol.pl (nie tylko GMC): baza powiązań
-w repo esavpol-pdp (design_system) ma flagi `m[sku]` = `c`/`m`/`k`, endpoint
+w repo esavpol-pdp (lokalnie folder `design_system`) ma flagi `m[sku]` = `c`/`m`/`k`, endpoint
 `cross-sell-public/v2` zwraca je razem z poleceniami, a tagi GTM (`esavpol-core` 1.11.0+) nie
 polecają takich produktów do wysyłki kurierem i pokazują notkę „nie wysyłamy kurierem”.
 
-- Zadanie Windows **`SavpolMWS-tydzien`** (poniedziałek 07:00, przed WZ 08:30) →
-  `tydzien-mws.bat` → `tydzien-mws.js`, log w `tydzien-mws.log`.
-- Kroki: `scrape-etykiety-mws.js` (tylko nowe produkty z feedu, max 40 min, headless, wyjście
-  dopisywane do `sesje-log.txt`) → `scal-etykiety-mws.js` → `scal-finalny-etykiety.js` →
-  `design_system-baza/tools/pdp-generator/scripts/baza-powiazan/odswiez.mjs --csv=wynik/etykiety-finalne.csv`
-  (zrzut katalogu sklepu ~4 min, 3 warianty bazy, commit `baza-powiazan.json` na `origin/main`
-  esavpol-pdp tylko przy zmianie — to dane, nie deploy kodu).
-- `design_system-baza` = osobny, czysty worktree design_system (sparse), tylko dla tego zadania:
-  ```
-  cd C:\Users\l.dudkiewicz\Documents\claude_code\design_system
-  git -c core.longpaths=true worktree add --no-checkout --detach ..\design_system-baza origin/main
-  cd ..\design_system-baza
-  git sparse-checkout set --no-cone /tools/pdp-generator/scripts/baza-powiazan/ /pages/_kit/cross-sell/*.json /pages/_kit/cross-sell/*.md /pages/_kit/cross-sell/historia/
-  git -c core.longpaths=true checkout --detach origin/main
-  ```
-- Ręcznie: `node tydzien-mws.js --bez-push` (commit bazy tylko lokalnie w worktree).
+- **Brak osobnego zadania w harmonogramie.** Scraper tego projektu odpala codziennie o 13:00 job
+  esavpol_seo („esavpol - sync feed suplementarny MC”, `esavpol_seo/scripts/mc_sync_supplement.py`):
+  `scrape-etykiety-mws.js` (tylko nowe produkty) → `scal-etykiety-mws.js` → `scal-finalny-etykiety.js`.
+- Na końcu tego joba (wdrożenie po stronie esavpol_seo, kontrakt:
+  `esavpol_seo/KONTRAKT-flagi-mws-esavpol-pdp.md`) → `flagi-mws.csv` →
+  `esavpol-pdp-baza-powiazan/tools/pdp-generator/scripts/baza-powiazan/mws-aktualizuj.mjs`:
+  podmiana samych flag w bazie, commit na `origin/main` esavpol-pdp tylko przy zmianie (dane, nie deploy).
+- Pełna przebudowa list poleceń: ręcznie, `odswiez.mjs --csv=<ten projekt>/wynik/etykiety-finalne.csv`.
+- `C:Usersl.dudkiewiczDocumentsclaude_codeesavpol-pdp-baza-powiazan` = osobny, czysty worktree
+  esavpol-pdp (sparse) tylko dla automatów.
 - Kategorie (`wynik/kategorie-mws.csv`) nadal odświeżane ręcznie — patrz wyżej.
