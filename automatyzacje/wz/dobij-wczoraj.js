@@ -28,6 +28,11 @@ const path = require('path');
 const DIR = __dirname;
 const LOCK = path.join(DIR, '.scrape.lock');
 const MAX_ATTEMPTS = parseInt(process.env.MAX_ATTEMPTS || '6', 10);
+// Twardy limit na jedną sesję scrape.js. Sesja jest losowana na 30-60 min, więc
+// 75 min to zapas; jeśli proces przekroczy (zawieszony ERP, crash przeglądarki
+// zostawiający zombie), spawnSync go ubija, a pętla ponawia — pojedynczy crash
+// nie kładzie całego biegu.
+const SESSION_TIMEOUT_MS = parseInt(process.env.SESSION_TIMEOUT_MS || String(75 * 60 * 1000), 10);
 // Ile dni wstecz od wczoraj sprawdzać. 5 wystarcza, by poniedziałkowy bieg
 // sięgnął piątku (pt = 3 dni wstecz) z zapasem na przegapiony bieg.
 const WINDOW = parseInt(process.env.CATCHUP_WINDOW || '5', 10);
@@ -66,7 +71,12 @@ for (const day of targets) {
   for (let a = 1; a <= MAX_ATTEMPTS && !isComplete(day); a++) {
     clearLock();
     console.log(`[dobij-wczoraj] ${day} próba ${a}/${MAX_ATTEMPTS} @ ${new Date().toLocaleTimeString()}`);
-    spawnSync('node', ['scrape.js'], { cwd: DIR, env, stdio: 'inherit' });
+    const r = spawnSync('node', ['scrape.js'], {
+      cwd: DIR, env, stdio: 'inherit', timeout: SESSION_TIMEOUT_MS, killSignal: 'SIGKILL'
+    });
+    if (r.error && r.error.code === 'ETIMEDOUT') {
+      console.warn(`[dobij-wczoraj] ${day} próba ${a}: przekroczono limit ${Math.round(SESSION_TIMEOUT_MS/60000)} min — ubito, ponawiam.`);
+    }
     clearLock();
   }
   console.log(isComplete(day)
