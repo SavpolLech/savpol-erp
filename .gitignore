@@ -41,3 +41,6 @@ automatyzacje/**/debug-*.png
 
 # Kolekcja sucharow z Familiady - cudza tworczosc, repo jest de facto publiczne
 suchary.txt
+
+# Log cotygodniowego odswiezenia etykiet MWS (tydzien-mws.bat)
+automatyzacje/produkty/tydzien-mws.log
