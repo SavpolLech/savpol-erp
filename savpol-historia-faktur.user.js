@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.1.0
+// @version      4.1.1
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3568,9 +3568,16 @@
     describeDom('start przebiegu');
 
     try {
-      const mainSku = await waitFor(getMainProductSku);
+      // SKU bierzemy z KATALOGU, bo tam teraz stoimy.
+      //
+      // Do 4.0.0 przebieg zaczynał się od otwarcia historii faktur i numer
+      // czytaliśmy z jej pola „Produkt". Historia zniknęła razem z analizą,
+      // a odczyt został — czyli szukaliśmy pola, którego na ekranie nie ma.
+      // Przycisk wyglądał, jakby nic nie robił.
+      const mainSku = getSelectedCatalogSku() || getMainProductSku();
       if (!mainSku) {
-        throw new Error('Nie odczytałem numeru produktu. Czy produkt jest zaznaczony w katalogu?');
+        throw new Error('Nie odczytałem numeru produktu. Wyszukaj go w katalogu '
+          + 'albo zaznacz wiersz i spróbuj ponownie.');
       }
       diagAnchorSku = mainSku;
       ui.detail('Produkt: ' + mainSku);
