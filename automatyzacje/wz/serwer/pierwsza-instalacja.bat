@@ -17,7 +17,8 @@ REM Folder, w ktorym stanie caly projekt. Zmien jesli chcesz inne miejsce.
 set INSTALL_DIR=C:\savpol-automatyzacje
 
 REM !!! DO WYPELNIENIA PRZEZ LECHA PRZED WYSLANIEM TEGO PLIKU DO TOMKA !!!
-REM Adres repo z wklejonym tokenem dostepu (patrz INSTRUKCJA-TOMEK.md).
+REM Adres repo z wklejonym tokenem dostepu (Lech wkleja token recznie w swojej
+REM kopii na dysku sieciowym; w repo zostaje placeholder ponizej).
 REM Lech generuje token na GitHub i wkleja go w miejsce WKLEJ_TUTAJ_TOKEN
 REM w SWOJEJ kopii tego pliku (na dysku sieciowym) - NIGDY w repo.
 set REPO_URL=https://WKLEJ_TUTAJ_TOKEN@github.com/SavpolLech/savpol-erp.git
@@ -100,6 +101,8 @@ echo     To JEDEN wspolny plik dla WZ, MM i PZ.
 echo  2) Zarejestruj zadanie w Harmonogramie Zadan Windows wskazujace na:
 echo       %INSTALL_DIR%\automatyzacje\wz\serwer\uruchom.bat
 echo     - szczegolowa instrukcja krok po kroku jest w pliku:
-echo       %INSTALL_DIR%\automatyzacje\wz\serwer\INSTRUKCJA-TOMEK.md
+echo       %INSTALL_DIR%\automatyzacje\wz\serwer\INSTALACJA.md
+echo     - jak potem korzystac (reczne dobicie dnia, produkty po ID):
+echo       %INSTALL_DIR%\automatyzacje\wz\serwer\OBSLUGA.md
 echo ============================================================
 pause
