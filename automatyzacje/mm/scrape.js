@@ -51,10 +51,12 @@ const ERP_BASE_URL = process.env.ERP_BASE_URL || 'https://erp.savpol.pl/';
 // widoku (/213217693) — do listy wystarcza ścieżka typu dokumentu, bez id.
 const MM_LIST_URL = process.env.MM_LIST_URL ||
   'https://erp.savpol.pl/pl/przesuniecia-magazynowe/csdocsheaders4goodstransfers';
-// TRYB OSTROŻNY: próbka 5 dokumentów do weryfikacji przez koordynatora, ZANIM
-// podniesiemy limit. Po zatwierdzeniu próbki MAX_DOCS wraca do ~900 (tak samo
-// jak przy WZ) — ustawiane przez zmienną środowiskową, bez zmiany kodu.
-const MAX_DOCS = parseInt(process.env.MAX_DOCS || '5', 10);
+// Limit dokumentów na sesję. Michał zatwierdził MM do produkcji 2026-09-29
+// (próbka OK), więc limit produkcyjny 900 — jak WZ. Realny dzień MM to ~kilka-
+// dziesiąt dok., więc 900 z zapasem domyka pełny dzień (complete=true), czego
+// wymaga orkiestrator nadganiania (lib-wspolne/catchup.js). Próbkę na mniejszą
+// liczbę robi się jawnie przez MAX_DOCS=5 w env.
+const MAX_DOCS = parseInt(process.env.MAX_DOCS || '900', 10);
 
 // Długość sesji jest LOSOWANA w tym przedziale przy każdym uruchomieniu —
 // stała wartość jest sama w sobie sygnałem automatyzacji: człowiek loguje się,
