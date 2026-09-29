@@ -1,0 +1,30 @@
+{
+  "dateFrom": "2026-08-26",
+  "dateTo": "2026-08-26",
+  "processedDocNumbers": [
+    "2026/MM/KRS1/005580",
+    "2026/MM/KRS1/005581",
+    "2026/MM/KRS1/005584",
+    "2026/MM/GLS1/001613",
+    "2026/MM/KRS1/005586",
+    "2026/MM/WLS1/000522",
+    "2026/MM/WAS1/001124",
+    "2026/MM/KRS1/005587",
+    "2026/MM/GUS1/000690",
+    "2026/MM/KRS1/005604",
+    "2026/MM/KRS1/005605",
+    "2026/MM/KRS1/005607",
+    "2026/MM/GLT1/000023",
+    "2026/MM/KRS1/005579"
+  ],
+  "complete": true,
+  "lastUpdated": "2026-09-29T09:20:35.676Z",
+  "runs": [
+    {
+      "ts": "2026-09-29T09:20:35.675Z",
+      "paczkaDok": 14,
+      "partial": false,
+      "stoppedReason": null
+    }
+  ]
+}
