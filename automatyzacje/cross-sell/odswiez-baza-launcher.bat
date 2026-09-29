@@ -4,11 +4,13 @@ REM pierwszy poniedzialek miesiaca 11:00). Przelicza baze powiazan cross-sell es
 REM   1. eksport-wz.js  - koszyki WZ z bazy worek (tylko odczyt) do %TEMP%\baza-powiazan
 REM   2. odswiez.mjs    - zrzut katalogu sklepu, karty, flagi MWS, 3 warianty, commit bazy na
 REM                       origin/main repo esavpol-pdp (endpoint v2 czyta ja na zywo = publikacja)
-REM Worktree automatow (ten sam co mws-aktualizuj z joba esavpol_seo o 13:00) - przed startem na
-REM swiezy origin/main, zeby odswiez.mjs tez byl aktualny. Log dopisywany do odswiez-baza.log obok.
+REM Wlasny worktree (NIE esavpol-pdp-baza-powiazan - ten nalezy do joba flag MWS o 13:00; nieudany
+REM przebieg 2026-09-29 zostawil go w polowie rebase). Sparse: skrypty baza-powiazan, cross-sell/*.json,
+REM historia/, powiazania/ (pinA). Przed startem na swiezy origin/main, zeby odswiez.mjs tez byl
+REM aktualny. Log dopisywany do odswiez-baza.log obok.
 setlocal
 cd /d "%~dp0"
-set "WT=C:\Users\l.dudkiewicz\Documents\claude_code\esavpol-pdp-baza-powiazan"
+set "WT=C:\Users\l.dudkiewicz\Documents\claude_code\esavpol-pdp-odswiez"
 set "CSV=C:\Users\l.dudkiewicz\Documents\savpol-erp\savpol-erp\automatyzacje\produkty\wynik\etykiety-finalne.csv"
 set "NODE=C:\Program Files\nodejs\node.exe"
 REM Dzieci odswiez.mjs (buduj.mjs na 2,6 mln pozycji WZ) dziedzicza limit pamieci.
