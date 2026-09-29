@@ -38,6 +38,11 @@ function ymd(d) { return d.toISOString().slice(0, 10); }
 //   CATCHUP_WINDOW=5  MAX_ATTEMPTS=6  SESSION_TIMEOUT_MS=4500000 (75 min)
 module.exports = function runCatchup(opts) {
   const { dir, prefix, label = prefix.toUpperCase(), onEvent } = opts;
+  // Cel zapisu. DOMYŚLNIE 'prod' — codzienny orkiestrator ma pisać do produkcji.
+  // 'test' (albo dowolna wartość != 'prod') kieruje scrape.js do tabel *_test
+  // (np. jednorazowy backfill do weryfikacji). scrape.js: WRITE_TO_PROD = (SCRAPE_TARGET==='prod').
+  const target = opts.target || 'prod';
+  const targetLabel = target === 'prod' ? 'PRODUKCJA' : `TEST (${target})`;
   const { loadState } = require('./state')(dir, prefix);
   const LOCK = path.join(dir, '.scrape.lock');
   const MAX_ATTEMPTS = parseInt(process.env.MAX_ATTEMPTS || '6', 10);
@@ -66,10 +71,10 @@ module.exports = function runCatchup(opts) {
     }
   }
 
-  console.log(`[catchup ${label}] ${new Date().toISOString()} okno ${WINDOW} dni -> PRODUKCJA. ` +
+  console.log(`[catchup ${label}] ${new Date().toISOString()} okno ${WINDOW} dni -> ${targetLabel}. ` +
     `Do zrobienia: ${targets.join(', ') || '(nic — wszystko kompletne)'}`);
   emit('start', `${label} scrape — start`, targets.length
-    ? `Dobijam do produkcji: ${targets.join(', ')}`
+    ? `Dobijam (${targetLabel}): ${targets.join(', ')}`
     : 'Nic do zrobienia — wszystko kompletne.');
 
   const done = [];
@@ -78,7 +83,7 @@ module.exports = function runCatchup(opts) {
     const env = {
       ...process.env,
       FILTER_DATE: day,
-      SCRAPE_TARGET: 'prod',
+      SCRAPE_TARGET: target,
       HEADLESS: 'true',
       ALLOW_WEEKEND: 'true',         // dzień z weekendu bywa niepusty
       IGNORE_BUSINESS_HOURS: 'true'  // job "musi domknąć" niezależnie od pory
@@ -101,7 +106,7 @@ module.exports = function runCatchup(opts) {
     if (isComplete(day)) {
       console.log(`[catchup ${label}] ${day} KOMPLET.`);
       done.push(day);
-      emit('day-ok', `${label} — dzień gotowy`, `${day}: ${docCount(day)} dok. w produkcji.`);
+      emit('day-ok', `${label} — dzień gotowy`, `${day}: ${docCount(day)} dok. -> ${targetLabel}.`);
     } else {
       console.warn(`[catchup ${label}] UWAGA: ${day} nie domknięty po ${MAX_ATTEMPTS} próbach — kolejny bieg dokończy ze stanu.`);
       failed.push(day);

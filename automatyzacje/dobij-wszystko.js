@@ -49,6 +49,9 @@ const { acquire: acquireLock, release: releaseLock } = require('./lib-wspolne/lo
 const ALL = ['wz', 'mm', 'pz'];
 const SCRAPERS = (process.env.SCRAPERS || ALL.join(','))
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+// Cel zapisu. DOMYŚLNIE prod (codzienny bieg). TARGET=test -> tabele *_test
+// (np. jednorazowy backfill do weryfikacji, bez ruszania produkcji).
+const TARGET = process.env.TARGET || 'prod';
 
 if (!acquireLock()) process.exit(3);
 
@@ -57,7 +60,7 @@ process.on('exit', cleanup);
 process.on('SIGINT', () => { cleanup(); process.exit(130); });
 process.on('SIGTERM', () => { cleanup(); process.exit(143); });
 
-console.log(`[dobij-wszystko] ${new Date().toISOString()} start, kolejność: ${SCRAPERS.join(' -> ')}`);
+console.log(`[dobij-wszystko] ${new Date().toISOString()} start, kolejność: ${SCRAPERS.join(' -> ')}, cel: ${TARGET.toUpperCase()}`);
 
 const summary = [];
 for (const type of SCRAPERS) {
@@ -68,7 +71,7 @@ for (const type of SCRAPERS) {
   }
   console.log(`\n[dobij-wszystko] ===== ${type.toUpperCase()} =====`);
   const wynik = runCatchup({
-    dir, prefix: type, label: type.toUpperCase(),
+    dir, prefix: type, label: type.toUpperCase(), target: TARGET,
     onEvent: (_kind, title, message) => toast(title, message)
   });
   summary.push({ type, ...wynik });
