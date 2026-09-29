@@ -247,6 +247,16 @@ function dopiszWiersz(sciezkaCsv, wiersz) {
   fs.appendFileSync(sciezkaCsv, [wiersz.id, '', '', wiersz.custom_label_3].map(escCsv).join(',') + '\n', 'utf8');
 }
 
+// Stawka VAT z tej samej karty ERP (pole VATRate, np. "8%") — osobny plik, bo format CSV etykiet jest
+// narzucony (wyżej). Czyta go esavpol-pdp mws-aktualizuj.mjs: blok „netto + VAT” na esavpol.pl
+// pokazuje się tylko, gdy stawka z karty sklepu = stawka z ERP (esavpol-core 1.13.0).
+const VAT_CSV = path.join(OUT_DIR, '..', 'vat-erp-mws.csv');
+function dopiszVat(wiersz) {
+  if (!wiersz.sku || !wiersz.vat) return;
+  if (!fs.existsSync(VAT_CSV)) fs.writeFileSync(VAT_CSV, 'id;sku;vat;data\n', 'utf8');
+  fs.appendFileSync(VAT_CSV, [wiersz.id, wiersz.sku, String(wiersz.vat).replace('%', ''), new Date().toISOString().slice(0, 10)].join(';') + '\n', 'utf8');
+}
+
 // ---------- Główny przebieg ----------
 
 async function scrapeJedenProdukt(page, captured, wpis) {
@@ -278,6 +288,7 @@ async function scrapeJedenProdukt(page, captured, wpis) {
     isGentle: etykieta.isGentle,
     storageLocationType: etykieta.storage,
     custom_label_3: etykieta.label,
+    vat: trafienie.rekord.VATRate || '',
     status: wynik.statusDopasowania === 'ok' ? etykieta.status : (wynik.statusDopasowania + ' | ' + etykieta.status)
   };
 
@@ -365,6 +376,7 @@ async function main() {
       if (wynik.ok) {
         zebrane.push(wynik.wiersz);
         dopiszWiersz(sciezkaCsv, wynik.wiersz);
+        try { dopiszVat(wynik.wiersz); } catch (e) { console.warn('[vat] zapis nieudany: ' + e.message); }
         saveState({ newProcessedIds: [wpis.id] });
         console.log('[produkt] id=' + wpis.id + ' SKU=' + wynik.wiersz.sku + ' → custom_label_3="' +
           wynik.wiersz.custom_label_3 + '" (' + wynik.wiersz.status + ') — ' + czasS + ' s. ' +

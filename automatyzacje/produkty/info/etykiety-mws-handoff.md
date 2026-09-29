@@ -133,3 +133,11 @@ polecają takich produktów do wysyłki kurierem i pokazują notkę „nie wysy�
 - `C:Usersl.dudkiewiczDocumentsclaude_codeesavpol-pdp-baza-powiazan` = osobny, czysty worktree
   esavpol-pdp (sparse) tylko dla automatów.
 - Kategorie (`wynik/kategorie-mws.csv`) nadal odświeżane ręcznie — patrz wyżej.
+
+## Stawki VAT dla esavpol.pl (od 2026-09-29)
+
+`scrape-etykiety-mws.js` dopisuje przy każdym produkcie stawkę VAT z tej samej karty ERP (`VATRate`)
+do `wynik/vat-erp-mws.csv` (`id;sku;vat;data`). Format CSV etykiet się nie zmienia. `wynik/vat-erp-worek.csv`
+to jednorazowa migawka stawek z repliki worek (32 tys. SKU, 2026-09-29). Oba pliki czyta esavpol-pdp
+`mws-aktualizuj.mjs`: blok „netto + VAT” na PDP pokazuje się tylko przy zgodności stawki z karty sklepu
+i z ERP (esavpol-core 1.13.0). Błąd zapisu stawki trafia tylko do logu i nie przerywa scrapera.
