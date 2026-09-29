@@ -1,95 +1,45 @@
 @echo off
 REM ============================================================
-REM  Automatyzacja WZ (Savpol) - uruchamiane przez Harmonogram Zadan,
-REM  JEDEN raz dziennie o 7:00 (CODZIENNIE, lacznie z weekendem - patrz
-REM  ALLOW_WEEKEND nizej i INSTRUKCJA-TOMEK.md). Harmonogram Zadan NIE
-REM  odpala tego pliku co godzine - ten skrypt sam sobie powtarza
-REM  sesje scrapowania przez caly dzien, w petli, az minie okno pracy.
-REM  NIE trzeba tego nigdy recznie modyfikowac ani odpalac.
+REM  Orkiestrator scraperow ERP (Savpol) - WZ + MM + PZ.
+REM  Uruchamiane przez Harmonogram Zadan JEDEN raz dziennie w dni
+REM  robocze (pon-pt). NIE trzeba tego nigdy recznie modyfikowac.
 REM
-REM  UWAGA: godzina 17:00 to granica ZACZYNANIA nowej sesji, nie jej
-REM  przerywania. Sesja, ktora juz trwa o 17:00 (np. wystartowala 16:50),
-REM  dokoncza sie normalnie - tak jak pracownik, ktory czasem zostaje
-REM  troszke dluzej, zamiast wychodzic w polowie zadania. Sprawdzenie
-REM  godziny jest tylko na starcie petli, przed odpaleniem KOLEJNEJ sesji.
+REM  Co robi:
+REM    1) git pull  - najnowszy kod (Lech aktualizuje, ten plik go
+REM                   sam podciaga; zero akcji Tomka)
+REM    2) node automatyzacje\dobij-wszystko.js  - przechodzi typy PO
+REM       KOLEI [wz, mm, pz]. Dla kazdego "nadgania" kazdy niekompletny
+REM       dzien z okna wstecz (domyslnie 5 dni) az do kompletu, POTEM
+REM       przechodzi do nastepnego typu. NIGDY dwa naraz - ERP znosi
+REM       tylko jedna sesje logowania. Pisze WPROST do tabel PROD.
 REM
-REM  Przebieg:
-REM    1) losowe opoznienie startu dnia: 0-15 min (zeby nie logowac sie
-REM       do ERP zawsze punktualnie o 7:00 - wygladaloby to jak bot)
-REM    2) PETLA - kolejna sesja startuje tylko, jesli jest jeszcze przed
-REM       17:00 (patrz UWAGA wyzej):
-REM         a) git pull            - najnowszy kod (Lech aktualizuje,
-REM                                   ten plik go automatycznie
-REM                                   podciaga, zero akcji Tomka)
-REM         b) generate-test-tables.js - odswieza typy kolumn z bazy
-REM                                       (baza bywa przebudowywana)
-REM         c) scrape.js            - jedna sesja scrapowania (30-60 min,
-REM                                    losowane wewnatrz scrape.js),
-REM                                    pisze WPROST do bazy (nie CSV) -
-REM                                    odpalana przez odpal-z-timeoutem.ps1
-REM                                    z limitem 75 min: jesli sesja sie
-REM                                    zawiesi (np. ERP nie odpowiada),
-REM                                    proces jest ubijany automatycznie,
-REM                                    blokada (.scrape.lock) usuwana, a
-REM                                    petla PO PRZERWIE odpala kolejna,
-REM                                    swieza sesje - bez recznej reakcji
-REM         d) przerwa 5-15 min (losowo) przed kolejna sesja
-REM    3) scrape.js i tak sam odmawia startu poza godzinami 7-17 (niezaleznie
-REM       od tej petli) - to tylko dodatkowe zabezpieczenie w samym skrypcie.
-REM       Weekendy sa DOPUSZCZONE przez ALLOW_WEEKEND=true (nizej), bo sob/nd
-REM       bywaja niepuste; bez tego scrape.js odmowilby startu w weekend.
+REM  Weekend: zadanie odpala sie pon-pt, ale okno wstecz sprawia, ze
+REM  poniedzialkowy bieg sam dobiera piatek+sobote+niedziele (sob/nd
+REM  bywaja niepuste). StartWhenAvailable w Harmonogramie dobija tez
+REM  przegapiony bieg.
+REM
+REM  Limit czasu pojedynczej sesji (75 min, ubicie zawieszonej) i pauzy
+REM  robi juz sam dobij-wszystko.js / lib-wspolne/catchup.js - tu NIE ma
+REM  petli calodniowej. Serwer jest headless: zadnych toastow.
 REM ============================================================
 
 setlocal
+REM %~dp0 = ...\automatyzacje\wz\serwer\  -> repo root to trzy katalogi wyzej
 set REPO_ROOT=%~dp0\..\..\..
 
 cd /d "%REPO_ROOT%"
 
-for /f %%i in ('powershell -NoProfile -Command "Get-Random -Minimum 0 -Maximum 900"') do set START_DELAY_SEC=%%i
-set /a START_DELAY_MIN=%START_DELAY_SEC%/60
-echo [%date% %time%] losowe opoznienie startu dnia: %START_DELAY_SEC% s (~%START_DELAY_MIN% min)...
-timeout /t %START_DELAY_SEC% /nobreak >nul
-
-:LOOP
-cd /d "%REPO_ROOT%"
-
-for /f %%h in ('powershell -NoProfile -Command "(Get-Date).Hour"') do set NOW_HOUR=%%h
-if %NOW_HOUR% GEQ 17 (
-  echo [%date% %time%] Godzina %NOW_HOUR% - nie zaczynam kolejnej sesji po godzinach pracy. Koniec na dzis.
-  goto :EOF
-)
-
 echo [%date% %time%] git pull...
 git pull --no-edit
 
-cd automatyzacje\wz
+cd automatyzacje
 
-echo [%date% %time%] odswiezam schemat bazy...
-node generate-test-tables.js
+echo [%date% %time%] node dobij-wszystko.js (WZ -> MM -> PZ, sekwencyjnie)...
+node dobij-wszystko.js
+set RC=%ERRORLEVEL%
 
-set FILTER_DATE=wczoraj
-set HEADLESS=true
-REM Weekend NIE jest pusty (bywaja pojedyncze WZ w sob/nd) - dopuszczamy start
-REM w weekend, inaczej scrape.js sam odmowilby. Bez tego przy triggerze
-REM codziennym piatek/sobota/niedziela zostawaly poza pokryciem "wczoraj".
-set ALLOW_WEEKEND=true
-REM Dzienny przebieg pisze WPROST do tabel PRODUKCYJNYCH (csDocsHeaders/
-REM csDocsItemsPositions). Bez tego scrape.js domyslnie pisze do *_test.
-set SCRAPE_TARGET=prod
-
-echo [%date% %time%] node scrape.js (sesja scrapowania, limit 75 min)...
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0odpal-z-timeoutem.ps1" -TimeoutSec 4500
-set SESSION_EXIT=%ERRORLEVEL%
-if %SESSION_EXIT% EQU 2 (
-  echo [%date% %time%] UWAGA: sesja zawiesila sie i zostala ubita po limicie czasu. Usuwam blokade, jade dalej.
-  del /f /q ".scrape.lock" 2>nul
-) else (
-  echo [%date% %time%] Sesja zakonczona sama, kod wyjscia: %SESSION_EXIT%.
-)
-
-for /f %%i in ('powershell -NoProfile -Command "Get-Random -Minimum 300 -Maximum 900"') do set BREAK_SEC=%%i
-set /a BREAK_MIN=%BREAK_SEC%/60
-echo [%date% %time%] przerwa miedzy sesjami: %BREAK_SEC% s (~%BREAK_MIN% min)...
-timeout /t %BREAK_SEC% /nobreak >nul
-
-goto :LOOP
+echo [%date% %time%] Orkiestrator zakonczony, kod wyjscia: %RC%.
+REM  RC=0 wszystko domkniete | RC=1 jakis dzien niedomkniety (dokonczy
+REM  nastepny bieg) | RC=3 lock zajety (inny bieg trwal - to OK).
+endlocal
+exit /b %RC%
