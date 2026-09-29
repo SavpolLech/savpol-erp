@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.0.0
+// @version      4.1.0
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2313,8 +2313,14 @@
           + ' — jeszcze do ' + zostalo + ' min.');
       });
       if (!czekanie.ok) {
-        if (ui) ui.detail('Apka nie oddała opisów dla ' + sku + '. '
-          + 'Gdy skończy, użyj przycisku „Zapisz opisy".');
+        if (czekanie.padlo) {
+          console.warn('[Opisy] Generacja padła dla ' + sku + ': ' + czekanie.blad);
+          if (ui) ui.detail('Generowanie opisów dla ' + sku + ' nie powiodło się: '
+            + czekanie.blad + '. Uruchom je w apce ponownie — czekanie nic nie da.');
+        } else if (ui) {
+          ui.detail('Apka nie oddała opisów dla ' + sku + '. '
+            + 'Gdy skończy, użyj przycisku „Zapisz opisy" i „Pobierz z apki".');
+        }
         return;
       }
       const d = czekanie.dane;
@@ -2409,6 +2415,17 @@
       if (r.status >= 200 && r.status < 300 && r.body && r.body.ok) {
         return { ok: true, dane: r.body };
       }
+      // 409 = generacja PADŁA (kontrakt apki od v0.42.0). Czekanie dalej jest
+      // wtedy czekaniem na coś, czego nikt już nie robi — kończymy i mówimy
+      // wprost, że trzeba powtórzyć. 404 nadal znaczy „jeszcze trwa".
+      if (r.status === 409) {
+        return {
+          ok: false,
+          padlo: true,
+          blad: (r.body && r.body.powod) || 'apka nie podała powodu',
+          kiedy: r.body && r.body.kiedy
+        };
+      }
       if (r.status !== 404 && r.status !== 0) {
         console.warn('[Opisy] Apka odpowiedziała ' + r.status + ' — pytam dalej.');
       }
@@ -2416,7 +2433,8 @@
       if (przyPostepie) przyPostepie(zostalo);
       await sleep(POBIERANIE.CO_ILE_MS);
     }
-    return { ok: false, blad: 'apka nie oddała opisów w ciągu 10 minut' };
+    const minut = Math.round(POBIERANIE.NAJDLUZEJ_MS / 60000);
+    return { ok: false, blad: 'apka nie oddała opisów w ciągu ' + minut + ' minut' };
   }
 
   // Sprawdzenia, zanim cokolwiek pokażemy człowiekowi jako gotowe.
@@ -2456,16 +2474,29 @@
   // Blokada dotyczy WYŁĄCZNIE nazwy. Opis, dane techniczne i SEO zapisujemy
   // normalnie — inaczej jedno zablokowane pole wstrzymywałoby całą pracę nad
   // produktem.
+  function terminBlokady(wartosc) {
+    if (!wartosc) return null;
+    const tekst = String(wartosc).trim();
+    const samaData = /^\d{4}-\d{2}-\d{2}$/.test(tekst);
+    const d = new Date(samaData ? tekst + 'T23:59:59' : tekst);
+    return isNaN(d) ? null : d;
+  }
+
   function blokadaNazwy(pakiet) {
     const b = pakiet && pakiet.nazwaZablokowana;
     if (!b) return null;
-    const doKiedy = b.doKiedy ? new Date(b.doKiedy) : null;
-    // Termin, który już minął, nie jest blokadą.
-    if (doKiedy && !isNaN(doKiedy) && doKiedy.getTime() < Date.now()) return null;
+    // `doKiedy` to sama data „RRRR-MM-DD" (tak zapisuje ją skrypt SEO).
+    //
+    // `new Date('2026-10-22')` to PÓŁNOC UTC, czyli 02:00 u nas — blokada
+    // „do 22.10" puszczałaby nazwę już 22.10 rano, dzień za wcześnie wobec
+    // intencji „po 22.10 wolno ruszać". Datę bez godziny traktujemy więc jako
+    // KONIEC tego dnia, czasu lokalnego.
+    const doKiedy = terminBlokady(b.doKiedy);
+    if (doKiedy && doKiedy.getTime() < Date.now()) return null;
     return {
       powod: String(b.powod || 'bez podanego powodu'),
       opis: 'Nazwa produktu zablokowana przez apkę: ' + String(b.powod || 'bez podanego powodu')
-        + (doKiedy && !isNaN(doKiedy) ? ' (do ' + doKiedy.toLocaleDateString('pl-PL') + ')' : '')
+        + (doKiedy ? ' (do końca ' + doKiedy.toLocaleDateString('pl-PL') + ')' : '')
         + '. Nie wpisuję jej — zmiana nazwy psuje adres strony i tytuł w Zakupach.'
     };
   }
@@ -5277,7 +5308,13 @@
         const r = await apkaZadanie('GET',
           POBIERANIE.ENDPOINT + '?sku=' + encodeURIComponent(sku));
         if (r.status === 404) {
-          notice('info', 'Apka nie ma jeszcze gotowych opisów dla ' + sku + '.', '');
+          notice('info', 'Apka jeszcze generuje opisy dla ' + sku + '. Spróbuj za chwilę.', '');
+          return;
+        }
+        if (r.status === 409) {
+          notice('error', ((r.body && r.body.powod) || 'apka nie podała powodu')
+            + '. Uruchom generowanie w apce ponownie — ponowne pobieranie nic nie da.',
+            'Generowanie nie powiodło się');
           return;
         }
         if (r.status < 200 || r.status >= 300 || !r.body || !r.body.ok) {
