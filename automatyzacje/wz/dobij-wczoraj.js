@@ -45,6 +45,19 @@ function isComplete(day) {
 }
 function clearLock() { try { fs.unlinkSync(LOCK); } catch { /* nie ma */ } }
 
+// Toast Windows przez helper toast.ps1 (best-effort — nigdy nie wywala joba).
+// Widoczny tylko w INTERAKTYWNEJ sesji zalogowanego użytkownika.
+function toast(title, message) {
+  try {
+    spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+      path.join(DIR, 'toast.ps1'), title, message], { timeout: 20000 });
+  } catch { /* powiadomienie to dodatek, nie blokuje pracy */ }
+}
+function docCount(day) {
+  try { return JSON.parse(fs.readFileSync(statePath(day), 'utf8')).processedDocNumbers.length; }
+  catch { return 0; }
+}
+
 // Dni do zrobienia: od najstarszego (today-WINDOW) do wczoraj (today-1),
 // tylko te jeszcze niekompletne wg state/.
 const today = new Date();
@@ -58,7 +71,12 @@ for (let back = WINDOW; back >= 1; back--) {
 
 console.log(`[dobij-wczoraj] ${new Date().toISOString()} okno ${WINDOW} dni -> PRODUKCJA. ` +
   `Do zrobienia: ${targets.join(', ') || '(nic — wszystko kompletne)'}`);
+toast('WZ scrape — start', targets.length
+  ? `Dobijam do produkcji: ${targets.join(', ')}`
+  : 'Nic do zrobienia — wszystko kompletne.');
 
+const done = [];
+const failed = [];
 for (const day of targets) {
   const env = {
     ...process.env,
@@ -74,13 +92,29 @@ for (const day of targets) {
     const r = spawnSync('node', ['scrape.js'], {
       cwd: DIR, env, stdio: 'inherit', timeout: SESSION_TIMEOUT_MS, killSignal: 'SIGKILL'
     });
-    if (r.error && r.error.code === 'ETIMEDOUT') {
-      console.warn(`[dobij-wczoraj] ${day} próba ${a}: przekroczono limit ${Math.round(SESSION_TIMEOUT_MS/60000)} min — ubito, ponawiam.`);
-    }
     clearLock();
+    const timedOut = r.error && r.error.code === 'ETIMEDOUT';
+    const crashed = timedOut || (r.status !== 0);
+    if (crashed && !isComplete(day) && a < MAX_ATTEMPTS) {
+      const why = timedOut ? `przekroczono limit ${Math.round(SESSION_TIMEOUT_MS / 60000)} min` : 'sesja padła';
+      console.warn(`[dobij-wczoraj] ${day} próba ${a}: ${why} — wznawiam.`);
+      toast('WZ — restart po błędzie', `${day}: ${why}, wznawiam (próba ${a + 1}/${MAX_ATTEMPTS}). Zebrane: ${docCount(day)}.`);
+    }
   }
-  console.log(isComplete(day)
-    ? `[dobij-wczoraj] ${day} KOMPLET.`
-    : `[dobij-wczoraj] UWAGA: ${day} nie domknięty po ${MAX_ATTEMPTS} próbach — kolejny bieg dokończy ze stanu.`);
+  if (isComplete(day)) {
+    console.log(`[dobij-wczoraj] ${day} KOMPLET.`);
+    done.push(day);
+    toast('WZ — dzień gotowy', `${day}: ${docCount(day)} dok. w produkcji.`);
+  } else {
+    console.warn(`[dobij-wczoraj] UWAGA: ${day} nie domknięty po ${MAX_ATTEMPTS} próbach — kolejny bieg dokończy ze stanu.`);
+    failed.push(day);
+    toast('WZ — dzień NIEdomknięty', `${day}: ${docCount(day)} dok., nie ukończono po ${MAX_ATTEMPTS} próbach. Dokończy następny bieg.`);
+  }
 }
-process.exit(0);
+if (targets.length) {
+  const parts = [];
+  if (done.length) parts.push(`OK: ${done.join(', ')}`);
+  if (failed.length) parts.push(`nieukończone: ${failed.join(', ')}`);
+  toast('WZ scrape — koniec', parts.join(' | ') || 'brak zmian');
+}
+process.exit(failed.length ? 1 : 0);
