@@ -31,6 +31,8 @@ automatyzacje/**/schema-test-tables.json
 automatyzacje/**/.scrape.lock
 # Globalna blokada orkiestratora (dobij-wszystko.js) — jeden scraper na ERP naraz
 automatyzacje/.scrapery.lock
+# Log lokalnego biegu orkiestratora (launcher) — czysto lokalny
+automatyzacje/dobij-wszystko.log
 
 # Zrzuty ekranu do debugowania — mogą zawierać dane handlowe z ekranu ERP
 automatyzacje/**/debug-*.png

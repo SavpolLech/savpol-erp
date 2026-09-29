@@ -22,11 +22,25 @@
 //   SCRAPERS=wz node dobij-wszystko.js       # tylko wybrane typy
 //   CATCHUP_WINDOW=8 node dobij-wszystko.js  # szersze okno nadganiania
 
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const runCatchup = require('./lib-wspolne/catchup');
 
 const AUTO_DIR = __dirname;
+
+// Toasty Windows — TYLKO lokalnie u Lecha (launcher ustawia TOAST=true). Na
+// serwerze headless nikt nie patrzy, więc domyślnie WYŁĄCZONE. Helper toast.ps1
+// jest generyczny (Title/Message) i leży w wz/ — reużywamy go dla wszystkich typów.
+const TOAST = process.env.TOAST === 'true';
+const TOAST_SCRIPT = path.join(AUTO_DIR, 'wz', 'toast.ps1');
+function toast(title, message) {
+  if (!TOAST) return;
+  try {
+    spawnSync('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+      TOAST_SCRIPT, title, message], { timeout: 20000 });
+  } catch { /* powiadomienie to dodatek, nie blokuje pracy */ }
+}
 const LOCK_PATH = path.join(AUTO_DIR, '.scrapery.lock');
 // Lock starszy niż to uznajemy za osierocony (proces padł bez sprzątnięcia).
 // 12 h > najdłuższy realny bieg (3 typy × okno × sesje), więc żywy przebieg
@@ -79,7 +93,10 @@ for (const type of SCRAPERS) {
     continue;
   }
   console.log(`\n[dobij-wszystko] ===== ${type.toUpperCase()} =====`);
-  const wynik = runCatchup({ dir, prefix: type, label: type.toUpperCase() });
+  const wynik = runCatchup({
+    dir, prefix: type, label: type.toUpperCase(),
+    onEvent: (_kind, title, message) => toast(title, message)
+  });
   summary.push({ type, ...wynik });
 }
 
@@ -92,5 +109,11 @@ for (const s of summary) {
   console.log(`  ${s.type.toUpperCase()}: ${[nic, ok, bad].filter(Boolean).join(' | ') || 'brak zmian'}`);
   if (s.failed.length) anyFailed = true;
 }
+
+const toastParts = summary.map((s) => {
+  if (!s.targets.length) return `${s.type.toUpperCase()}: —`;
+  return `${s.type.toUpperCase()}: OK ${s.done.length}${s.failed.length ? `, NIE ${s.failed.length}` : ''}`;
+});
+toast('Scrapery ERP — koniec', toastParts.join(' | '));
 
 process.exit(anyFailed ? 1 : 0);
