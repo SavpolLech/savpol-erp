@@ -1,0 +1,58 @@
+{
+  "dateFrom": "2026-07-24",
+  "dateTo": "2026-07-24",
+  "processedDocNumbers": [
+    "2026/MM/KRS1/005167",
+    "2026/MM/GLS1/001488",
+    "2026/MM/RZS1/000429",
+    "2026/MM/RZS1/000430",
+    "2026/MM/RZS1/000431",
+    "2026/MM/RZS1/000432",
+    "2026/MM/RZS1/000433",
+    "2026/MM/RZS1/000434",
+    "2026/MM/RZS1/000435",
+    "2026/MM/KRS1/005170",
+    "2026/MM/KRS1/005171",
+    "2026/MM/KRS1/005172",
+    "2026/MM/KRS1/005178",
+    "2026/MM/KRS1/005179",
+    "2026/MM/KRS1/005180",
+    "2026/MM/GLS1/001489",
+    "2026/MM/GLS1/001490",
+    "2026/MM/WAS1/001027",
+    "2026/MM/WAS1/001028",
+    "2026/MM/WAS1/001029",
+    "2026/MM/WAS1/001030",
+    "2026/MM/WAS1/001031",
+    "2026/MM/WAS1/001032",
+    "2026/MM/KRS1/005182",
+    "2026/MM/KRS1/005174",
+    "2026/MM/KRS1/005175",
+    "2026/MM/KRS1/005173",
+    "2026/MM/KRS1/005177",
+    "2026/MM/KRS1/005162",
+    "2026/MM/KRS1/005176"
+  ],
+  "complete": true,
+  "lastUpdated": "2026-09-29T08:24:52.850Z",
+  "runs": [
+    {
+      "ts": "2026-09-29T08:24:07.179Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-09-29T08:24:52.796Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-09-29T08:24:52.849Z",
+      "paczkaDok": 0,
+      "partial": false,
+      "stoppedReason": null
+    }
+  ]
+}
