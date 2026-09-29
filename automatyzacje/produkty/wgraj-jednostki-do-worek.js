@@ -82,6 +82,7 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
   }
 
   let wstawione = 0, pominiete = 0;
+  const konflikty = [];
   for (const r of rekordy) {
     const surowaWartosc = (k) => (r[k] && typeof r[k] === 'object' && 'Item' in r[k]) ? r[k].Item : r[k];
     if (idColMeta && existing.has(String(surowaWartosc(idCol)))) { pominiete++; continue; }
@@ -99,11 +100,18 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
       // precyzji dla naszych danych (nikt nie potrzebuje 16 miejsc po
       // przecinku przy wadze/ilości).
       let typ = mssqlType(col);
-      if ((col.DATA_TYPE === 'decimal' || col.DATA_TYPE === 'numeric') && col.NUMERIC_SCALE >= 16) {
-        typ = sql.Decimal(col.NUMERIC_PRECISION || 18, 15);
+      const dziesietna = col.DATA_TYPE === 'decimal' || col.DATA_TYPE === 'numeric';
+      let skala = Math.min(col.NUMERIC_SCALE || 4, 15);
+      // value * 10^skala musi zmieścić się w ~9e18 (tedious liczy to w 64 bitach):
+      // QuantityInUnit=21120 przy skali 15 dawało "could not be validated".
+      if (dziesietna && typeof value === 'number' && value !== 0) {
+        skala = Math.max(0, Math.min(skala, 17 - Math.ceil(Math.log10(Math.abs(value) + 1))));
       }
-      if ((col.DATA_TYPE === 'decimal' || col.DATA_TYPE === 'numeric') && typeof value === 'number') {
-        value = Number(value.toFixed(Math.min(col.NUMERIC_SCALE || 4, 15)));
+      if (dziesietna && (col.NUMERIC_SCALE >= 16 || skala < Math.min(col.NUMERIC_SCALE || 4, 15))) {
+        typ = sql.Decimal(col.NUMERIC_PRECISION || 18, skala);
+      }
+      if (dziesietna && typeof value === 'number') {
+        value = Number(value.toFixed(skala));
       }
       try {
         request.input(paramName, typ, value);
@@ -119,12 +127,20 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
     try {
       await request.query('INSERT INTO dbo.' + testTable + ' (' + colNames.join(', ') + ') VALUES (' + paramNames.join(', ') + ')');
     } catch (e) {
+      // Tabela już ma inny wiersz pod tym samym kluczem biznesowym (np. EAN
+      // o tym samym Ord z niezależnej synchronizacji worek) — nie nadpisujemy.
+      if (e.number === 2627 || e.number === 2601) {
+        konflikty.push(String(surowaWartosc(idCol)) + ' (csItemsId ' + surowaWartosc('csItemsId') + ')');
+        continue;
+      }
       console.error('[wgraj-jednostki] BŁĄD INSERT dla rekordu: ' + JSON.stringify(r).slice(0, 500));
       throw e;
     }
     wstawione++;
   }
   if (pominiete) console.log('[wgraj-jednostki] ' + testTable + ': pominięto ' + pominiete + ' już obecnych.');
+  if (konflikty.length) console.warn('[wgraj-jednostki] ' + testTable + ': ' + konflikty.length +
+    ' pominięto przez konflikt klucza unikalnego (inny wiersz już zajmuje to miejsce): ' + konflikty.join(', '));
   console.log('[wgraj-jednostki] SUKCES: wstawiono ' + wstawione + ' do dbo.' + testTable + ' w bazie "' + database + '".');
 }
 
