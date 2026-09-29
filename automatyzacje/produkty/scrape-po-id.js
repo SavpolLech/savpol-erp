@@ -12,6 +12,14 @@
 //   3. mając SKU, scrapujemy kartę zwykłym scrapeOneProduct w tej samej
 //      sesji, więc wynik/ i wgraj-*.js działają bez zmian.
 //
+// Gdy pozycja WZ nie ma nazwy (PositionDesc NULL — bywają całe takie
+// dokumenty), otwieramy ten WZ w ERP i bierzemy SKU z jego siatki pozycji;
+// kandydatów (bez SKU już obecnych w worek.csItems) sprawdzamy w katalogu,
+// aż któryś ma szukane csItemsId.
+//
+// W katalogu odznaczamy "Bez wyc." — Michał, 2026-09-29: wycofane kartoteki
+// też muszą być w bazie, bo występują na dokumentach.
+//
 // Uruchomienie:
 //   node scrape-po-id.js 30290482005 30190004991 ...
 //   node scrape-po-id.js --plik=lista-id.txt      (id rozdzielone białymi znakami/przecinkami)
@@ -34,6 +42,7 @@ const { login, CATALOG_URL, HEADLESS, decodeJsonResult, extractCardRecord, scrap
 
 const OUT_DIR = path.join(__dirname, 'wynik');
 const MAPA_CSV = path.join(OUT_DIR, 'id-sku-mapa.csv');
+const WZ_LIST_URL = process.env.WZ_LIST_URL || 'https://erp.savpol.pl/pl/wydania-zewnetrzne/csdocsheaders4goodsissue';
 
 function wczytajIdy() {
   const args = process.argv.slice(2);
@@ -57,7 +66,13 @@ function juzZescrapowaneIdy() {
   return idy;
 }
 
-async function nazwyZWorek(idy) {
+function inIdy(r, idy) {
+  return idy.map((id, i) => { r.input('id' + i, sql.BigInt, id); return '@id' + i; }).join(',');
+}
+
+// Nazwy z pozycji WZ, a dla id bez nazwy — dokumenty, na których występują
+// (do otwarcia w ERP), plus SKU już znane w csItems (do odrzucenia kandydatów).
+async function daneZWorek(idy) {
   const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD } = process.env;
   const pool = await sql.connect({
     server: DB_HOST, port: parseInt(DB_PORT || '1433', 10),
@@ -65,21 +80,97 @@ async function nazwyZWorek(idy) {
     options: { encrypt: true, trustServerCertificate: true }, connectionTimeout: 15000, requestTimeout: 120000
   });
   try {
-    const r = pool.request();
-    const ph = idy.map((id, i) => { r.input('id' + i, sql.BigInt, id); return '@id' + i; });
+    let r = pool.request();
     const q = await r.query(
       'SELECT CAST(csItemsId AS varchar(30)) AS id, PositionDesc AS nazwa, COUNT(*) AS n FROM dbo.csDocsItemsPositions ' +
-      'WHERE csItemsId IN (' + ph.join(',') + ') AND PositionDesc IS NOT NULL GROUP BY csItemsId, PositionDesc ORDER BY n DESC'
+      'WHERE csItemsId IN (' + inIdy(r, idy) + ') AND PositionDesc IS NOT NULL GROUP BY csItemsId, PositionDesc ORDER BY n DESC'
     );
-    const mapa = new Map();
+    const nazwy = new Map();
     for (const w of q.recordset) {
-      if (!mapa.has(w.id)) mapa.set(w.id, []);
-      mapa.get(w.id).push(w.nazwa.trim());
+      if (!nazwy.has(w.id)) nazwy.set(w.id, []);
+      nazwy.get(w.id).push(w.nazwa.trim());
     }
-    return mapa;
+
+    const bezNazwy = idy.filter(id => !nazwy.has(id));
+    const dokumenty = new Map(); // id → [{ numer, data }]
+    if (bezNazwy.length) {
+      r = pool.request();
+      const d = await r.query(
+        'SELECT DISTINCT CAST(p.csItemsId AS varchar(30)) AS id, h.DocNumber AS numer, CONVERT(varchar(10), h.DocDate, 120) AS data ' +
+        'FROM dbo.csDocsItemsPositions p JOIN dbo.csDocsHeaders h ON h.csDocsHeadersId = p.csDocsHeadersId ' +
+        'WHERE p.csItemsId IN (' + inIdy(r, bezNazwy) + ") AND h.DocNumber LIKE '%/WZ/%'"
+      );
+      for (const w of d.recordset) {
+        if (!dokumenty.has(w.id)) dokumenty.set(w.id, []);
+        dokumenty.get(w.id).push({ numer: w.numer, data: w.data });
+      }
+    }
+    const znane = await pool.request().query('SELECT Item FROM dbo.csItems');
+    return { nazwy, dokumenty, znaneSku: new Set(znane.recordset.map(x => String(x.Item))) };
   } finally {
     await pool.close();
   }
+}
+
+// Otwiera WZ na liście dokumentów (zakres dat = dzień dokumentu + szukanie po
+// numerze) i zwraca SKU z siatki pozycji (pogrubiony fragment ItemDesc).
+async function skuZDokumentuWz(page, numer, data) {
+  await page.goto(WZ_LIST_URL, { waitUntil: 'domcontentloaded' });
+  await page.waitForSelector('td[data-datafield="DocNumber"]', { timeout: 60000 });
+  for (const ph of ['Od', 'Do']) {
+    const pole = page.locator('input[placeholder="' + ph + '"]:visible').first();
+    await pole.click();
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type(data, { delay: 50 });
+    await page.keyboard.press('Tab');
+    await page.waitForTimeout(400);
+  }
+  await page.locator('.ButtonRefresh:visible').first().click();
+  await page.waitForTimeout(2500);
+  return page.evaluate(async (doc) => {
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+    async function waitFor(fn, n = 60) { for (let i = 0; i < n; i++) { const v = fn(); if (v) return v; await sleep(250); } return null; }
+    const grids = () => Array.from(document.querySelectorAll('.cs-grid-data-table')).filter(t => t.offsetParent !== null);
+    const w = Array.from(document.querySelectorAll('.csDBEditSearch')).filter(x => x.offsetParent !== null)[0];
+    const input = w && w.querySelector('input.Input');
+    if (!input) return { blad: 'brak pola szukania na liście WZ' };
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, doc);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', keyCode: 13, which: 13 }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter', keyCode: 13, which: 13 }));
+    await sleep(1500);
+    const row = await waitFor(() => {
+      const g = grids().find(t => t.querySelector('td[data-datafield="DocNumber"]'));
+      return g && Array.from(g.querySelectorAll('tr.cs-grid-data-row'))
+        .find(x => (x.querySelector('td[data-datafield="DocNumber"]') || {}).title === doc);
+    });
+    if (!row) return { blad: 'nie znalazłem ' + doc + ' na liście WZ' };
+    const btn = row.querySelector('td[data-datafield="DocNumber"] .csButtonAction');
+    if (!btn) return { blad: 'brak przycisku otwarcia ' + doc };
+    btn.click();
+    const pos = await waitFor(() => grids().find(t => t.querySelector('td[data-datafield="ItemDesc"]') && t.querySelector('td[data-datafield="QuantityUnits"]')), 80);
+    if (!pos) return { blad: 'nie otworzyła się siatka pozycji ' + doc };
+    await sleep(1500);
+    const sku = Array.from(pos.querySelectorAll('tr.cs-grid-data-row')).map(x => {
+      const b = x.querySelector('td[data-datafield="ItemDesc"] .cs-style-text-bold');
+      return b ? b.textContent.trim() : null;
+    }).filter(Boolean);
+    const close = document.querySelector('li.k-state-active .csCloseButton_span');
+    if (close) close.click();
+    return { sku };
+  }, numer);
+}
+
+async function odznaczBezWycofanych(page) {
+  const box = page.locator('.csDBCheckBox:visible', { hasText: 'Bez wyc.' }).first();
+  await box.waitFor({ timeout: 15000 });
+  const input = box.locator('input[type="checkbox"]');
+  if (await input.isChecked()) {
+    await box.locator('label.Label').click();
+    await page.waitForTimeout(800);
+  }
+  if (await input.isChecked()) throw new Error('Nie udało się odznaczyć "Bez wyc." w katalogu.');
+  console.log('[katalog] Odznaczono "Bez wyc." — widoczne także wycofane kartoteki.');
 }
 
 // Kolejne, coraz krótsze frazy — pełna nazwa, bez końcowego "(kod)", pierwsze
@@ -108,8 +199,8 @@ async function wyszukajWKatalogu(page, fraza) {
   }, fraza);
 }
 
-async function znajdzSkuPoId(page, captured, id, nazwy) {
-  for (const fraza of frazyDlaNazw(nazwy)) {
+async function znajdzSkuPoId(page, captured, id, frazy) {
+  for (const fraza of frazy) {
     captured.length = 0;
     await wyszukajWKatalogu(page, fraza);
     for (let i = 0; i < 30; i++) {
@@ -137,9 +228,9 @@ async function main() {
   console.log('[start] ' + wszystkie.length + ' id, ' + (wszystkie.length - idy.length) + ' już w wynik/ — do zrobienia ' + idy.length + '.');
   if (!idy.length) return;
 
-  const nazwy = await nazwyZWorek(idy);
+  const { nazwy, dokumenty, znaneSku } = await daneZWorek(idy);
   const bezNazwy = idy.filter(id => !nazwy.has(id));
-  if (bezNazwy.length) console.warn('[worek] Brak nazwy w csDocsItemsPositions dla: ' + bezNazwy.join(', '));
+  if (bezNazwy.length) console.log('[worek] Bez nazwy w pozycjach WZ (szukam przez dokument WZ): ' + bezNazwy.join(', '));
 
   const browser = await chromium.launch({ headless: HEADLESS });
   const page = await (await browser.newContext()).newPage();
@@ -164,15 +255,42 @@ async function main() {
   const nieudane = [];
   try {
     await login(page);
+
+    // Kandydaci SKU z dokumentów WZ dla id bez nazwy — przed katalogiem, bo
+    // przejście na listę WZ i z powrotem resetuje filtry katalogu.
+    const kandydaci = new Map();
+    const cacheDok = new Map();
+    for (const id of bezNazwy) {
+      const sku = new Set();
+      for (const dok of (dokumenty.get(id) || [])) {
+        if (!cacheDok.has(dok.numer)) {
+          const w = await skuZDokumentuWz(page, dok.numer, dok.data);
+          if (w.blad) console.warn('[wz] ' + w.blad);
+          cacheDok.set(dok.numer, w.sku || []);
+          console.log('[wz] ' + dok.numer + ': ' + (w.sku || []).length + ' pozycji.');
+        }
+        cacheDok.get(dok.numer).forEach(s => { if (!znaneSku.has(s)) sku.add(s); });
+      }
+      kandydaci.set(id, Array.from(sku));
+    }
+
     await page.goto(CATALOG_URL, { waitUntil: 'domcontentloaded' });
     await page.waitForSelector('td[data-datafield="Item"]', { timeout: 30000 });
     console.log('[katalog] Załadowany.');
+    await odznaczBezWycofanych(page);
 
     for (const id of idy) {
-      if (!nazwy.has(id)) { dopiszMape(id, '', 'brak nazwy w worek'); nieudane.push(id); continue; }
-      const trafienie = await znajdzSkuPoId(page, captured, id, nazwy.get(id));
+      const frazy = nazwy.has(id) ? frazyDlaNazw(nazwy.get(id)) : kandydaci.get(id);
+      if (!frazy || !frazy.length) {
+        const powod = nazwy.has(id) ? 'brak fraz' : 'brak nazwy i brak kandydatów z dokumentów WZ';
+        console.warn('[id] ' + id + ': ' + powod);
+        dopiszMape(id, '', powod);
+        nieudane.push(id);
+        continue;
+      }
+      const trafienie = await znajdzSkuPoId(page, captured, id, frazy);
       if (!trafienie) {
-        console.warn('[id] ' + id + ': nie znalazłem w katalogu (nazwa: ' + nazwy.get(id)[0] + ')');
+        console.warn('[id] ' + id + ': nie znalazłem w katalogu (' + (nazwy.has(id) ? 'nazwa: ' + nazwy.get(id)[0] : 'kandydaci z WZ: ' + frazy.join(', ')) + ')');
         dopiszMape(id, '', 'nie znaleziono w katalogu');
         nieudane.push(id);
         continue;
