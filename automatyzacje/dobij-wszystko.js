@@ -42,39 +42,13 @@ function toast(title, message) {
   } catch { /* powiadomienie to dodatek, nie blokuje pracy */ }
 }
 const LOCK_PATH = path.join(AUTO_DIR, '.scrapery.lock');
-// Lock starszy niż to uznajemy za osierocony (proces padł bez sprzątnięcia).
-// 12 h > najdłuższy realny bieg (3 typy × okno × sesje), więc żywy przebieg
-// nigdy sam siebie nie wyprzedzi, a trup nie blokuje kolejnego dnia.
 const LOCK_STALE_MS = parseInt(process.env.LOCK_STALE_MS || String(12 * 60 * 60 * 1000), 10);
+const { acquire: acquireLock, release: releaseLock } = require('./lib-wspolne/lock')(LOCK_PATH, { staleMs: LOCK_STALE_MS });
 
 // Domyślna kolejność. ERP jeden na raz — nie zmieniaj na równoległe.
 const ALL = ['wz', 'mm', 'pz'];
 const SCRAPERS = (process.env.SCRAPERS || ALL.join(','))
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
-
-function acquireLock() {
-  try {
-    const raw = fs.readFileSync(LOCK_PATH, 'utf8');
-    const info = JSON.parse(raw);
-    const age = Date.now() - new Date(info.ts).getTime();
-    if (age < LOCK_STALE_MS) {
-      console.error(`[dobij-wszystko] LOCK zajęty przez PID ${info.pid} od ${info.ts} ` +
-        `(${Math.round(age / 60000)} min temu). Inny bieg trwa — nie wchodzę równolegle na ERP.`);
-      return false;
-    }
-    console.warn(`[dobij-wszystko] LOCK przeterminowany (${Math.round(age / 60000)} min) — przejmuję.`);
-  } catch { /* brak locka albo śmieć w pliku — bierzemy */ }
-  fs.writeFileSync(LOCK_PATH, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }), 'utf8');
-  return true;
-}
-
-// Zwalniamy tylko WŁASNY lock (jeśli w międzyczasie ktoś przejął — nie kasujemy).
-function releaseLock() {
-  try {
-    const info = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'));
-    if (info.pid === process.pid) fs.unlinkSync(LOCK_PATH);
-  } catch { /* już nie ma albo cudzy — zostaw */ }
-}
 
 if (!acquireLock()) process.exit(3);
 

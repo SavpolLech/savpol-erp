@@ -49,15 +49,21 @@ module.exports = function runCatchup(opts) {
   const clearLock = () => { try { fs.unlinkSync(LOCK); } catch { /* nie ma */ } };
   const emit = (kind, title, message) => { try { if (onEvent) onEvent(kind, title, message); } catch { /* powiadomienie to dodatek */ } };
 
-  // Dni do zrobienia: od najstarszego (today-WINDOW) do wczoraj (today-1),
-  // tylko te jeszcze niekompletne wg state/.
-  const today = new Date();
+  // Dni do zrobienia. Domyślnie okno wsteczne (today-WINDOW .. wczoraj), tylko
+  // niekompletne. opts.days (jawna lista, np. z ręcznego dobij-dzien.js) nadpisuje
+  // okno — bierzemy dokładnie te dni, które są jeszcze niekompletne wg state/
+  // (ręczny reset stanu sprawia, że dzień znów jest "niekompletny" i wejdzie).
   const targets = [];
-  for (let back = WINDOW; back >= 1; back--) {
-    const d = new Date(today);
-    d.setDate(d.getDate() - back);
-    const day = ymd(d);
-    if (!isComplete(day)) targets.push(day);
+  if (Array.isArray(opts.days) && opts.days.length) {
+    for (const day of opts.days) if (!isComplete(day)) targets.push(day);
+  } else {
+    const today = new Date();
+    for (let back = WINDOW; back >= 1; back--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - back);
+      const day = ymd(d);
+      if (!isComplete(day)) targets.push(day);
+    }
   }
 
   console.log(`[catchup ${label}] ${new Date().toISOString()} okno ${WINDOW} dni -> PRODUKCJA. ` +

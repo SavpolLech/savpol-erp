@@ -175,3 +175,21 @@ scrapera), on widzi to bez dostępu do serwera. Jeśli chcesz sam zerknąć: w
 Harmonogramie Zadań, zakładka **Historia** (History) dla zadania
 `Savpol Scrapery ERP` pokazuje, kiedy się odpaliło i czy zakończyło się bez
 błędu.
+
+### 2.7 Ręczne dobicie brakującego dnia (Tomek / Michał)
+
+Czasem ERP pokazuje dla jakiegoś dnia więcej dokumentów niż jest w bazie
+(worku) — np. ERP: 800 WZ, worek: 780. Nie trzeba pisać do Lecha, można
+dobrać brakujące samemu:
+
+1. Wejdź do folderu `C:\savpol-automatyzacje\automatyzacje\wz\serwer\`.
+2. Dwuklik na **`dobij-dzien.bat`**.
+3. Wpisz, o co chodzi: typ (`wz`, `mm` albo `pz`) i datę (`RRRR-MM-DD`).
+4. Tryb: naciśnij **Enter** (szybki — dobiera brakujące). Jeśli szybki nie
+   pomógł (w worku dalej jest mniej niż w ERP), odpal jeszcze raz i wybierz
+   **`p`** (pełny — przeklikuje dzień od zera).
+
+To jest bezpieczne o każdej porze: bierze tę samą blokadę co codzienny automat,
+więc nigdy nie wejdzie na ERP równolegle (gdyby akurat trwał inny bieg, po
+prostu wypisze „inny bieg trwa" i wyjdzie — spróbuj później). Dokumenty, które
+już są w bazie, nie zostaną zdublowane — dopisywane są tylko brakujące.
