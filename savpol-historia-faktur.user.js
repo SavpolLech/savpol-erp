@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      3.21.0
-// @description  Buduje opis produktu: pobiera historię faktur (Wszystkie, od 1 stycznia 2024) dla wybranego produktu, analizuje co-occurrence, filtruje po logistyce i dostępności, przekazuje SKU do cross-sellingu do generatora opisów
+// @version      4.0.0
+// @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
 // @downloadURL  https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -29,246 +29,6 @@
   const ESAVPOL_BUTTON_ID = 'savpol-open-esavpol-btn';
   const ESAVPOL_BUTTON_TEXT = '🛒 Otwórz w esavpol';
 
-  // ---------- Konfiguracja ----------
-  const MAX_INVOICES = 100;                       // limit pobieranych faktur
-  const HISTORY_START_DATE = new Date(2024, 0, 1); // od stycznia 2024
-  const MAX_PAGES = 50;                            // zabezpieczenie przed nieskończoną pętlą paginacji
-  const MAX_CONSECUTIVE_FAILURES = 3;              // tyle nieudanych otwarć faktur z rzędu kończy zbieranie
-
-  // Pliki CSV na dysk. Były potrzebne do kalibracji reguł na realnych danych;
-  // teraz wynikiem pracy jest opis w generatorze, a pobrane pliki
-  // tylko zaśmiecają Pobrane. Zostają jako flagi, bo przy dostrajaniu reguł
-  // surowa historia znów bywa potrzebna.
-  const EXPORT_RAW_HISTORY = false;                // CSV z pełną historią faktur (debug reguł)
-  const EXPORT_CROSS_SELL_CSV = false;             // CSV z listą kandydatów
-
-  // ---------- Konfiguracja analizy cross-sell ----------
-  const CROSS_SELL = {
-    // MIN_COUNT jest głównym progiem, MIN_SHARE tylko podłogą przy małym N.
-    //
-    // Dlaczego nie odwrotnie: koncentracja koszyka zależy od roli produktu.
-    // Krem pistacjowy ma lidera 41% (wąskie zastosowanie), orzech laskowy
-    // tylko 11% (wsad do wielu receptur, sygnał się rozprasza). Sztywny próg
-    // procentowy nie może obsłużyć obu — 25% dawało 1 kandydata, 10% dawało
-    // 2 dla orzecha i 4 dla kremu. Liczba wspólnych faktur jest stabilniejsza.
-    MIN_COUNT: 4,
-    MIN_SHARE: 5,       // podłoga szumu; przy N<80 zaczyna wiązać mocniej niż MIN_COUNT
-    TOP_N: 4,           // ile kandydatów w finalnej liście
-
-    // Progi wielkości próby. Zmierzone, nie wyczute: dla ośmiu skalibrowanych
-    // anchorów losowo przycinaliśmy próbę do K faktur (40 losowań na kombinację)
-    // i sprawdzali, ile z top-4 z pełnej próby wraca w wyniku.
-    //
-    //   K=10 → 5% trafień   K=30 → 44%   K=60 → 74%
-    //   K=20 → 22% trafień  K=50 → 68%   K=80 → 85%
-    //
-    // Przy 20 fakturach trzy z czterech rekomendacji byłyby inne, gdyby dane
-    // były kompletne — to losowanie, nie sygnał.
-    //
-    // UWAGA: te progi sterują WYŁĄCZNIE komunikatem dla użytkownika. Decyzję,
-    // czy wynik jest wiarygodny, podejmuje generator — dostaje surowe
-    // `invoices=N` i sam trzyma próg. Dzięki temu zmiana progu nie wymaga
-    // aktualizacji skryptu u każdego pracownika z osobna. Nie kasujemy tu
-    // kandydatów: gdyby skrypt ich wycinał, generator nigdy by ich nie zobaczył
-    // i nie mógłby progu obniżyć.
-    MIN_INVOICES: 30,
-    LOW_CONFIDENCE_BELOW: 50,
-
-    // Wczesne zatrzymanie zbierania faktur. Zamiast ciągnąć zawsze do
-    // MAX_INVOICES, po każdych CHECK_EVERY nowych fakturach liczymy top-4
-    // na tym, co już mamy, i porównujemy z poprzednim sprawdzeniem — gdy
-    // wynik jest identyczny STABLE_CHECKS razy z rzędu, kolejne faktury i tak
-    // by go nie zmieniły, więc kończymy. To realizuje pomysł "niech skrypt
-    // sam oceni, czy ma już dość danych" bez zgadywania jednego sztywnego
-    // limitu dla wszystkich anchorów: mocny sygnał (lider 40%+) stabilizuje
-    // się szybko, słaby (rozproszony koszyk) i tak dociągnie do MAX_INVOICES.
-    //
-    // MIN_INVOICES_BEFORE_CHECK = 40, bo poniżej tego (K=30 → 44% trafień
-    // z pełnej próby) ranking i tak jeszcze pływa — sprawdzanie stabilności
-    // wcześniej złapałoby przypadkową zbieżność dwóch kolejnych losowych prób.
-    EARLY_STOP: {
-      ENABLE: true,
-      MIN_INVOICES_BEFORE_CHECK: 40,
-      CHECK_EVERY: 10,
-      STABLE_CHECKS: 2
-    },
-
-    // Maksymalna gramatura opakowania (kg lub L) dopuszczalna w sprzedaży
-    // wysyłkowej. Worki 25kg to czyste B2B; 10kg (np. cukier puder) jeszcze ujdzie.
-    MAX_PACK_KG: 10,
-
-    // Max 1 produkt na "rodzinę" (pierwszy znaczący wyraz nazwy), żeby lista
-    // nie wyglądała jak jedna rekomendacja powtórzona trzy razy
-    // (cukier kryształ + puder + wanilinowy).
-    ONE_PER_FAMILY: true
-  };
-
-  // ---------- Konfiguracja: filtr dostępności katalogowej (Zadanie 2) ----------
-  // Odczyt na żywo, bez cache — stan magazynowy zmienia się codziennie.
-  const AVAILABILITY = {
-    ENABLE: true,             // wyłącznik całej funkcji; false = zachowanie identyczne z v1.9
-    REJECT_LOW_ROTATING: true // "Towar nisko rotujący" -> odrzuć (decyzja właściciela produktu)
-  };
-
-  // ---------- Konfiguracja: spójność dziedziny anchora i kandydata ----------
-  //
-  // Problem, którego nie widać w statystyce. Dla „Polewy białej Cover Cream"
-  // analiza faktur zaproponowała, poprawnie liczbowo, „Sos do pizzy z farszem
-  // pieczarkowo-warzywnym" — bo piekarnie kupują jedno i drugie. Na stronie
-  // produktu taka propozycja wygląda jak pomyłka: to nie jest podpowiedź,
-  // tylko dowód, że nikt tego nie oglądał.
-  //
-  // Dlaczego nie po drzewie kategorii: struktura ERP tego nie rozstrzyga.
-  // Anchor to „Polewy / białe", trafne pary to „Mieszanki / Kremy cukiernicze",
-  // a nietrafiony sos to `Sosy i dodatki gastronomiczne\Sosy` — wszystkie trzy
-  // na tym samym poziomie. Reguła „ta sama gałąź" wycięłaby kremy razem
-  // z sosem. Podział na cukiernictwo i gastronomię istnieje w głowach ludzi,
-  // nie w katalogu, więc zapisujemy go tutaj — raz, jawnie.
-  //
-  // Dlaczego nie po SKU: wykluczanie pojedynczych produktów to gra w chowanego.
-  // Za tydzień wejdzie inny sos, potem frytura, i za każdym razem ktoś musi to
-  // wychwycić okiem.
-  const DZIEDZINY = {
-    ENABLE: true,
-
-    // Pierwszy segment ścieżki grupy → dziedzina. Segment `B2B\Kategorie\`
-    // jest wcześniej obcinany, jeśli występuje.
-    //
-    // Lista jest ŚWIADOMIE niepełna. Kategoria nieznana NIE odrzuca kandydata
-    // (patrz niżej), a każda napotkana i nieopisana trafia do konsoli — więc
-    // uzupełnia się przez używanie, a nie przez zgadywanie całego katalogu.
-    // Segment ścieżki → dziedzina. Sprawdzamy KAŻDY segment, nie tylko
-    // pierwszy: głębokość ścieżek bywa różna, a `groupDeny` obok siebie ma
-    // wpisy dwu- i trzypoziomowe.
-    //
-    // Pełne drzewo: `diagnostyka/drzewo-kategorii.csv` — 19 gałęzi pierwszego
-    // poziomu pod `B2B\Kategorie`. Wszystkie są tu opisane, więc konsola nie
-    // powinna już meldować nieznanych kategorii; jeśli zamelduje, znaczy że
-    // ktoś dodał gałąź w ERP.
-    //
-    // Dlaczego to musi być tabela, a nie reguła na drzewie: anchor „Polewa
-    // biała" leży w `Czekolady, Kakao`, a jego trafne pary w `Cukiernicze
-    // produkty`. Dla katalogu osobne gałęzie, dla człowieka jedna dziedzina.
-    //
-    // `wszystkie` to NIE to samo co brak wpisu. Tak oznaczamy surowce, których
-    // używa i cukiernik, i kuchnia — nabiał, tłuszcze, owoce, mąka, bakalie.
-    // Nigdy nie powodują odrzucenia w żadną stronę, ale są opisane świadomie,
-    // więc nie zaśmiecają konsoli komunikatem o brakującym przypisaniu.
-    MAPA: {
-      // Wytwórstwo słodkie — cukiernia, piekarnia, lodziarnia. Świadomie
-      // JEDNA dziedzina: te produkty krążą między sobą (polewa do lodów,
-      // nadzienie do drożdżówki), a rozbicie ich groziłoby odrzucaniem
-      // trafnych par.
-      'Cukiernicze produkty': 'wypiek',
-      'Czekolady, Kakao': 'wypiek',
-      'Dekorowanie': 'wypiek',
-      'Piekarskie produkty': 'wypiek',
-      'Lodziarskie produkty': 'wypiek',
-
-      // Kuchnia. To tu leżał sos do pizzy proponowany do polewy czekoladowej.
-      'Gastronomiczne produkty': 'gastronomia',
-      'Mięso, wędliny, ryby': 'gastronomia',
-      'Przyprawy, marynaty': 'gastronomia',
-
-      'Kawa, herbata': 'napoje',
-      'Polewy, syropy, napoje': 'napoje',
-
-      'Maszyny, urządzenia': 'wyposażenie',
-      'Non food': 'wyposażenie',
-      'Opakowania': 'wyposażenie',
-
-      // Wyjątki wewnątrz `Non food` — akcesoria kupowane RAZEM z wyrobem,
-      // nie zaopatrzenie zakładu. Dzięki skanowaniu od najgłębszego segmentu
-      // te wpisy wygrywają z `Non food` powyżej.
-      'Tace, podkładki i monoporcje': 'wszystkie',
-      'Foremki jednorazowe': 'wszystkie',
-      'Opakowania i sztućce jednorazowe': 'wszystkie',
-
-      // Wyroby gotowe i mrożone. Cała ta gałąź jest na `groupDeny`, więc jako
-      // KANDYDAT nie przechodzi tak czy tak. Liczy się tylko wtedy, gdy taki
-      // produkt jest ANCHOREM — a wówczas każde przypisanie mogłoby jedynie
-      // zaszkodzić: do mrożonego ciasta pasują i polewy, i dekoracje.
-      'Pieczywo, ciasta': 'wszystkie',
-
-      // Surowce wspólne — nie rozstrzygają dziedziny w żadną stronę.
-      'Dodatki spożywcze': 'wszystkie',
-      'Nabiał': 'wszystkie',
-      'Tłuszcze': 'wszystkie',
-      'Owoce, warzywa, grzyby': 'wszystkie',
-      'Ziarna, bakalie': 'wszystkie'
-    }
-  };
-
-  function segmentyGrupy(sciezka) {
-    if (!sciezka) return [];
-    return String(sciezka)
-      .replace(/^B2B[\\/]+Kategorie[\\/]+/i, '')
-      .split(/[\\/]/)
-      .map(x => x.trim())
-      .filter(Boolean);
-  }
-
-  // Szukamy od NAJGŁĘBSZEGO segmentu w stronę korzenia, żeby wpis dla
-  // podkategorii mógł nadpisać wpis dla całej gałęzi. Tak działa już lista
-  // groupAllow wobec groupDeny — dłuższa ścieżka wygrywa — więc reguła jest
-  // ta sama, a nie druga, konkurencyjna.
-  //
-  // Po co: `Non food` to jako całość wyposażenie, ale `Tace, podkładki
-  // i monoporcje` czy `Foremki jednorazowe` kupuje się razem z konkretnym
-  // wyrobem, więc nie mogą wypadać razem z chemią i odzieżą.
-  function dziedzinaGrupy(sciezka) {
-    const segmenty = segmentyGrupy(sciezka);
-    if (!segmenty.length) return null;
-    for (let i = segmenty.length - 1; i >= 0; i--) {
-      const d = DZIEDZINY.MAPA[segmenty[i]];
-      if (d) return d;
-    }
-    // Nie odrzucamy, ale meldujemy — inaczej luka w tabeli byłaby niewidoczna.
-    console.log('[Cross-sell] Grupa „' + segmenty.join(' > ') + '" nie ma '
-      + 'przypisanej dziedziny — kandydatów z niej nie odsiewam. '
-      + 'Warto dopisać do DZIEDZINY.MAPA.');
-    return null;
-  }
-
-  // Kandydat pasuje, dopóki nie ma DOWODU, że nie pasuje.
-  //
-  // Odrzucamy wyłącznie wtedy, gdy znamy obie dziedziny i są różne. Nieznana
-  // kategoria po którejkolwiek stronie oznacza „nie wiem", a nie „nie pasuje":
-  // awaria odczytu katalogu albo dziura w tabeli nie powinna kasować trafnej
-  // rekomendacji.
-  function dziedzinaSieKloci(grupaAnchora, grupaKandydata) {
-    if (!DZIEDZINY.ENABLE) return null;
-    const a = dziedzinaGrupy(grupaAnchora);
-    const k = dziedzinaGrupy(grupaKandydata);
-    if (!a || !k || a === k) return null;
-    // Surowiec wspólny pasuje do wszystkiego — po obu stronach.
-    if (a === 'wszystkie' || k === 'wszystkie') return null;
-    return { anchora: a, kandydata: k };
-  }
-
-  // ---------- Konfiguracja: wykluczenie po grupie katalogowej (Zadanie 3) ----------
-  // Grupa jest dostępna tylko przez ten sam odczyt katalogu co filtr dostępności
-  // (Zadanie 2), więc realnie działa tylko, gdy AVAILABILITY.ENABLE = true.
-  const GROUP_FILTER = {
-    ENABLE: true // wyłącznik; false = grupa nie wpływa na wynik (zachowanie sprzed Zadania 3)
-  };
-
-  // ---------- Konfiguracja: nakładka z postępem ----------
-  // Pływające okno w prawym dolnym rogu. Napis na przycisku w toolbarze jest
-  // ciasny i gubi się wśród kontrolek ERP, a przebieg trwa kilka minut —
-  // użytkownik musi widzieć, że coś się dzieje i na którym etapie.
-  const PROGRESS = {
-    ENABLE: true,
-    // 0 = nakładka zostaje do zamknięcia krzyżykiem albo do kolejnego przebiegu.
-    // Domyślnie zostaje, bo końcowy panel jest nośnikiem WYNIKU (przycisk
-    // otwarcia generatora), nie tylko postępu — autoukrywanie zabierało go,
-    // zanim dało się użyć. Wartość > 0 = liczba ms do samoukrycia.
-    //
-    // Sama ta wartość nie wystarcza: ERP przerysowuje widok i potrafi wyrzucić
-    // element z DOM, więc nakładka jest dodatkowo doczepiana z powrotem —
-    // patrz progressKeepAlive przy createProgressOverlay().
-    HIDE_AFTER_MS: 0
-  };
 
   // ---------- Konfiguracja: generator PDP ----------
   // Generator przyjmuje anchora i cross-sell w URL i sam dociąga dane produktu
@@ -315,20 +75,6 @@
     TYP_GUID: '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0'
   };
 
-  // ---------- Konfiguracja: historia faktur do repo ----------
-  // Historia trafia do prywatnego repo esavpol-pdp, ale NIE bezpośrednio:
-  // wysyła ją apka generatora swoim serwerowym tokenem. Skrypt nie trzyma
-  // żadnego sekretu — odkłada dane w GM storage i wysyła je dopiero ze strony
-  // generatora, czyli same-origin, z ciasteczkiem sesji i bez CORS-a.
-  // Kontrakt: docs/integracja-historia-faktur.md.
-  const HISTORY_UPLOAD = {
-    ENABLE: true,
-    ENDPOINT: '/api/invoice-history',
-    QUEUE_KEY: 'invoice_history_queue',
-    // Kolejka rośnie, gdy ktoś zrobi kilka produktów, zanim otworzy generator.
-    // Limit chroni storage przed puchnięciem, gdy sesja wygasła na dobre.
-    MAX_QUEUED: 20
-  };
 
   // ---------- Konfiguracja: przejście do sklepu ----------
   // ERP nie zna adresu produktu w e-commerce, a slug w URL sklepu nie da się
@@ -617,16 +363,7 @@
     HTML_SNIPPET_CHARS: 1500
   };
 
-  // ---------- Konfiguracja: stan katalogu po zakończeniu ----------
-  // Po sprawdzeniu kandydatów wyszukiwarka katalogu zostaje z SKU ostatniego
-  // z nich, co jest mylące — widok pokazuje przypadkowy produkt z rekomendacji,
-  // nie ten, który analizowaliśmy. Przywracamy w niej anchora.
-  const FINISH = {
-    SEARCH_ANCHOR: true
-  };
 
-  // Separator listy SKU przekazywanej do generatora.
-  const SKU_SEPARATOR = ',';
 
   // ---------- Przerywanie pracy ----------
   // Przebieg trwa kilka minut i nie da się go ubić inaczej niż przeładowaniem
@@ -655,8 +392,6 @@
     throw err;
   }
 
-  // Wyrazy pomijane przy ustalaniu rodziny produktu — nie niosą kategorii.
-  const FAMILY_STOPWORDS = ['bt', 'mini', 'nowe', 'op', 'opak', 'do', 'na', 'z', 'w', 'i', 'ze'];
 
   // Lista wykluczeń jest ŚWIADOMIE otwarta — dopisuj kolejne pozycje
   // (produkty wycofane, sezonowe, z długim lead-time itp.).
@@ -1086,24 +821,6 @@
     }).join(' || ');
   }
 
-  function extractInvoiceRows(docNumber) {
-    const grid = getVisibleInvoiceGrid();
-    if (!grid) return [];
-    const rows = Array.from(grid.querySelectorAll('tbody tr'));
-    return rows.map(row => {
-      const skuCell = row.querySelector('td[data-datafield="Item"]');
-      const nameCell = row.querySelector('td[data-datafield="PositionItemDesc"]');
-      const qtyCell = row.querySelector('td[data-datafield="QuantityUnits"]');
-      if (!skuCell) return null;
-      return {
-        doc: docNumber,
-        sku: skuCell.getAttribute('title') || '',
-        product: nameCell ? nameCell.getAttribute('title') : '',
-        qty: qtyCell ? qtyCell.getAttribute('title') : ''
-      };
-    }).filter(Boolean);
-  }
-
   function getActiveTabDocNumber() {
     const el = document.querySelector('li.k-state-active .k-link[title]');
     if (!el) return null;
@@ -1185,212 +902,8 @@
     return !!changed;
   }
 
-  // Przerwanie jest MIĘKKIE: łapiemy je tutaj i zwracamy faktury zebrane do tej
-  // pory, żeby kilka minut scrapowania nie przepadło. Wynik z niepełnej próby
-  // jest oznaczany jako częściowy na każdym wyjściu (nakładka, konsola, nazwa CSV).
-  async function collectAllInvoices(maxCount, onProgress, sink, anchorSku) {
-    const results = sink || [];
-    let consecutiveFailures = 0;
-    let warnedMissingNames = false;
-    const processedDocs = new Set();
-    let invoicesProcessed = 0;
-    let pageNum = 1;
-    let lastStableTop4 = null;
-    let stableCheckCount = 0;
 
-    while (invoicesProcessed < maxCount && pageNum <= MAX_PAGES) {
-      throwIfAborted();
 
-      // Siatka bywa w trakcie przeładowania — pusta strona to najczęściej
-      // "jeszcze się ładuje", nie "nie ma faktur". Bez tej pauzy przebieg
-      // kończył się zerem, mimo że sekundę później dane były na miejscu.
-      if (pageNum === 1 && getFaRows().length === 0) {
-        await waitFor(() => getFaRows().length > 0, 20, 300);
-      }
-
-      // Numery dokumentów FA na bieżącej stronie, które jeszcze nie były przetworzone
-      const faDocNumbers = getFaRows()
-        .map(row => {
-          const cell = row.querySelector('td[data-datafield="DocNumber"]');
-          return cell ? cell.getAttribute('title') : null;
-        })
-        .filter(doc => doc && !processedDocs.has(doc));
-
-      if (onProgress) onProgress(`Strona ${pageNum}: ${faDocNumbers.length} nowych faktur FA`, { done: invoicesProcessed, total: maxCount });
-
-      for (const targetDoc of faDocNumbers) {
-        throwIfAborted();
-        if (invoicesProcessed >= maxCount) break;
-
-        // Wiersz pobieramy na nowo za każdym razem (odporność na odświeżenia DOM)
-        const row = getFaRows().find(r => {
-          const c = r.querySelector('td[data-datafield="DocNumber"]');
-          return c && c.getAttribute('title') === targetDoc;
-        });
-        if (!row) {
-          console.warn('Nie znaleziono wiersza dla', targetDoc);
-          diag('BLAD', 'Nie znaleziono wiersza dla ' + targetDoc +
-            ' (wierszy w widocznej siatce: ' + getFaRows().length + ')');
-          continue;
-        }
-
-        processedDocs.add(targetDoc);
-
-        const docNumberCell = row.querySelector('td[data-datafield="DocNumber"]');
-        const btn = docNumberCell.querySelector('.csButtonAction');
-        if (!btn) {
-          console.warn('Brak przycisku dla', targetDoc);
-          // Brak .csButtonAction bywa kwestią uprawnień — użytkownik widzi
-          // dokument, ale nie ma prawa go otworzyć.
-          diag('BLAD', 'Brak przycisku akcji dla ' + targetDoc);
-          diagHtml('wiersz bez przycisku', row);
-          continue;
-        }
-
-        btn.click();
-
-        const grid = await waitFor(() => getVisibleInvoiceGrid());
-        if (!grid) {
-          consecutiveFailures++;
-          console.error('[Savpol Historia Faktur] Nie udało się otworzyć faktury ' + targetDoc +
-            '. Widoczne siatki: ' + describeVisibleGrids());
-          diag('BLAD', 'Nie udało się otworzyć faktury ' + targetDoc +
-            ' (porażka ' + consecutiveFailures + ')');
-          // Pełny zrzut tylko przy pierwszej porażce — kolejne są jej skutkiem.
-          if (consecutiveFailures === 1) describeDom('nieudane otwarcie faktury');
-
-          // ODZYSKIWANIE. Bez tego jedna nieudana faktura kładła cały przebieg:
-          // otwarta zakładka przykrywała listę historii, więc każdy kolejny
-          // dokument kończył się "Nie znaleziono wiersza" i wynik był pusty.
-          const stray = document.querySelector('li.k-state-active .csCloseButton_span');
-          if (stray) stray.click();
-          await waitFor(() => visibleGridRows().length > 0);
-          await sleep(300);
-
-          if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-            console.error('[Savpol Historia Faktur] ' + consecutiveFailures +
-              ' nieudanych otwarć z rzędu — przerywam zbieranie. Zebrano ' +
-              invoicesProcessed + ' faktur.');
-            return results;
-          }
-          continue;
-        }
-        if (invoicesProcessed === 0) describeDom('pierwsza faktura otwarta');
-        consecutiveFailures = 0;
-        await sleep(300);
-
-        const docNumber = getActiveTabDocNumber() || targetDoc;
-        const invoiceRows = extractInvoiceRows(docNumber);
-
-        // Bez kolumny z nazwą produktu WSZYSTKIE reguły nazwowe przestają
-        // działać po cichu — chłodnia i mroźnia trafiłyby do rekomendacji.
-        if (!warnedMissingNames && invoiceRows.length && invoiceRows.every(r => !r.product)) {
-          warnedMissingNames = true;
-          console.error('[Savpol Historia Faktur] Pozycje faktur nie mają nazw produktów ' +
-            '(brak kolumny PositionItemDesc w tej siatce). Wykluczenia nazwowe NIE zadziałają — ' +
-            'dodaj kolumnę z opisem pozycji w konfiguracji widoku. Kolumny: ' + describeVisibleGrids());
-        }
-        invoicesProcessed++;
-
-        if (onProgress) onProgress(`${docNumber}: ${invoiceRows.length} pozycji`, { done: invoicesProcessed, total: maxCount });
-        results.push(...invoiceRows);
-
-        // Wczesne zatrzymanie — patrz uzasadnienie przy CROSS_SELL.EARLY_STOP.
-        // Pomijane bez anchorSku (np. wywołania spoza głównego przebiegu),
-        // żeby nie zmieniać zachowania w miejscach, które go nie przekazują.
-        if (anchorSku && CROSS_SELL.EARLY_STOP.ENABLE &&
-            invoicesProcessed >= CROSS_SELL.EARLY_STOP.MIN_INVOICES_BEFORE_CHECK &&
-            invoicesProcessed % CROSS_SELL.EARLY_STOP.CHECK_EVERY === 0) {
-          const top4 = analyzeCrossSell(results, anchorSku).candidates
-            .map(c => c.sku).sort().join(',');
-          // Pusty top-4 nigdy nie liczy się jako "stabilny" — brak sygnału
-          // dziś nie znaczy, że kolejne faktury go nie odsłonią, więc dla
-          // słabego sygnału i tak dociągamy do maxCount.
-          if (top4 && top4 === lastStableTop4) {
-            stableCheckCount++;
-            if (stableCheckCount >= CROSS_SELL.EARLY_STOP.STABLE_CHECKS) {
-              const msg = `Ranking ustabilizował się po ${invoicesProcessed} fakturach — kończę wcześniej.`;
-              console.log('[Savpol Historia Faktur] ' + msg);
-              diag('EARLY_STOP', msg + ' Top-4: ' + top4);
-              if (onProgress) onProgress(msg, { done: invoicesProcessed, total: invoicesProcessed });
-              return results;
-            }
-          } else {
-            stableCheckCount = 0;
-          }
-          lastStableTop4 = top4;
-        }
-
-        const closeBtn = document.querySelector('li.k-state-active .csCloseButton_span');
-        if (closeBtn) closeBtn.click();
-
-        await waitFor(() => visibleGridRows().length > 0);
-        await sleep(300);
-      }
-
-      if (invoicesProcessed >= maxCount) break;
-
-      // Sprawdź czy jest kolejna strona listy faktur
-      const pager = getVisiblePager();
-      if (!pagerHasNextPage(pager)) {
-        if (onProgress) onProgress(`Brak kolejnych stron. Zebrano ${invoicesProcessed} faktur.`, { done: invoicesProcessed, total: invoicesProcessed });
-        break;
-      }
-
-      if (onProgress) onProgress(`Przechodzę do strony ${pageNum + 1}...`, { done: invoicesProcessed, total: maxCount });
-      const moved = await goToNextPage(pager);
-      if (!moved) {
-        console.warn('[Savpol Historia Faktur] Nie udało się przejść do kolejnej strony — przerywam. ' +
-          'Zebrano ' + invoicesProcessed + ' faktur. Stan pagera: ' + describePager(getVisiblePager()));
-        diag('BLAD', 'Paginacja stanęła. Zebrano ' + invoicesProcessed +
-          ' faktur. Pager: ' + describePager(getVisiblePager()));
-        describeDom('zablokowana paginacja');
-        break;
-      }
-      pageNum++;
-    }
-
-    return results;
-  }
-
-  // Opakowanie łapiące przerwanie — zwraca { rows, aborted }.
-  async function collectAllInvoicesInterruptible(maxCount, onProgress, anchorSku) {
-    const collected = [];
-    // Ile wierszy faktur w ogóle zobaczyliśmy na listach. Rozstrzyga różnicę
-    // między „produkt nie ma sprzedaży" (0 wierszy — poprawny wynik) a „nie
-    // umiem odczytać pozycji" (wiersze były, nic z nich nie wyszło — awaria).
-    const faSeen = getFaRows().length;
-    try {
-      const rows = await collectAllInvoices(maxCount, onProgress, collected, anchorSku);
-      return { rows, aborted: false, faSeen: Math.max(faSeen, getFaRows().length) };
-    } catch (err) {
-      if (err && err.isAbort) {
-        console.warn(`[Savpol Historia Faktur] Przerwano — zachowuję ${collected.length} zebranych pozycji.`);
-        return { rows: collected, aborted: true, faSeen };
-      }
-      throw err;
-    }
-  }
-
-  // ---------- Krok 3: CSV ----------
-  function buildHistoryCsv(data) {
-    const header = 'Numer dokumentu;Produkt;SKU;Ilość\n';
-    const body = data.map(r =>
-      `"${r.doc}";"${r.product}";"${r.sku}";"${r.qty}"`
-    ).join('\n');
-    return header + body;
-  }
-
-  function downloadCSV(data, mainSku) {
-    const csv = buildHistoryCsv(data);
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `historia_faktur_${mainSku || 'produkt'}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
 
   // ---------- Krok 4: analiza cross-sell ----------
 
@@ -1430,201 +943,12 @@
     return fold((group || '').replace(/\s+/g, ' ').trim());
   }
 
-  // Dopasowanie po prefiksie: grupa nadrzędna łapie wszystkie podgrupy.
-  // Zwraca dopasowany prefiks albo null.
-  function findGroupExclusion(group) {
-    const path = normalizeGroupPath(group);
-    if (!path) return null;
-    for (const allowed of EXCLUSIONS.groupAllow) {
-      const prefix = normalizeGroupPath(allowed);
-      if (!path.startsWith(prefix)) continue;
-      const next = path.charAt(prefix.length);
-      if (next === '' || next === '\\' || next === ' ') return null; // wyjątek podkategorii wygrywa z denylistą
-    }
-    for (const denied of EXCLUSIONS.groupDeny) {
-      const prefix = normalizeGroupPath(denied);
-      if (!path.startsWith(prefix)) continue;
-      // Po prefiksie musi stać separator ścieżki, spacja (powtórzona nazwa
-      // liścia w zawiniętej komórce) albo koniec — inaczej "Nabiał" złapałby
-      // "Nabiałowe zamienniki".
-      const next = path.charAt(prefix.length);
-      if (next === '' || next === '\\' || next === ' ') return denied;
-    }
-    return null;
-  }
 
-  // Zwraca nazwę dopasowanej reguły (do logu) albo null, jeśli produkt przechodzi.
-  function findExclusion(productName) {
-    const name = fold(productName);
-    if (!name) return null;
 
-    for (const rule of EXCLUSIONS.substring) {
-      const frag = fold(typeof rule === 'string' ? rule : rule.frag);
-      if (!name.includes(frag)) continue;
-      const unless = (typeof rule === 'string' ? [] : rule.unless || []);
-      if (unless.some(ex => name.includes(fold(ex)))) continue;
-      return `substring:${frag}`;
-    }
 
-    for (const frag of EXCLUSIONS.prefix) {
-      if (name.startsWith(fold(frag))) return `prefix:${frag}`;
-    }
-
-    for (const group of EXCLUSIONS.allOf) {
-      if (group.every(frag => name.includes(fold(frag)))) {
-        return `allOf:${group.join('+')}`;
-      }
-    }
-
-    for (const word of EXCLUSIONS.words) {
-      const w = fold(word);
-      if (!wordRegex(w).test(name)) continue;
-      const exceptions = EXCLUSIONS.wordExceptions[word] || [];
-      const excused = exceptions.some(ex => name.includes(fold(ex)));
-      if (!excused) return `word:${word}`;
-    }
-
-    return null;
-  }
-
-  // ---------- Gramatura opakowania ----------
-  // Z nazwy wyciągamy wszystkie liczby z jednostką masy/objętości i bierzemy
-  // największą. Liczby bez jednostki (kody typu "263004", "op. 12 worków")
-  // są ignorowane, bo nie opisują opakowania.
-  function biggestPackKg(productName) {
-    const name = (productName || '').toLocaleLowerCase('pl-PL');
-    const re = /(\d+(?:[.,]\d+)?)\s*(kg|g|l|ml)(?![a-ząćęłńóśźż])/g;
-    let max = null, m;
-    while ((m = re.exec(name)) !== null) {
-      const value = parseFloat(m[1].replace(',', '.'));
-      if (!isFinite(value)) continue;
-      const unit = m[2];
-      const kg = (unit === 'kg' || unit === 'l') ? value : value / 1000;
-      if (max === null || kg > max) max = kg;
-    }
-    return max;
-  }
-
-  // Rodzina produktu = pierwszy znaczący wyraz nazwy (cukier, polewa, pojemnik...).
-  function familyKey(productName) {
-    const tokens = fold(productName)
-      .split(/[^\p{L}\p{N}]+/u)
-      .filter(Boolean);
-    for (const t of tokens) {
-      if (t.length < 3) continue;
-      if (FAMILY_STOPWORDS.includes(t)) continue;
-      if (/^\d+$/.test(t)) continue;
-      return t;
-    }
-    return fold(productName);
-  }
 
   function sameSku(a, b) {
     return (a || '').trim().toLocaleLowerCase('pl-PL') === (b || '').trim().toLocaleLowerCase('pl-PL');
-  }
-
-  function analyzeCrossSell(rows, anchorSku) {
-    // Grupujemy pozycje po numerze faktury.
-    const byDoc = new Map();
-    for (const r of rows) {
-      if (!byDoc.has(r.doc)) byDoc.set(r.doc, []);
-      byDoc.get(r.doc).push(r);
-    }
-
-    // Krok 1 — N = liczba faktur, w których faktycznie widać anchor.
-    const anchorDocs = [];
-    for (const [doc, items] of byDoc) {
-      if (items.some(it => sameSku(it.sku, anchorSku))) anchorDocs.push(doc);
-    }
-    const N = anchorDocs.length;
-
-    // Krok 2 — co-occurrence: liczymy FAKTURY, nie pozycje.
-    const stats = new Map(); // sku -> { sku, name, count }
-    for (const doc of anchorDocs) {
-      const seenInDoc = new Set();
-      for (const it of byDoc.get(doc)) {
-        const sku = (it.sku || '').trim();
-        if (!sku || sameSku(sku, anchorSku)) continue;
-        const key = sku.toLocaleLowerCase('pl-PL');
-        if (seenInDoc.has(key)) continue;
-        seenInDoc.add(key);
-        if (!stats.has(key)) stats.set(key, { sku, name: it.product || '', count: 0 });
-        stats.get(key).count++;
-      }
-    }
-
-    // Krok 3 — wykluczenia kategorii + gramatury hurtowej.
-    const excluded = [];
-    const kept = [];
-    for (const entry of stats.values()) {
-      const skuKey = (entry.sku || '').trim();
-
-      // Usługi i opłaty (dostawa, transport) nie są produktami — odsiewamy
-      // je po formacie SKU, przed jakąkolwiek regułą nazwową.
-      if (EXCLUSIONS.skuPattern && !EXCLUSIONS.skuPattern.test(skuKey)) {
-        excluded.push({ ...entry, rule: 'nieprodukt:format SKU' });
-        continue;
-      }
-
-      // Nadpisania per SKU mają pierwszeństwo nad całą heurystyką nazwową.
-      if (Object.prototype.hasOwnProperty.call(EXCLUSIONS.skuDeny, skuKey)) {
-        excluded.push({ ...entry, rule: `skuDeny:${EXCLUSIONS.skuDeny[skuKey] || 'ręcznie'}` });
-        continue;
-      }
-      if (Object.prototype.hasOwnProperty.call(EXCLUSIONS.skuAllow, skuKey)) {
-        kept.push(entry);
-        continue;
-      }
-
-      const rule = findExclusion(entry.name);
-      if (rule) { excluded.push({ ...entry, rule }); continue; }
-
-      const packKg = biggestPackKg(entry.name);
-      if (packKg !== null && packKg > CROSS_SELL.MAX_PACK_KG) {
-        excluded.push({ ...entry, rule: `pack:${packKg}kg` });
-        continue;
-      }
-
-      kept.push(entry);
-    }
-
-    // Krok 4 — próg sygnału.
-    const ranked = kept
-      .map(e => ({ ...e, share: N > 0 ? (e.count / N) * 100 : 0 }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'pl-PL'));
-
-    const qualified = ranked.filter(
-      e => e.count >= CROSS_SELL.MIN_COUNT && e.share >= CROSS_SELL.MIN_SHARE
-    );
-
-    // Krok 5 — max 1 produkt na rodzinę (ranking jest już posortowany malejąco,
-    // więc zostaje najmocniejszy przedstawiciel rodziny).
-    const droppedByFamily = [];
-    let finalList = qualified;
-    if (CROSS_SELL.ONE_PER_FAMILY) {
-      const seenFamilies = new Set();
-      finalList = [];
-      for (const e of qualified) {
-        const family = familyKey(e.name);
-        if (seenFamilies.has(family)) {
-          droppedByFamily.push({ ...e, family });
-          continue;
-        }
-        seenFamilies.add(family);
-        finalList.push(e);
-      }
-    }
-
-    return {
-      N,
-      anchorSku,
-      candidates: finalList.slice(0, CROSS_SELL.TOP_N),
-      dedupedRanked: finalList, // pula do filtra dostępności (Zadanie 2)
-      weakSignal: finalList.length === 0,
-      ranked,           // pełny ranking po wykluczeniach (debug)
-      excluded,         // co i przez którą regułę wypadło (debug)
-      droppedByFamily   // odrzucone jako duplikat rodziny (debug)
-    };
   }
 
   // ---------- Kartoteki pomocnicze ----------
@@ -1638,10 +962,6 @@
   // wymagają zmiany kodu. To JEDYNA definicja tej reguły w skrypcie; wcześniej
   // istniała w dwóch postaciach i groziło, że rozjadą się przy zmianie.
   const AUX_CARD_SUFFIX = /-[A-Z]$/i;
-
-  function isAuxiliaryKartoteka(sku) {
-    return AUX_CARD_SUFFIX.test((sku || '').trim());
-  }
 
   // ---------- Krok 4b: filtr dostępności w katalogu (bez cache — stan zmienia się codziennie) ----------
 
@@ -1980,155 +1300,11 @@
     return ready !== null;
   }
 
-  // Przechodzi po pełnym (zdeduplikowanym po rodzinie) rankingu i dobiera
-  // kolejnych kandydatów z rankingu, gdy poprzedni odpada na dostępności.
-  async function applyAvailabilityFilter(dedupedRanked, topN, onProgress, grupaAnchora) {
-    const kept = [];
-    const rejected = [];
-    let checked = 0; // ilu kandydatów faktycznie odpytaliśmy w katalogu
-    const groupsSeen = new Set();
-    let aborted = false;
-    for (const entry of dedupedRanked) {
-      if (ABORT.requested) { aborted = true; break; }  // miękkie: zachowaj sprawdzonych
-      if (kept.length >= topN) break;
-
-      if (isAuxiliaryKartoteka(entry.sku)) {
-        rejected.push({ ...entry, reason: 'kartoteka pomocnicza (sufiks SKU)' });
-        continue;
-      }
-
-      if (onProgress) onProgress(`Sprawdzam dostępność: ${entry.sku}...`);
-      checked++;
-      let info;
-      try {
-        info = await lookupCatalogItem(entry.sku);
-      } catch (err) {
-        if (err && err.isAbort) { aborted = true; break; }
-        throw err;
-      }
-      if (!info) {
-        rejected.push({ ...entry, reason: 'nie znaleziono w katalogu' });
-        continue;
-      }
-
-      if (info.group) groupsSeen.add(info.group);
-
-      // Grupa katalogowa (Zadanie 3) — wygrywa z regułami nazwowymi, ale
-      // skuAllow wygrywa z grupą (ratunek na fałszywe trafienia denylisty grup).
-      const skuKey = (entry.sku || '').trim();
-      const hasSkuAllow = Object.prototype.hasOwnProperty.call(EXCLUSIONS.skuAllow, skuKey);
-      if (GROUP_FILTER.ENABLE && !hasSkuAllow) {
-        const groupRule = findGroupExclusion(info.group);
-        if (groupRule) {
-          rejected.push({ ...entry, group: info.group, reason: `grupa:${groupRule}` });
-          continue;
-        }
-      }
-
-      // Dziedzina — po grupach, przed stanem magazynowym: nie ma sensu
-      // sprawdzać dostępności czegoś, czego i tak nie pokażemy.
-      if (!hasSkuAllow) {
-        const kolizja = dziedzinaSieKloci(grupaAnchora, info.group);
-        if (kolizja) {
-          rejected.push({ ...entry, group: info.group,
-            reason: 'inna dziedzina (' + kolizja.kandydata + ' vs ' + kolizja.anchora + ')' });
-          continue;
-        }
-      }
-
-      if (AVAILABILITY.REJECT_LOW_ROTATING && info.caption === 'Towar nisko rotujący') {
-        rejected.push({ ...entry, reason: 'Towar nisko rotujący' });
-        continue;
-      }
-      if (info.dys <= 0) {
-        rejected.push({ ...entry, reason: `brak stanu (DYS.=${info.dys})` });
-        continue;
-      }
-
-      kept.push({ ...entry, dys: info.dys, group: info.group, caption: info.caption });
-    }
-    return {
-      kept, rejected, aborted,
-      groupsSeen: Array.from(groupsSeen),
-      checked, poolSize: dedupedRanked.length
-    };
-  }
-
-  function logAvailability(avail) {
-    console.log(`[Cross-sell] Filtr dostępności — zaakceptowani (${avail.kept.length}):`);
-    console.table(avail.kept.map(e => ({ nazwa: e.name, SKU: e.sku, DYS: e.dys, grupa: e.group || '' })));
-    if (avail.rejected.length) {
-      console.log(`[Cross-sell] Filtr dostępności — odrzuceni (${avail.rejected.length}):`);
-      console.table(avail.rejected.map(e => ({ nazwa: e.name, SKU: e.sku, powód: e.reason })));
-    }
-    // Pętla przerywa się po zebraniu TOP_N, więc grupy znamy tylko dla części
-    // puli. Wypisujemy pokrycie jawnie — inaczej pusta lista "grup spoza
-    // denylisty" wyglądałaby na potwierdzenie kompletności, a nie na brak danych.
-    if (avail.poolSize !== undefined) {
-      console.log(`[Cross-sell] Sprawdzono w katalogu ${avail.checked} z ${avail.poolSize} pozycji puli ` +
-        `(pętla kończy się po zebraniu ${CROSS_SELL.TOP_N} kandydatów) — grupy pozostałych ${avail.poolSize - avail.checked} są nieznane.`);
-    }
-    if (avail.groupsSeen && avail.groupsSeen.length) {
-      const unlisted = avail.groupsSeen.filter(g => !findGroupExclusion(g));
-      if (unlisted.length) {
-        console.log('[Cross-sell] Grupy wśród sprawdzonych kandydatów spoza denylisty (sprawdź, czy nie brakuje gałęzi):');
-        console.table(unlisted.map(g => ({ grupa: g })));
-      }
-    }
-  }
-
   function formatShare(share) {
     return share.toFixed(1).replace('.', ',');
   }
 
-  function downloadCrossSellCSV(result) {
-    const header = 'nazwa;kod_SKU;liczba_wystapien;udzial_procent\n';
-    let body;
 
-    if (result.weakSignal) {
-      // Pusta lista + jawna flaga, zamiast wymuszania słabych kandydatów.
-      body = `"sygnał zbyt słaby";"";"0";"0,0"`;
-    } else {
-      body = result.candidates.map(c =>
-        `"${c.name}";"${c.sku}";"${c.count}";"${formatShare(c.share)}"`
-      ).join('\n');
-    }
-
-    const csv = header + body + '\n';
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    // Nazwa pliku niesie informację o niepełnej próbie — inaczej częściowy
-    // wynik jest nieodróżnialny od pełnego po samej zawartości.
-    // Nazwa pliku niesie zastrzeżenia — inaczej wynik obniżonej jakości jest
-    // nieodróżnialny od pełnego po samej zawartości.
-    const marks = (result.partial ? '_CZESCIOWE' : '') + (result.unverified ? '_BEZ_WERYFIKACJI' : '');
-    a.download = `cross_sell_${result.anchorSku || 'produkt'}${marks}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // ---------- Lista SKU dla generatora ----------
-  // Do v2.22.0 lista trafiała też do schowka — została po czasach, gdy była
-  // głównym wynikiem pracy i przepisywało się ją ręcznie. Generator dostaje ją
-  // dziś w URL, więc zapis do schowka tylko nadpisywał ludziom zawartość.
-  function skusToText(candidates) {
-    return candidates.map(c => (c.sku || '').trim()).filter(Boolean).join(SKU_SEPARATOR);
-  }
-
-  // Wynik wypisujemy w konsoli niezależnie od tego, co zrobi generator —
-  // to jedyny ślad, gdyby otwarcie karty zawiodło.
-  function reportSkus(candidates) {
-    const text = skusToText(candidates);
-    if (!text) {
-      console.warn('[Cross-sell] Brak SKU do przekazania.');
-      return text;
-    }
-    console.log('%c[Cross-sell] SKU do cross-sellingu:', 'font-weight:bold');
-    console.log(text);
-    return text;
-  }
 
   // Otwiera generator PDP z anchorem i listą cross-sell w URL.
   // Poza SKU generator dostaje FAKTY o danych, nie ocenę:
@@ -3164,9 +2340,15 @@
         + Object.keys(d).map(k => k + '='
           + (d[k] == null ? 'null' : (typeof d[k] === 'string'
             ? d[k].length + ' zn.' : JSON.stringify(d[k]).slice(0, 40)))).join(', '));
+      const blokada = blokadaNazwy(d);
+      if (blokada) console.warn('[Opisy] ' + blokada.opis);
+
       stworzPanelOpisow({
         sku: sku,
-        nazwa: d.h1 || '',
+        // Zablokowanej nazwy nawet nie wkładamy do pola: puste pole znaczy
+        // w tym panelu „nie ruszam", więc blokada działa nawet wtedy, gdy
+        // ktoś zignoruje komunikat.
+        nazwa: blokada ? '' : (d.h1 || ''),
         opis: d.long || '',
         techniczne: d.short || '',
         seoTytul: d.metaTitle || '',
@@ -3182,6 +2364,7 @@
           + '• Meta opis: ' + ile(d.metaDescription) + '\n' + '\n'
           + 'Nic jeszcze nie zapisałem.'
           + (ocena.ostrzezenie ? '\n\n' + ocena.ostrzezenie : '')
+          + (blokada ? '\n\n' + blokada.opis : '')
       });
       // Okienko przebiegu zrobiło swoje, a od tej chwili tylko zasłania —
       // siedzi w prawym dolnym rogu, dokładnie tam, gdzie ERP trzyma „Zapisz".
@@ -3195,43 +2378,7 @@
   // uruchomić dwóch pętli odpytujących ten sam produkt.
   const pilnowane = {};
 
-  // ---------- Zapamiętane wyniki analizy ----------
-  //
-  // Analiza faktur trwa około trzech minut. Gdy ktoś zamknie przeglądarkę
-  // między analizą a zrobieniem opisu, wracając na ten sam produkt musiał
-  // dotąd przechodzić ją od nowa — mimo że wynik był policzony i nic się
-  // w międzyczasie nie zmieniło.
-  //
-  // Trzymamy więc gotowy wynik lokalnie. To pamięć podręczna, nie źródło
-  // prawdy: decyzję „użyć czy policzyć jeszcze raz" zostawiamy człowiekowi,
-  // bo tylko on wie, czy od tamtej pory coś się wydarzyło.
-  const WYNIK_KLUCZ = 'savpol_wynik_';
   const WYNIK_WAZNY_DNI = 30;
-
-  function zapiszWynikPrzebiegu(sku, wynik) {
-    if (typeof GM_setValue !== 'function' || !sku) return;
-    try {
-      GM_setValue(WYNIK_KLUCZ + sku, JSON.stringify({
-        kiedy: new Date().toISOString(),
-        skusText: wynik.skusText || '',
-        invoices: wynik.invoices || 0,
-        group: wynik.group || null,
-        kandydatow: wynik.kandydatow || 0
-      }));
-    } catch (e) { /* brak pamięci to powtórna analiza, nie awaria */ }
-  }
-
-  function czytajWynikPrzebiegu(sku) {
-    if (typeof GM_getValue !== 'function' || !sku) return null;
-    try {
-      const s = GM_getValue(WYNIK_KLUCZ + sku, '');
-      if (!s) return null;
-      const w = JSON.parse(s);
-      const dni = (Date.now() - new Date(w.kiedy).getTime()) / 86400000;
-      // Stary wynik gorzej niż nie pomaga: sugeruje aktualność, której nie ma.
-      return dni > WYNIK_WAZNY_DNI ? null : w;
-    } catch (e) { return null; }
-  }
 
   // ---------- Pobieranie gotowych opisów z apki ----------
   //
@@ -3297,6 +2444,30 @@
         + 'Numer produktu się zgadza, ale sprawdź datę wygenerowania.' };
     }
     return {};
+  }
+
+  // Blokada nazwy produktu (apka, OpisBundle od v0.42.0).
+  //
+  // Zmiana „Nazwy produktu" przestawia na esavpolu slug adresu i tytuł
+  // w Zakupach, więc dla części produktów apka zabrania jej ruszać. Pole
+  // `nazwaZablokowana: { powod, doKiedy }` jest wtedy w pakiecie; jego brak
+  // znaczy „wolno". `doKiedy: null` = bezterminowo.
+  //
+  // Blokada dotyczy WYŁĄCZNIE nazwy. Opis, dane techniczne i SEO zapisujemy
+  // normalnie — inaczej jedno zablokowane pole wstrzymywałoby całą pracę nad
+  // produktem.
+  function blokadaNazwy(pakiet) {
+    const b = pakiet && pakiet.nazwaZablokowana;
+    if (!b) return null;
+    const doKiedy = b.doKiedy ? new Date(b.doKiedy) : null;
+    // Termin, który już minął, nie jest blokadą.
+    if (doKiedy && !isNaN(doKiedy) && doKiedy.getTime() < Date.now()) return null;
+    return {
+      powod: String(b.powod || 'bez podanego powodu'),
+      opis: 'Nazwa produktu zablokowana przez apkę: ' + String(b.powod || 'bez podanego powodu')
+        + (doKiedy && !isNaN(doKiedy) ? ' (do ' + doKiedy.toLocaleDateString('pl-PL') + ')' : '')
+        + '. Nie wpisuję jej — zmiana nazwy psuje adres strony i tytuł w Zakupach.'
+    };
   }
 
   // ---------- Migawka stanu ERP z chwili generowania ----------
@@ -4322,93 +3493,33 @@
     }
   }
 
-  function openGenerator(anchorSku, skusText, hints) {
-    const cross = (skusText || '')
-      .split(/[\s,;]+/)
-      .map(x => x.trim())
-      .filter(Boolean)
-      .join(',');
-
+  // Generator dostaje SKU i identyfikator okna. Parametry `cross`, `invoices`
+  // i `group` odpadły razem z analizą faktur — esavpol liczy cross-selling sam.
+  function openGenerator(anchorSku) {
     const url = GENERATOR.URL
       + '?sku=' + encodeURIComponent(anchorSku)
-      + '&przebieg=' + encodeURIComponent(PRZEBIEG_ID)
-      + (cross ? '&cross=' + encodeURIComponent(cross) : '')
-      + (hints && typeof hints.invoices === 'number'
-        ? '&invoices=' + hints.invoices : '')
-      + (hints && hints.group ? '&group=' + encodeURIComponent(hints.group) : '');
+      + '&przebieg=' + encodeURIComponent(PRZEBIEG_ID);
 
     // GM_openInTab omija blokadę popupów; window.open jako zapas, gdyby
     // uprawnienie nie zostało przyznane po aktualizacji skryptu.
     if (typeof GM_openInTab === 'function') GM_openInTab(url, { active: true });
     else window.open(url, '_blank');
-    console.log('[Cross-sell] Otwieram generator PDP:', url);
+    console.log('[Savpol] Otwieram generator PDP:', url);
   }
 
-  function logAnalysis(result) {
-    console.log(`[Cross-sell] Anchor: ${result.anchorSku}, N = ${result.N} faktur`);
-    console.log(`[Cross-sell] Ranking po wykluczeniach (${result.ranked.length}):`);
-    console.table(result.ranked.map(e => ({
-      nazwa: e.name, SKU: e.sku, wystąpienia: e.count, udział: formatShare(e.share) + '%'
-    })));
-    if (result.excluded.length) {
-      console.log(`[Cross-sell] Wykluczone (${result.excluded.length}):`);
-      console.table(result.excluded.map(e => ({
-        nazwa: e.name, SKU: e.sku, wystąpienia: e.count, reguła: e.rule
-      })));
-    }
-    if (result.droppedByFamily.length) {
-      console.log(`[Cross-sell] Odrzucone jako duplikat rodziny (${result.droppedByFamily.length}):`);
-      console.table(result.droppedByFamily.map(e => ({
-        nazwa: e.name, SKU: e.sku, wystąpienia: e.count, rodzina: e.family
-      })));
-    }
-    if (result.weakSignal) {
-      console.warn(`[Cross-sell] Sygnał zbyt słaby — żaden kandydat nie osiągnął ` +
-        `${CROSS_SELL.MIN_COUNT} wystąpień i ${CROSS_SELL.MIN_SHARE}% udziału.`);
-    }
-  }
 
-  // ---------- Główny pipeline ----------
-  // Przywraca w katalogu wyszukanie anchora. Krok kosmetyczny i CELOWO
-  // nieblokujący: wynik jest już policzony, więc awaria tutaj nie może go
-  // zniweczyć — logujemy ostrzeżenie i idziemy dalej.
-  async function searchAnchorInCatalog(anchorSku) {
-    if (!FINISH.SEARCH_ANCHOR || !anchorSku) return false;
-    try {
-      if (!isCatalogTabActive()) {
-        const switched = await switchToCatalogTab();
-        if (!switched) {
-          console.warn('[Cross-sell] Nie mogę wrócić na katalog — pomijam ' +
-            'przywrócenie wyszukania anchora ' + anchorSku + '.');
-          return false;
-        }
-      }
-      await searchCatalog(anchorSku);
-      console.log('[Cross-sell] Katalog pozostawiony na anchorze ' + anchorSku + '.');
-      return true;
-    } catch (err) {
-      console.warn('[Cross-sell] Nie udało się przywrócić wyszukania anchora ' +
-        anchorSku + ':', err && err.message || err);
-      return false;
-    }
-  }
 
-  // Zamyka zakładkę "Historia produktu". Po przełączeniu na katalog aktywną
-  // zakładką nie jest już historia, więc gdy mamy zapamiętaną referencję,
-  // zamykamy po niej; bez referencji — po zakładce aktywnej.
-  async function closeHistoryTab(historyTabLi) {
-    if (historyTabLi) {
-      const closeBtn = historyTabLi.querySelector('.csCloseButton_span');
-      if (closeBtn) closeBtn.click();
-      return;
-    }
-    const activeCloseBtn = document.querySelector('li.k-state-active .csCloseButton_span');
-    if (activeCloseBtn) {
-      await sleep(300);
-      activeCloseBtn.click();
-    }
-  }
-
+  // Przebieg budowania opisu.
+  //
+  // Do 29 września 2026 zaczynał się od scrapowania historii faktur: kilkaset
+  // pozycji, analiza współwystępowania, filtry logistyczne i katalogowe, na
+  // końcu cztery numery do cross-sellingu przekazywane generatorowi. Trwało to
+  // około trzech minut i było najbardziej awaryjną częścią skryptu, bo
+  // wymagało sterowania widokami ERP.
+  //
+  // Cross-selling na stronie produktu liczy teraz esavpol po swojej stronie,
+  // więc ta praca przestała być komukolwiek potrzebna. Z przebiegu zostało to,
+  // czego esavpol nie ma skąd wziąć: specyfikacja z załączników ERP.
   async function runFullPipeline(button) {
     // Drugie kliknięcie w trakcie pracy = żądanie przerwania, nie drugi przebieg.
     if (ABORT.running) {
@@ -4424,323 +3535,47 @@
     diagBuffer.length = 0;
     diagStarted = Date.now();
     describeDom('start przebiegu');
+
     try {
-      ui.phase('📂 Otwieram historię produktu...');
-      button.textContent = '📂 Otwieram historię...';
-      const opened = openHistory();
-      if (!opened) {
-        describeDom('brak przycisku "Historia produktu"');
-        throw new Error('Nie znaleziono przycisku "Historia produktu". Czy produkt jest zaznaczony?');
-      }
-      await sleep(500);
-
       const mainSku = await waitFor(getMainProductSku);
+      if (!mainSku) {
+        throw new Error('Nie odczytałem numeru produktu. Czy produkt jest zaznaczony w katalogu?');
+      }
       diagAnchorSku = mainSku;
-      ui.detail('Produkt: ' + (mainSku || '?') + '. To potrwa około 3 minut.');
+      ui.detail('Produkt: ' + mainSku);
 
-      // Przy trzech osobach bez koordynacji łatwo zrobić ten sam produkt dwa
-      // razy, a przebieg trwa kilka minut. Pytamy, zamiast decydować za
-      // operatora: przebieg przerwany albo bez weryfikacji warto powtórzyć.
-      const known = await checkHistoryExists(mainSku);
-      if (known && known.exists) {
-        const warto = known.partial || known.unverified;
-        const opis = 'Ten produkt ktoś już sprawdzał ' +
-          formatCollectedAt(known.collectedAt) + ' (faktur: ' +
-          (known.invoices || '?') + ').' +
-          (warto
-            ? '\n\nTamto sprawdzanie nie doszło do końca, więc warto je powtórzyć.'
-            : '\n\nWyniki są gotowe, nie musisz robić tego jeszcze raz.') +
-          '\n\nSprawdzić jeszcze raz? Zajmie to około 3 minut.';
-        if (!confirm(opis)) {
-          // Zapamiętany wynik pozwala od razu otworzyć generator, zamiast
-          // odsyłać człowieka z niczym. Gdy go nie ma (inna przeglądarka,
-          // wynik starszy niż miesiąc), zostaje dotychczasowy komunikat.
-          const zapamietany = czytajWynikPrzebiegu(mainSku);
-          if (zapamietany) {
-            ui.finish('Mam gotowy wynik z ' + formatCollectedAt(zapamietany.kiedy), true);
-            ui.result(zapamietany.skusText, mainSku, {
-              invoices: zapamietany.invoices,
-              group: zapamietany.group
-            });
-            ui.detail('To wynik policzony wcześniej na tej przeglądarce — nie '
-              + 'liczyłem nic od nowa. Możesz otworzyć generator albo kliknąć '
-              + '„Zbuduj opis" ponownie i wybrać przeliczenie.');
-            button.textContent = '✅ Wynik przywrócony';
-          } else {
-            ui.finish('Ten produkt jest już zrobiony', false);
-            ui.detail('Sprawdzony ' + formatCollectedAt(known.collectedAt) +
-              '. Nie mam tu zapamiętanego wyniku — jeśli potrzebujesz numerów ' +
-              'do cross-sellingu, uruchom analizę ponownie.');
-            button.textContent = '✅ Już zrobione';
-          }
-          setTimeout(() => { button.textContent = originalText; }, 3000);
-          await closeHistoryTab(null);
-          return;
-        }
-      }
-
-      ui.phase('Ustawiam zakres: wszystkie faktury od 1 stycznia 2024...');
-      button.textContent = '⚙️ Ustawiam filtry...';
-      await setFilters();
-
-      ui.phase('Czytam faktury tego produktu...');
-      button.textContent = '📄 Pobieram faktury...';
-      const collect = await collectAllInvoicesInterruptible(MAX_INVOICES, (msg, n) => {
-        button.textContent = msg;
-        ui.detail(msg);
-        if (n) ui.count(n.done, n.total);
-        console.log(msg);
-      }, mainSku);
-      const data = collect.rows;
-      let partial = collect.aborted;
-
-      // Przerwanie bez ani jednej faktury nie ma czego analizować.
-      if (partial && data.length === 0) {
-        const err = new Error('Przerwano przed odczytaniem pierwszej faktury');
-        err.isAbort = true;
-        throw err;
-      }
-
-      // Zero pozycji ma dwie zupełnie różne przyczyny i nie wolno ich mylić:
-      //
-      //   brak wierszy faktur  → produkt nigdy się nie sprzedał. To POPRAWNY
-      //                          wynik, od v2.18.0 pełnoprawna ścieżka: opis
-      //                          powstaje na regułach kategorii w generatorze.
-      //   wiersze były, ale nic
-      //   z nich nie wyszło    → awaria odczytu (np. brak kolumny Item
-      //                          w konfiguracji widoku tego użytkownika).
-      //
-      // Do v2.20.0 oba przypadki kończyły się błędem i pierwszy produkt bez
-      // sprzedaży wysypywał skrypt.
-      if (data.length === 0 && collect.faSeen > 0) {
-        throw new Error('Nie odczytano żadnej pozycji faktury, mimo że na liście ' +
-          'było ' + collect.faSeen + ' dokumentów. Najczęstsza przyczyna: siatka ' +
-          'pozycji nie ma kolumny "Item" (SKU) w konfiguracji widoku tego ' +
-          'użytkownika. Zobacz w konsoli listę kolumn przy komunikacie ' +
-          'o nieudanym otwarciu faktury.');
-      }
-      // Dalsze etapy mają już przebiegać do końca — inaczej sam fakt przerwania
-      // ubiłby analizę, dla której faktury właśnie zebraliśmy.
-      ABORT.requested = false;
-
-      ui.phase(partial
-        ? 'Zatrzymane — liczę na tym, co zdążyłem przeczytać...'
-        : 'Szukam produktów kupowanych razem z tym...');
-      ui.detail('Przeczytane: ' + new Set(data.map(r => r.doc)).size + ' faktur, ' +
-        data.length + ' pozycji');
-      let anchorGroup = null;
-      const analysis = analyzeCrossSell(data, mainSku);
-      analysis.partial = partial;
-
-      // Etykiety dla komunikatu, nie decyzja — patrz komentarz przy MIN_INVOICES.
-      analysis.tooFewInvoices = analysis.N < CROSS_SELL.MIN_INVOICES;
-      analysis.lowConfidence = !analysis.tooFewInvoices &&
-        analysis.N < CROSS_SELL.LOW_CONFIDENCE_BELOW;
-
-      logAnalysis(analysis);
-
-      let historyTabLi = null;
-
-      // Brak kandydatów: nie ma czego sprawdzać w katalogu, ale odczytujemy
-      // GRUPĘ produktu. Generator ustala kategorię sam z danych sklepu, więc
-      // to tylko materiał pomocniczy — grupa z ERP bywa dokładniejsza niż
-      // hierarchia w sklepie i nic nie kosztuje, skoro i tak tam wchodzimy.
-      // Rozgałęziamy po tym, CZY SĄ kandydaci, nie po progu: przy 12 fakturach
-      // i jednym kandydacie nadal chcemy sprawdzić jego dostępność.
-      if (!analysis.candidates.length) {
-        historyTabLi = document.querySelector('li.k-state-active');
-        ui.phase('Sprawdzam kategorię produktu...');
-        button.textContent = '🔎 Sprawdzam kategorię...';
-        try {
-          if (await switchToCatalogTab()) {
-            const item = await lookupCatalogItem(mainSku);
-            anchorGroup = item ? item.group : null;
-            console.log('[Cross-sell] Za mało faktur (' + analysis.N + '). ' +
-              'Grupa anchora: ' + (anchorGroup || 'nieodczytana'));
-          }
-        } catch (err) {
-          console.warn('[Cross-sell] Nie odczytałem grupy anchora:', err && err.message || err);
-        }
-      } else if (AVAILABILITY.ENABLE) {
-        historyTabLi = document.querySelector('li.k-state-active'); // zapamiętane PRZED przejściem do katalogu
-        ui.phase('Sprawdzam, czy te produkty są dostępne...');
-        button.textContent = '🔎 Sprawdzam dostępność...';
-
-        // Awaria katalogu DEGRADUJE wynik, nie kasuje przebiegu. Wcześniej
-        // rzucała wyjątek i kilka minut scrapowania plus gotowy ranking
-        // przepadały — użytkownik nie dostawał nic. Ranking z analizy jest
-        // wartościowy sam w sobie; brakuje mu tylko weryfikacji stanu i grupy.
-        const switched = await switchToCatalogTab();
-        if (!switched) {
-          console.warn('[Cross-sell] Nie udało się przełączyć na katalog — ' +
-            'zwracam wynik BEZ weryfikacji stanu magazynowego i grupy.');
-          analysis.unverified = true;
-        } else {
-          // Grupa ANCHORA, odczytana przed sprawdzaniem kandydatów — bez niej
-          // nie ma z czym porównywać ich dziedziny. Jedno dodatkowe wyszukanie
-          // w katalogu, w którym i tak już jesteśmy.
-          try {
-            const anchorItem = await lookupCatalogItem(mainSku);
-            anchorGroup = anchorItem ? anchorItem.group : null;
-          } catch (err) {
-            if (err && err.isAbort) throw err;
-            console.warn('[Cross-sell] Nie odczytałem grupy anchora:',
-              err && err.message || err);
-          }
-          console.log('[Cross-sell] Grupa anchora: ' + (anchorGroup || 'nieodczytana')
-            + ' → dziedzina: ' + (dziedzinaGrupy(anchorGroup) || 'nieznana'));
-
-          const avail = await applyAvailabilityFilter(analysis.dedupedRanked, CROSS_SELL.TOP_N, (msg) => {
-            button.textContent = msg;
-            ui.detail(msg);
-          }, anchorGroup);
-          logAvailability(avail);
-          analysis.candidates = avail.kept;
-          // Skrót powodów — inaczej „brak propozycji" nie odróżnia sytuacji
-          // „nikt z nikim nie chodzi w parze" od „wszystkich wyciął filtr".
-          if (avail.rejected.length) {
-            const zlicz = {};
-            avail.rejected.forEach(r => {
-              const powod = String(r.reason || 'nieznany').replace(/\(.*\)/, '').trim();
-              zlicz[powod] = (zlicz[powod] || 0) + 1;
-            });
-            analysis.powodyOdrzucen = Object.keys(zlicz)
-              .sort((a, b) => zlicz[b] - zlicz[a])
-              .slice(0, 5)
-              .map(k => k + ' × ' + zlicz[k])
-              .join(', ');
-          }
-          analysis.weakSignal = analysis.weakSignal || avail.kept.length === 0;
-          if (avail.aborted) { partial = true; analysis.partial = true; }
-        }
-
-        // Ostatnia czynność w katalogu: przywróć wyszukanie anchora, żeby widok
-        // nie został na SKU ostatniego sprawdzanego kandydata.
-        if (FINISH.SEARCH_ANCHOR) {
-          ui.phase('Wracam do produktu, od którego zaczęliśmy...');
-          button.textContent = '↩️ Przywracam widok katalogu...';
-          await searchAnchorInCatalog(mainSku);
-        }
-      }
-
-      if (EXPORT_RAW_HISTORY) {
-        downloadCSV(data, mainSku);
-        await sleep(300); // przeglądarki gubią drugi download bez odstępu
-      }
-
-      if (EXPORT_CROSS_SELL_CSV) downloadCrossSellCSV(analysis);
-
-      // Specyfikacja do apki. Świadomie PRZED otwarciem generatora, żeby
-      // użytkownik zastał ją już na miejscu. Niepowodzenie nie przerywa
-      // przebiegu — najwyżej wklei PDF ręcznie, czyli tak jak dotąd.
+      // Specyfikacja do apki. Niepowodzenie NIE przerywa przebiegu — najwyżej
+      // wkleisz PDF ręcznie, czyli tak jak przed tą automatyzacją.
       ui.phase('Pobieram specyfikację produktu...');
       button.textContent = '📄 Pobieram specyfikację...';
       const spec = await wyslijSpecyfikacjeDoApki(mainSku);
       if (!spec.ok) {
         console.warn('[Specyfikacja] Nie wysłano: ' + spec.powod);
-        // Gdy zawiodło odczytanie listy załączników, człowiek ma jak temu
-        // zaradzić — ale tylko jeśli mu o tym powiemy. Konsola nie wystarczy,
-        // bo nikt do niej nie zagląda w normalnej pracy.
         if (!erpPodsluch.szablonZalacznikow) spec.rada = RADA_ZALACZNIKI;
       }
 
-      // Do kolejki trafia też przebieg bez kandydatów: sam fakt, że sygnał był
-      // zbyt słaby, jest wynikiem — bez zapisu ktoś powtórzy tę samą robotę.
-      queueHistoryUpload(mainSku, data, analysis, partial);
-      const upload = await flushHistoryQueue();
-
-      const skusText = reportSkus(analysis.candidates);
-
-      // Rozstrzyga BRAK KANDYDATÓW, nie próg — przy 12 fakturach i jednym
-      // kandydacie mamy co pokazać, a o wiarygodności rozstrzyga generator.
-      if (!analysis.candidates.length && analysis.tooFewInvoices) {
-        ui.finish(analysis.N === 0
-          ? 'Ten produkt nie ma jeszcze sprzedaży'
-          : 'Za mało sprzedaży, żeby coś policzyć', false);
-        ui.detail((analysis.N === 0
-          ? 'Nie znalazłem ani jednej faktury z tym produktem — to normalne ' +
-            'przy nowościach. '
-          : `Ten produkt ma tylko ${analysis.N} faktur — za mało, żeby ` +
-            'wiarygodnie stwierdzić, co się z nim kupuje. ') +
-          'Kliknij „Otwórz generator opisów": zaproponuje produkty ' +
-          'na podstawie kategorii.');
-        // Lista SKU jest pusta, ale przycisk generatora ma się pokazać —
-        // to teraz jedyna droga dalej dla tego produktu.
-        ui.result(' ', mainSku, { group: anchorGroup, invoices: analysis.N });
-        button.textContent = '🆕 Nowy produkt — użyj generatora';
-      } else if (analysis.weakSignal) {
-        ui.finish('Brak propozycji dla tego produktu', false);
-        ui.detail(`Sprawdziłem ${analysis.N} faktur i żaden produkt nie powtarza się ` +
-          'w nich dość często, żeby go polecać. To normalne — ten produkt ' +
-          'po prostu nie ma stałych towarzyszy. Zrób opis bez tej sekcji.'
-          + (analysis.powodyOdrzucen ? '\n' + '\n' + 'Odrzuceni kandydaci: '
-            + analysis.powodyOdrzucen : ''));
-        // Brak propozycji NIE jest końcem pracy nad produktem — opis trzeba
-        // zrobić tak czy inaczej, tylko bez sekcji cross-sellingu. Bez tego
-        // przycisku ten przypadek był ślepą uliczką: użytkownik nie miał jak
-        // otworzyć generatora i przebieg szedł do kosza.
-        ui.result(' ', mainSku, { group: anchorGroup, invoices: analysis.N });
-        button.textContent = '🤷 Bez propozycji — użyj generatora';
+      ui.finish('Gotowe — otwórz generator', true);
+      if (spec.ok) {
+        ui.detail('Specyfikacja jest już w apce. Kliknij „Otwórz generator opisów".');
       } else {
-        if (spec && spec.rada) ui.detail('Specyfikacja nie została pobrana. ' + spec.rada);
-        const clean = !partial && !analysis.unverified;
-        ui.finish(`Gotowe — ${analysis.candidates.length} propozycji`, clean);
-        ui.result(skusText, mainSku, {
-          invoices: analysis.N,
-          group: anchorGroup
-        });
-        zapiszWynikPrzebiegu(mainSku, {
-          skusText: skusText,
-          invoices: analysis.N,
-          group: anchorGroup,
-          kandydatow: analysis.candidates.length
-        });
-        if (analysis.unverified) {
-          ui.detail('Nie udało mi się sprawdzić dostępności, więc mogą tu być ' +
-            'produkty niedostępne lub niewysyłkowe. Zobacz konsolę.');
-        } else if (analysis.lowConfidence) {
-          ui.detail(`Wynik z ${analysis.N} faktur — to niedużo, więc potraktuj go ` +
-            'jako podpowiedź, nie pewnik. Zerknij, czy te produkty pasują ' +
-            'do siebie, zanim użyjesz ich w opisie.');
-        } else if (partial) {
-          ui.detail(`Zatrzymane w trakcie — wynik z ${analysis.N} faktur zamiast z wszystkich. ` +
-            'Możesz go użyć, ale pełne sprawdzenie dałoby pewniejszą listę.');
-        } else {
-          ui.detail(`Znalezione na podstawie ${analysis.N} faktur. ` +
-            'Kliknij „Otwórz generator opisów" — dostanie te numery od razu.');
-        }
-        button.textContent = `✅ Gotowe: ${skusText}`;
+        ui.detail('Specyfikacji nie udało się pobrać'
+          + (spec.rada ? ' — ' + spec.rada : ' (' + spec.powod + ')')
+          + ' Generator otworzysz mimo to; PDF wklej ręcznie.');
       }
-      await sleep(2500);
+      // Pusty pierwszy argument: lista cross-sellingu już nie istnieje, ale
+      // przycisk otwarcia generatora pokazuje się właśnie przez ui.result().
+      ui.result(' ', mainSku, {});
+      button.textContent = '✅ Gotowe — otwórz generator';
 
-      await closeHistoryTab(AVAILABILITY.ENABLE ? historyTabLi : null);
-
-      // Log MUSI odnotować także przebieg udany. Bez tego wpis kończy się na
-      // „pierwsza faktura otwarta" i po logu nie da się orzec, czy praca się
-      // udała, czy urwała w połowie — dokładnie taki log dostaliśmy od
-      // użytkowniczki i nie dało się z niego nic wywnioskować.
-      diag('KONIEC', 'Przebieg zakończony. Faktur: ' + analysis.N +
-        ', kandydatów: ' + analysis.candidates.length +
-        (analysis.unverified ? ', BEZ weryfikacji w katalogu' : '') +
-        (partial ? ', próba przerwana' : '') +
-        '. Archiwum: wysłano ' + upload.sent + ', w kolejce ' + upload.left + '.');
-
-      if (upload.left) {
-        ui.detail('Uwaga: wyniki nie zapisały się w archiwum (' + upload.left +
-          ' w kolejce). Zaloguj się w generatorze opisów — wyślą się same ' +
-          'przy następnym uruchomieniu.');
-      }
-
-      button.textContent = originalText;
+      diag('KONIEC', 'Przebieg zakończony. Specyfikacja: '
+        + (spec.ok ? 'wysłana' : 'NIE wysłana (' + spec.powod + ')') + '.');
+      setTimeout(() => { button.textContent = originalText; }, 3000);
     } catch (err) {
       if (err && err.isAbort) {
-        // Przerwanie użytkownika — świadomie NIE eksportujemy nic. Wynik
-        // z niepełnej próby wyglądałby jak normalna rekomendacja, a nie jest.
         console.warn('[Savpol Historia Faktur] Przerwano przez użytkownika.');
-        diag('KONIEC', 'Przerwane przez użytkownika przed policzeniem wyniku.');
+        diag('KONIEC', 'Przerwane przez użytkownika.');
         ui.finish('⏹️ Zatrzymane', false);
-        ui.detail('Zatrzymane, zanim cokolwiek policzyłem — nic nie zostało zapisane. ' +
-          'Możesz uruchomić od nowa.');
+        ui.detail('Zatrzymane — nic nie zostało zapisane. Możesz uruchomić od nowa.');
         button.textContent = '⏹️ Przerwano';
       } else {
         console.error('[Savpol Historia Faktur] Błąd:', err);
@@ -4867,7 +3702,7 @@
         console.warn('[Cross-sell] Brak SKU anchora, nie otwieram generatora.');
         return;
       }
-      openGenerator(anchor, resultSkus, resultHints);
+      openGenerator(anchor);
       el('gen').textContent = 'Otwarte w nowej karcie';
       setTimeout(() => { el('gen').textContent = 'Otwórz generator opisów'; }, 2500);
 
@@ -4951,163 +3786,7 @@
     try { return new URL(GENERATOR.URL).origin; } catch (e) { return null; }
   }
 
-  function readQueue() {
-    const raw = gmGet(HISTORY_UPLOAD.QUEUE_KEY, null);
-    if (!raw) return [];
-    try {
-      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      console.warn('[Savpol] Kolejka historii nieczytelna — zaczynam od zera.');
-      return [];
-    }
-  }
 
-  function writeQueue(queue) {
-    gmSet(HISTORY_UPLOAD.QUEUE_KEY, JSON.stringify(queue));
-  }
-
-  // Wynik przebiegu ląduje w kolejce, nie leci od razu — z ERP wysyłka byłaby
-  // cross-origin, a ciasteczko sesji generatora i tak by nie pojechało.
-  function queueHistoryUpload(sku, data, analysis, partial) {
-    if (!HISTORY_UPLOAD.ENABLE || !sku || !data.length) return;
-    const queue = readQueue().filter(item => item.sku !== sku);   // ponowny przebieg zastępuje stary
-    queue.push({
-      sku,
-      csv: buildHistoryCsv(data),
-      meta: {
-        invoices: analysis.N,
-        partial: !!partial,
-        unverified: !!analysis.unverified,
-        tooFewInvoices: !!analysis.tooFewInvoices,
-        lowConfidence: !!analysis.lowConfidence,
-        candidates: analysis.candidates.map(c => c.sku),
-        scriptVersion: typeof GM_info !== 'undefined' && GM_info.script
-          ? GM_info.script.version : null,
-        collectedAt: new Date().toISOString()
-      }
-    });
-    // Najstarsze wypadają pierwsze — świeższe dane są cenniejsze.
-    writeQueue(queue.slice(-HISTORY_UPLOAD.MAX_QUEUED));
-    console.log('[Savpol] Historia ' + sku + ' czeka na wysyłkę do repo (w kolejce: ' +
-      Math.min(queue.length, HISTORY_UPLOAD.MAX_QUEUED) + ').');
-  }
-
-  // Sprawdzenie, czy ktoś już zrobił ten produkt. Wołane z ERP, więc
-  // cross-origin — stąd GM_xmlhttpRequest, który omija CORS i dowozi
-  // ciasteczko sesji generatora. Zwykły fetch zostałby tu zablokowany.
-  function checkHistoryExists(sku) {
-    return new Promise(resolve => {
-      if (!HISTORY_UPLOAD.ENABLE || typeof GM_xmlhttpRequest !== 'function' || !sku) {
-        resolve(null);
-        return;
-      }
-      const origin = generatorOrigin();
-      if (!origin) { resolve(null); return; }
-
-      GM_xmlhttpRequest({
-        method: 'GET',
-        url: origin + HISTORY_UPLOAD.ENDPOINT + '?sku=' + encodeURIComponent(sku),
-        timeout: 8000,
-        onload: res => {
-          try {
-            const body = JSON.parse(res.responseText);
-            resolve(body && body.ok ? body : null);
-          } catch (e) { resolve(null); }
-        },
-        // Każda awaria sprawdzenia jest nieistotna: to udogodnienie, nie warunek
-        // pracy. Cisza i przebieg leci dalej.
-        onerror: () => resolve(null),
-        ontimeout: () => resolve(null)
-      });
-    });
-  }
-
-  function formatCollectedAt(iso) {
-    if (!iso) return 'nieznana data';
-    const d = new Date(iso);
-    return isNaN(d) ? 'nieznana data' : d.toLocaleDateString('pl-PL');
-  }
-
-  // Wysyłka ze strony generatora. Uruchamiana raz, po załadowaniu.
-  // Jedno żądanie POST. GM_xmlhttpRequest, a nie fetch, bo lecimy z erp.savpol.pl
-  // do innej domeny: zwykły fetch byłby zablokowany przez CORS. Tampermonkey
-  // dokłada ciasteczka domeny docelowej, więc sesja generatora jedzie z żądaniem
-  // — dokładnie tak, jak działa sprawdzanie duplikatu.
-  function postHistoryItem(item) {
-    return new Promise(resolve => {
-      const origin = generatorOrigin();
-      if (!origin || typeof GM_xmlhttpRequest !== 'function') {
-        resolve({ status: 0, body: {} });
-        return;
-      }
-      GM_xmlhttpRequest({
-        method: 'POST',
-        url: origin + HISTORY_UPLOAD.ENDPOINT,
-        headers: { 'Content-Type': 'application/json' },
-        data: JSON.stringify({ sku: item.sku, csv: item.csv, meta: item.meta }),
-        timeout: 30000,
-        onload: res => {
-          let body = {};
-          try { body = JSON.parse(res.responseText); } catch (e) { /* nieistotne */ }
-          resolve({ status: res.status, body });
-        },
-        onerror: () => resolve({ status: 0, body: {} }),
-        ontimeout: () => resolve({ status: 0, body: {} })
-      });
-    });
-  }
-
-  // Wysyłka idzie prosto z ERP, zaraz po przebiegu. Wcześniej czekała na
-  // otwarcie generatora (żeby żądanie było same-origin) i przez to potrafiła
-  // nie dojść do skutku w ogóle — kolejka rosła, a użytkownik nie miał jak się
-  // o tym dowiedzieć. Skoro sprawdzanie duplikatu działa tą samą drogą,
-  // czekanie było niepotrzebnym ryzykiem.
-  async function flushHistoryQueue() {
-    if (!HISTORY_UPLOAD.ENABLE) return { sent: 0, left: 0 };
-    let queue = readQueue();
-    if (!queue.length) return { sent: 0, left: 0 };
-
-    console.log('[Savpol] Wysyłam historie: ' + queue.map(i => i.sku).join(', '));
-
-    const sent = [];
-    for (const item of queue) {
-      const { status, body } = await postHistoryItem(item);
-
-      if (status === 200 && body.ok) {
-        sent.push(item.sku);
-        console.log('[Savpol] Zapisano ' + item.sku + ' → ' + body.path);
-        continue;
-      }
-
-      // 401 to wygasła sesja, nie błąd danych. Zostawiamy WSZYSTKO w kolejce
-      // i przerywamy — po zalogowaniu w generatorze pójdzie za jednym razem.
-      if (status === 401) {
-        console.warn('[Savpol] Sesja generatora wygasła — historie czekają w kolejce. ' +
-          'Zaloguj się w generatorze opisów, wyślą się przy następnym przebiegu.');
-        break;
-      }
-
-      // 400 i 413 to trwałe odrzucenie danych — ponawianie nic nie da,
-      // a wpis blokowałby kolejkę w nieskończoność.
-      if (status === 400 || status === 413) {
-        sent.push(item.sku);
-        console.error('[Savpol] Serwer odrzucił historię ' + item.sku + ' (' + status +
-          ': ' + (body.error || 'bez opisu') + '). Usuwam z kolejki.');
-        continue;
-      }
-
-      console.warn('[Savpol] Nie udało się wysłać ' + item.sku +
-        ' (status ' + status + ') — zostaje w kolejce, spróbuję przy następnym przebiegu.');
-      break;
-    }
-
-    if (sent.length) {
-      queue = readQueue().filter(item => !sent.includes(item.sku));
-      writeQueue(queue);
-    }
-    return { sent: sent.length, left: readQueue().length };
-  }
 
   // ---------- Przejście do produktu w sklepie ----------
   // GM_setValue/GM_getValue przeżywają przeładowanie strony i przejście na inną
@@ -6613,7 +5292,8 @@
           notice('error', 'Apka oddała opisy produktu ' + d.sku + ', a pytam o ' + sku + '.');
           return;
         }
-        el('nazwa').value = d.h1 || '';
+        const blokada = blokadaNazwy(d);
+        el('nazwa').value = blokada ? '' : (d.h1 || '');
         schowaneWartosci.opis = d.long || '';
         schowaneWartosci.techniczne = d.short || '';
         if (el('opis')) el('opis').value = schowaneWartosci.opis;
@@ -6630,7 +5310,9 @@
           + '\n• Dane techniczne: ' + ile(d.short)
           + '\n• Meta tytuł: ' + ile(d.metaTitle)
           + '\n• Meta opis: ' + ile(d.metaDescription)
-          + '\n\nNic jeszcze nie zapisałem.', 'Pobrane z apki');
+          + '\n\nNic jeszcze nie zapisałem.'
+          + (blokada ? '\n\n' + blokada.opis : ''),
+          blokada ? 'Pobrane z apki — nazwa zablokowana' : 'Pobrane z apki');
       } catch (e) {
         notice('error', String(e && e.message || e));
       } finally {
@@ -7538,9 +6220,8 @@
   if (location.hostname === 'esavpol.pl') {
     runEsavpolHandler(0);
   } else if (generatorOrigin() && location.origin === generatorOrigin()) {
-    // Zapas: wysyłka idzie już z ERP, ale gdy tam się nie udała (brak sieci,
-    // wygasła sesja), tutaj użytkownik jest właśnie zalogowany.
-    flushHistoryQueue();
+    // Na stronie generatora skrypt nie ma już nic do roboty: archiwum historii
+    // faktur zniknęło razem z analizą, a opisy pobiera strona ERP.
   } else {
     // Podsluch API ERP instalujemy od razu: do czasu, az uzytkownik kliknie
     // przycisk, strona zdazy wyslac wlasne zadania i mamy z czego przejac dane
