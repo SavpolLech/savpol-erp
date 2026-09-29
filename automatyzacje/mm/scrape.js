@@ -99,6 +99,14 @@ const MM_DOC_TYPE_FILTER_LABEL = process.env.MM_DOC_TYPE_FILTER_LABEL || 'MM';
 // gridzie ma spacje jako separatory tysięcy ("269 000 798") — normalizujemy.
 const MM_DOC_TYPE_ID = (process.env.MM_DOC_TYPE_ID || '269000798').replace(/\s/g, '');
 
+// Cel zapisu. DOMYŚLNIE tabele testowe (*_test) — bezpieczne. SCRAPE_TARGET=prod
+// przełącza na produkcyjne csDocsHeaders/csDocsItemsPositions. Dla MM koordynator
+// (Michał) zatwierdził produkcję 2026-09-29 (zakres 2026-07-25→dziś). Wzorzec
+// 1:1 z wz/scrape.js.
+const WRITE_TO_PROD = process.env.SCRAPE_TARGET === 'prod';
+const TARGET_HEADERS = WRITE_TO_PROD ? F.PROD_TABLE_HEADERS : F.TEST_TABLE_HEADERS;
+const TARGET_POSITIONS = WRITE_TO_PROD ? F.PROD_TABLE_POSITIONS : F.TEST_TABLE_POSITIONS;
+
 // Godziny "pracy" — poza tym oknem (i w weekendy) skrypt się NIE uruchamia.
 const BUSINESS_HOURS_START = parseInt(process.env.BUSINESS_HOURS_START || '7', 10);
 const BUSINESS_HOURS_END = parseInt(process.env.BUSINESS_HOURS_END || '17', 10);
@@ -404,7 +412,7 @@ async function findExistingHeaderIds(pool, headerIdColMeta, rows) {
   const request = pool.request();
   const placeholders = ids.map((id, i) => { request.input('id' + i, mssqlType(headerIdColMeta), id); return '@id' + i; });
   const result = await request.query(
-    'SELECT [csDocsHeadersId] AS id FROM dbo.' + F.TEST_TABLE_HEADERS + ' WHERE [csDocsHeadersId] IN (' + placeholders.join(', ') + ')'
+    'SELECT [csDocsHeadersId] AS id FROM dbo.' + TARGET_HEADERS + ' WHERE [csDocsHeadersId] IN (' + placeholders.join(', ') + ')'
   );
   return new Set(result.recordset.map(r => String(r.id)));
 }
@@ -478,11 +486,14 @@ async function saveResult(result, label) {
     if (existingIds.size) {
       console.log('[wynik] Pominięto ' + existingIds.size + ' dokumentów, które już były w bazie (ochrona przed duplikatem).');
     }
+    if (WRITE_TO_PROD) {
+      console.log('[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (' + TARGET_HEADERS + '/' + TARGET_POSITIONS + ').');
+    }
 
-    const insertedHeaders = await insertRows(pool, F.TEST_TABLE_HEADERS, schema.headers, newHeaders);
-    const insertedPositions = await insertRows(pool, F.TEST_TABLE_POSITIONS, schema.positions, newPositions);
+    const insertedHeaders = await insertRows(pool, TARGET_HEADERS, schema.headers, newHeaders);
+    const insertedPositions = await insertRows(pool, TARGET_POSITIONS, schema.positions, newPositions);
     console.log('[wynik] Zapisano do bazy "' + DB_NAME + '": ' + insertedHeaders + ' wierszy w ' +
-      F.TEST_TABLE_HEADERS + ', ' + insertedPositions + ' wierszy w ' + F.TEST_TABLE_POSITIONS + '.');
+      TARGET_HEADERS + ', ' + insertedPositions + ' wierszy w ' + TARGET_POSITIONS + '.');
   } finally {
     await pool.close();
   }
