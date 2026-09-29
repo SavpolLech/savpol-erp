@@ -52,10 +52,9 @@ const ERP_BASE_URL = process.env.ERP_BASE_URL || 'https://erp.savpol.pl/';
 // nawigacja page.goto() na adres listy PZ zawsze ląduje z powrotem na
 // dashboardzie (odkryte 2026-09-18). Dotarcie do listy wymaga kliknięcia w
 // menu tak jak robi to człowiek — patrz navigateToPzList().
-// TRYB OSTROŻNY: próbka 5 dokumentów do weryfikacji przez koordynatora, ZANIM
-// podniesiemy limit. Po zatwierdzeniu próbki MAX_DOCS wraca do ~900 (tak samo
-// jak przy WZ/MM) — ustawiane przez zmienną środowiskową, bez zmiany kodu.
-const MAX_DOCS = parseInt(process.env.MAX_DOCS || '5', 10);
+// Limit produkcyjny — próbka 5 dok. zatwierdzona przez Michała, PZ do
+// produkcji zatwierdzone 2026-09-29 (tak samo jak wcześniej WZ i MM).
+const MAX_DOCS = parseInt(process.env.MAX_DOCS || '900', 10);
 
 // Długość sesji jest LOSOWANA w tym przedziale przy każdym uruchomieniu —
 // stała wartość jest sama w sobie sygnałem automatyzacji: człowiek loguje się,
