@@ -46,3 +46,6 @@ automatyzacje/**/debug-*.png
 # Kolekcja sucharow z Familiady - cudza tworczosc, repo jest de facto publiczne
 suchary.txt
 
+
+# Log miesiecznego przeliczenia bazy powiazan cross-sell
+automatyzacje/cross-sell/*.log
