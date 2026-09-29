@@ -33,6 +33,8 @@ automatyzacje/**/.scrape.lock
 automatyzacje/.scrapery.lock
 # Log lokalnego biegu orkiestratora (launcher) — czysto lokalny
 automatyzacje/dobij-wszystko.log
+# Lista ID do ręcznego doscrapowania produktów — wejście od Michała, nie do repo
+automatyzacje/produkty/lista-id.txt
 
 # Zrzuty ekranu do debugowania — mogą zawierać dane handlowe z ekranu ERP
 automatyzacje/**/debug-*.png

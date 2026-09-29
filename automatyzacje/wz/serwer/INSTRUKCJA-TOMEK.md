@@ -193,3 +193,18 @@ To jest bezpieczne o każdej porze: bierze tę samą blokadę co codzienny autom
 więc nigdy nie wejdzie na ERP równolegle (gdyby akurat trwał inny bieg, po
 prostu wypisze „inny bieg trwa" i wyjdzie — spróbuj później). Dokumenty, które
 już są w bazie, nie zostaną zdublowane — dopisywane są tylko brakujące.
+
+### 2.8 Doscrapowanie brakujących produktów po ID (Michał)
+
+Gdy Michał przyśle listę identyfikatorów (ID) brakujących produktów (kartotek,
+których nie ma jeszcze w bazie), można je dociągnąć samemu:
+
+1. Wklej ID (jeden pod drugim albo po przecinku) do pliku
+   `C:\savpol-automatyzacje\automatyzacje\produkty\lista-id.txt`.
+2. Dwuklik na **`dobij-produkty-po-id.bat`** (w tym samym folderze `serwer\`).
+   Za pierwszym razem, jeśli pliku nie ma, skrypt utworzy go i otworzy w
+   Notatniku — wklej ID, zapisz i odpal `.bat` ponownie.
+
+Skrypt sam zescrapuje te produkty i zapisze je do bazy produkcyjnej. Jest
+bezpieczny: bierze tę samą blokadę co reszta (nie wejdzie na ERP równolegle),
+a produkty już obecne w bazie pomija.
