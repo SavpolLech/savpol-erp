@@ -40,22 +40,22 @@
     "2026/MM/KRS1/005184"
   ],
   "complete": true,
-  "lastUpdated": "2026-09-29T07:34:46.806Z",
+  "lastUpdated": "2026-09-29T07:41:00.088Z",
   "runs": [
     {
-      "ts": "2026-09-29T07:33:26.062Z",
+      "ts": "2026-09-29T07:39:50.673Z",
       "paczkaDok": 15,
       "partial": true,
       "stoppedReason": "batch_limit"
     },
     {
-      "ts": "2026-09-29T07:34:28.374Z",
+      "ts": "2026-09-29T07:40:41.116Z",
       "paczkaDok": 15,
       "partial": true,
       "stoppedReason": "batch_limit"
     },
     {
-      "ts": "2026-09-29T07:34:46.805Z",
+      "ts": "2026-09-29T07:41:00.087Z",
       "paczkaDok": 6,
       "partial": false,
       "stoppedReason": null
