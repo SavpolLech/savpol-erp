@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.1.1
+// @version      4.1.2
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -55,6 +55,27 @@
   // Specyfikacja wisi w ERP przy produkcie jako zalacznik. Skrypt pobiera ja
   // sam i wysyla do generatora, zeby uzytkownik nie musial jej przeklejac.
   // Kontrakt: docs/integracja-pdf-specyfikacja.md.
+  // Zakres i zabezpieczenia odczytu historii faktur.
+  //
+  // Analiza faktur zniknela w 4.0.0, ale te dwie wartosci sa nadal uzywane
+  // przez statystyki cen, ktore czytaja te sama siatke.
+  const HISTORY_START_DATE = new Date(2024, 0, 1); // od stycznia 2024
+  const MAX_PAGES = 50;                            // zabezpieczenie przed nieskonczona petla paginacji
+
+  // ---------- Konfiguracja: nakladka z postepem ----------
+  const PROGRESS = {
+    ENABLE: true,
+    // 0 = nakladka zostaje do zamkniecia krzyzykiem albo do kolejnego przebiegu.
+    // Koncowy panel jest nosnikiem WYNIKU (przycisk otwarcia generatora), nie
+    // tylko postepu — autoukrywanie zabieralo go, zanim dalo sie uzyc.
+    // Wartosc > 0 = liczba ms do samoukrycia.
+    //
+    // Sama ta wartosc nie wystarcza: ERP przerysowuje widok i potrafi wyrzucic
+    // element z DOM, wiec nakladka jest dodatkowo doczepiana z powrotem —
+    // patrz progressKeepAlive przy createProgressOverlay().
+    HIDE_AFTER_MS: 0
+  };
+
   const ERP_API = {
     ENDPOINT: '/api/CommS_WCF_JSON.svc/OperatrionInvoke'  // literowka dostawcy
   };
