@@ -442,6 +442,109 @@ async function insertRows(pool, tableName, columnsMeta, rows) {
   return inserted;
 }
 
+// ---------- Aktualizacja istniejących (dokument zmieniony w ERP po scrapie) ----------
+// Wymaganie Lecha (2026-09-30): gdy dokument jest już w worku, a dane z ERP się
+// różnią, AKTUALIZUJEMY rekord i wypisujemy zmianę w logu. Wcześniej dedup po
+// csDocsHeadersId tylko dopisywał, więc edycja w ERP (np. zmiana DocDate)
+// nie schodziła do worka. Patrz też: pamięć [[dedup-insert-only-edycje-erp]].
+
+// Kolumny nagłówka do PORÓWNANIA/UPDATE: scrapowane, nie wyliczane, nie klucz i
+// nie stałe (HEADER_FIXED_VALUES są stałe per typ — zawsze równe, nie ma sensu
+// ich porównywać/aktualizować).
+const HEADER_FIXED_SET = new Set(F.HEADER_FIXED_FIELDS);
+function comparableHeaderColumns(columnsMeta) {
+  return columnsMeta.filter(c => !c.IS_COMPUTED
+    && c.COLUMN_NAME !== 'csDocsHeadersId'
+    && !HEADER_FIXED_SET.has(c.COLUMN_NAME));
+}
+
+// Równość wg TYPU kolumny — normalizacja, żeby nie robić fałszywych różnic:
+// data z/bez czasu, decimal jako string vs number, bigint bez utraty precyzji.
+// newVal jest już SKOERCOWANY (coerceValue), oldVal to wartość z bazy.
+function valuesEqual(oldVal, newVal, col) {
+  const empty = (v) => v === null || v === undefined || v === '';
+  if (empty(oldVal) && empty(newVal)) return true;
+  if (empty(oldVal) || empty(newVal)) return false;
+  switch (col.DATA_TYPE) {
+    case 'date': case 'datetime': case 'datetime2': case 'smalldatetime': {
+      const d = (v) => (v instanceof Date ? v : new Date(v));
+      const a = d(oldVal), b = d(newVal);
+      if (isNaN(a.getTime()) || isNaN(b.getTime())) return String(oldVal) === String(newVal);
+      return a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+    }
+    case 'int': case 'bigint': case 'smallint': case 'tinyint': {
+      const norm = (v) => (typeof v === 'number' ? String(Math.trunc(v)) : String(v).replace(/\s/g, '').trim());
+      return norm(oldVal) === norm(newVal);
+    }
+    case 'decimal': case 'numeric': case 'float': case 'real': case 'money': case 'smallmoney': {
+      const a = Number(oldVal), b = Number(newVal);
+      if (isNaN(a) || isNaN(b)) return String(oldVal) === String(newVal);
+      return Math.abs(a - b) < 1e-6;
+    }
+    case 'bit':
+      return (Number(oldVal) ? 1 : 0) === (Number(newVal) ? 1 : 0);
+    default:
+      return String(oldVal).trim() === String(newVal).trim();
+  }
+}
+
+function diffHeader(scrapedRow, dbRow, columnsMeta) {
+  const empty = (v) => v === null || v === undefined || v === '';
+  const diffs = [];
+  for (const col of comparableHeaderColumns(columnsMeta)) {
+    const name = col.COLUMN_NAME;
+    const newVal = coerceValue(scrapedRow[name], col);
+    // OCHRONA: nie nadpisuj niepustej wartości w bazie scrapowanym PUSTYM.
+    // Puste pole ze scrapowania to niemal zawsze "kolumna nie renderowała się w
+    // gridzie" (zły układ listy), a nie "wyczyszczono w ERP". Bez tego jedna
+    // wyłączona kolumna wyzerowałaby to pole we WSZYSTKICH dokumentach. Realne
+    // czyszczenie pola w ERP jest rzadkie — świadomie je tu pomijamy.
+    if (empty(newVal) && !empty(dbRow[name])) continue;
+    if (!valuesEqual(dbRow[name], newVal, col)) diffs.push({ field: name, old: dbRow[name], new: newVal });
+  }
+  return diffs;
+}
+
+// Pobiera z bazy istniejące wiersze nagłówków (komplet kolumn) po ID — do
+// porównania z tym, co zescrapowano.
+async function fetchExistingHeaders(pool, headerIdColMeta, columnsMeta, ids) {
+  const map = new Map();
+  if (!ids.length) return map;
+  const cols = columnsMeta.map(c => '[' + c.COLUMN_NAME + ']').join(', ');
+  const request = pool.request();
+  const ph = ids.map((id, i) => { request.input('h' + i, mssqlType(headerIdColMeta), id); return '@h' + i; });
+  const rs = await request.query('SELECT ' + cols + ' FROM dbo.' + TARGET_HEADERS + ' WHERE [csDocsHeadersId] IN (' + ph.join(', ') + ')');
+  rs.recordset.forEach(r => map.set(String(r.csDocsHeadersId), r));
+  return map;
+}
+
+async function updateHeaderRow(pool, columnsMeta, scrapedRow, diffs, headerIdColMeta) {
+  const request = pool.request();
+  const sets = diffs.map((d, i) => {
+    const col = columnsMeta.find(c => c.COLUMN_NAME === d.field);
+    request.input('u' + i, mssqlType(col), coerceValue(scrapedRow[d.field], col));
+    return '[' + d.field + '] = @u' + i;
+  });
+  request.input('idw', mssqlType(headerIdColMeta), coerceValue(scrapedRow.csDocsHeadersId, headerIdColMeta));
+  await request.query('UPDATE dbo.' + TARGET_HEADERS + ' SET ' + sets.join(', ') + ' WHERE [csDocsHeadersId] = @idw');
+}
+
+// Pozycje zmienionego dokumentu zastępujemy w całości: DELETE po
+// csDocsHeadersId + INSERT aktualnych (prościej i pewniej niż upsert po
+// csDocsItemsPositionsId; createdDate=DocDate jest już naliczone w applyFixedValues).
+async function replacePositionsForDoc(pool, columnsMeta, headerIdColMeta, headerIdRaw, posRows) {
+  const del = pool.request();
+  del.input('idp', mssqlType(headerIdColMeta), coerceValue(headerIdRaw, headerIdColMeta));
+  await del.query('DELETE FROM dbo.' + TARGET_POSITIONS + ' WHERE [csDocsHeadersId] = @idp');
+  return insertRows(pool, TARGET_POSITIONS, columnsMeta, posRows);
+}
+
+function fmtVal(v) {
+  if (v === null || v === undefined) return 'NULL';
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v);
+}
+
 function appendCsv(filePath, rows) {
   if (!rows.length) return;
   const cols = Object.keys(rows[0]);
@@ -469,7 +572,7 @@ async function saveResult(result, label) {
     console.log('[wynik]', forceCsv ? '--csv wymuszone' : (!DB_NAME ? 'DB_NAME nie ustawione' : 'brak schema-test-tables.json'),
       '— dopisano do', headersPath, 'i', positionsPath,
       '(+' + result.headers.length + ' MM, +' + result.positions.length + ' pozycji w tej paczce, partial=' + result.partial + ')');
-    return;
+    return { insertedHeaders: 0, insertedPositions: 0, updatedHeaders: 0, positionsReplaced: 0, unchanged: 0 };
   }
 
   const config = {
@@ -480,22 +583,48 @@ async function saveResult(result, label) {
   const pool = await sql.connect(config);
   try {
     const headerIdCol = schema.headers.find(c => c.COLUMN_NAME === 'csDocsHeadersId');
+    const idStr = (r) => String(coerceValue(r.csDocsHeadersId, headerIdCol));
     const existingIds = headerIdCol ? await findExistingHeaderIds(pool, headerIdCol, result.headers) : new Set();
 
-    const newHeaders = result.headers.filter(h => !existingIds.has(String(coerceValue(h.csDocsHeadersId, headerIdCol))));
-    const newPositions = result.positions.filter(p => !existingIds.has(String(coerceValue(p.csDocsHeadersId, headerIdCol))));
+    const newHeaders = result.headers.filter(h => !existingIds.has(idStr(h)));
+    const existingHeaders = result.headers.filter(h => existingIds.has(idStr(h)));
+    const newPositions = result.positions.filter(p => !existingIds.has(idStr(p)));
 
-    if (existingIds.size) {
-      console.log('[wynik] Pominięto ' + existingIds.size + ' dokumentów, które już były w bazie (ochrona przed duplikatem).');
-    }
     if (WRITE_TO_PROD) {
       console.log('[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (' + TARGET_HEADERS + '/' + TARGET_POSITIONS + ').');
     }
 
     const insertedHeaders = await insertRows(pool, TARGET_HEADERS, schema.headers, newHeaders);
     const insertedPositions = await insertRows(pool, TARGET_POSITIONS, schema.positions, newPositions);
-    console.log('[wynik] Zapisano do bazy "' + DB_NAME + '": ' + insertedHeaders + ' wierszy w ' +
-      TARGET_HEADERS + ', ' + insertedPositions + ' wierszy w ' + TARGET_POSITIONS + '.');
+
+    // Dokumenty już w bazie: porównaj nagłówek (kolumny scrapowane) z wersją w
+    // bazie. Przy różnicy -> UPDATE nagłówka + zastąp pozycje. Bez różnicy -> nic.
+    let updatedHeaders = 0, positionsReplaced = 0, unchanged = 0;
+    if (existingHeaders.length) {
+      const ids = existingHeaders.map(h => coerceValue(h.csDocsHeadersId, headerIdCol)).filter(v => v !== null);
+      const dbMap = await fetchExistingHeaders(pool, headerIdCol, schema.headers, ids);
+      for (const h of existingHeaders) {
+        const dbRow = dbMap.get(idStr(h));
+        if (!dbRow) continue;
+        const diffs = diffHeader(h, dbRow, schema.headers);
+        if (!diffs.length) { unchanged++; continue; }
+        await updateHeaderRow(pool, schema.headers, h, diffs, headerIdCol);
+        const posForDoc = result.positions.filter(p => idStr(p) === idStr(h));
+        await replacePositionsForDoc(pool, schema.positions, headerIdCol, h.csDocsHeadersId, posForDoc);
+        updatedHeaders++;
+        positionsReplaced += posForDoc.length;
+        const changed = diffs.map(d => d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new)).join('; ');
+        console.log('[aktualizacja] ' + (h.DocNumber || idStr(h)) + ' (id=' + idStr(h) + '): ' +
+          changed + ' | pozycje zastąpione: ' + posForDoc.length);
+      }
+    }
+
+    const parts = ['dopisano ' + insertedHeaders + ' nagł./' + insertedPositions + ' poz.'];
+    if (updatedHeaders) parts.push('zaktualizowano ' + updatedHeaders + ' nagł. (poz. zastąpione: ' + positionsReplaced + ')');
+    if (unchanged) parts.push('bez zmian ' + unchanged);
+    console.log('[wynik] Zapis do "' + DB_NAME + '" (' + TARGET_HEADERS + '/' + TARGET_POSITIONS + '): ' + parts.join(', ') + '.');
+
+    return { insertedHeaders, insertedPositions, updatedHeaders, positionsReplaced, unchanged };
   } finally {
     await pool.close();
   }
@@ -671,6 +800,8 @@ async function main() {
 
   let totalHeaders = 0;
   let totalPositions = 0;
+  let totalUpdated = 0;       // nagłówki zaktualizowane (dok. zmieniony w ERP po scrapie)
+  let totalPosReplaced = 0;   // pozycje zastąpione przy tych aktualizacjach
   let allPagesExhausted = false;
   let lastStoppedReason = null;
   let expectedTotal = null;
@@ -753,7 +884,8 @@ async function main() {
       });
 
       applyFixedValues(batch);
-      await saveResult(batch, csvLabel);
+      const wr = await saveResult(batch, csvLabel);
+      if (wr) { totalUpdated += wr.updatedHeaders || 0; totalPosReplaced += wr.positionsReplaced || 0; }
 
       batch.completedDocNumbers.forEach(d => processedThisRun.add(d));
       totalHeaders += batch.headers.length;
@@ -783,6 +915,7 @@ async function main() {
     }
 
     console.log('[mm] Koniec sesji. Zebrano w tej sesji: ' + totalHeaders + ' MM, ' + totalPositions + ' pozycji.' +
+      (totalUpdated ? ' Zaktualizowano ' + totalUpdated + ' nagł. (poz. zastąpione: ' + totalPosReplaced + ').' : '') +
       (lastStoppedReason ? ' Powód zatrzymania: ' + lastStoppedReason + '.' : ' (lista wyczerpana).'));
 
     // UWAGA (MM vs WZ): pager ERP (expectedTotal) liczy WSZYSTKIE podtypy listy
@@ -810,6 +943,8 @@ async function main() {
       sessionMinutes: Number(sessionMinutes.toFixed(1)),
       maxDocs: MAX_DOCS, batchSize: BATCH_SIZE,
       docsZebraneWTejSesji: totalHeaders,
+      zaktualizowaneNaglowki: totalUpdated,
+      pozycjeZastapione: totalPosReplaced,
       pozycjeZebraneWTejSesji: totalPositions,
       docsLacznieDlaZakresu: (dateFrom || dateTo) ? processedThisRun.size : null,
       expectedTotal,
