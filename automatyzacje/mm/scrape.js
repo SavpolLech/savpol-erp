@@ -42,6 +42,7 @@ function applyFixedValues(batch) {
 }
 const { loadState, saveState, appendRunLog } = require('../lib-wspolne/state')(__dirname, 'mm');
 const { pushLogs } = require('../lib-wspolne/git-log-push');
+const powiadomORozbieznosciach = require('../lib-wspolne/powiadom');
 
 // ---------- Konfiguracja ----------
 
@@ -523,25 +524,17 @@ async function fetchExistingHeaders(pool, headerIdColMeta, columnsMeta, ids) {
   return map;
 }
 
-async function updateHeaderRow(pool, columnsMeta, scrapedRow, diffs, headerIdColMeta) {
+// Liczba pozycji w bazie per csDocsHeadersId — do wykrycia rozbieżności liczby
+// pozycji (pełnego porównania pól pozycji nie robimy). Zwraca Map(idString -> n).
+async function fetchPositionCounts(pool, headerIdColMeta, ids) {
+  const map = new Map();
+  if (!ids.length) return map;
   const request = pool.request();
-  const sets = diffs.map((d, i) => {
-    const col = columnsMeta.find(c => c.COLUMN_NAME === d.field);
-    request.input('u' + i, mssqlType(col), coerceValue(scrapedRow[d.field], col));
-    return '[' + d.field + '] = @u' + i;
-  });
-  request.input('idw', mssqlType(headerIdColMeta), coerceValue(scrapedRow.csDocsHeadersId, headerIdColMeta));
-  await request.query('UPDATE dbo.' + TARGET_HEADERS + ' SET ' + sets.join(', ') + ' WHERE [csDocsHeadersId] = @idw');
-}
-
-// Pozycje zmienionego dokumentu zastępujemy w całości: DELETE po
-// csDocsHeadersId + INSERT aktualnych (prościej i pewniej niż upsert po
-// csDocsItemsPositionsId; createdDate=DocDate jest już naliczone w applyFixedValues).
-async function replacePositionsForDoc(pool, columnsMeta, headerIdColMeta, headerIdRaw, posRows) {
-  const del = pool.request();
-  del.input('idp', mssqlType(headerIdColMeta), coerceValue(headerIdRaw, headerIdColMeta));
-  await del.query('DELETE FROM dbo.' + TARGET_POSITIONS + ' WHERE [csDocsHeadersId] = @idp');
-  return insertRows(pool, TARGET_POSITIONS, columnsMeta, posRows);
+  const ph = ids.map((id, i) => { request.input('c' + i, mssqlType(headerIdColMeta), id); return '@c' + i; });
+  const rs = await request.query('SELECT [csDocsHeadersId] AS id, COUNT(*) AS n FROM dbo.' + TARGET_POSITIONS +
+    ' WHERE [csDocsHeadersId] IN (' + ph.join(', ') + ') GROUP BY [csDocsHeadersId]');
+  rs.recordset.forEach(r => map.set(String(r.id), r.n));
+  return map;
 }
 
 function fmtVal(v) {
@@ -577,7 +570,7 @@ async function saveResult(result, label) {
     console.log('[wynik]', forceCsv ? '--csv wymuszone' : (!DB_NAME ? 'DB_NAME nie ustawione' : 'brak schema-test-tables.json'),
       '— dopisano do', headersPath, 'i', positionsPath,
       '(+' + result.headers.length + ' MM, +' + result.positions.length + ' pozycji w tej paczce, partial=' + result.partial + ')');
-    return { insertedHeaders: 0, insertedPositions: 0, updatedHeaders: 0, positionsReplaced: 0, unchanged: 0 };
+    return { insertedHeaders: 0, insertedPositions: 0, rozbieznosci: [], rozbHeaders: 0, rozbPoz: 0, unchanged: 0 };
   }
 
   const config = {
@@ -602,34 +595,51 @@ async function saveResult(result, label) {
     const insertedHeaders = await insertRows(pool, TARGET_HEADERS, schema.headers, newHeaders);
     const insertedPositions = await insertRows(pool, TARGET_POSITIONS, schema.positions, newPositions);
 
-    // Dokumenty już w bazie: porównaj nagłówek (kolumny scrapowane) z wersją w
-    // bazie. Przy różnicy -> UPDATE nagłówka + zastąp pozycje. Bez różnicy -> nic.
-    let updatedHeaders = 0, positionsReplaced = 0, unchanged = 0;
+    // Dokumenty już w bazie: NIE ZMIENIAMY rekordu (decyzja Lecha 2026-09-30 —
+    // do worka tylko DOPISUJEMY). Porównujemy nagłówek (kolumny scrapowane) i
+    // liczbę pozycji; różnicę tylko ZGŁASZAMY (log + zbiorczy mail po biegu),
+    // bazy NIE ruszamy — żadnego UPDATE/DELETE. Patrz [[dedup-insert-only-edycje-erp]].
+    let unchanged = 0;
+    const rozbieznosci = []; // { docNumber, csDocsHeadersId, zmianyNaglowka:[{pole,baza,erp}], pozycjeBaza, pozycjeErp }
     if (existingHeaders.length) {
       const ids = existingHeaders.map(h => coerceValue(h.csDocsHeadersId, headerIdCol)).filter(v => v !== null);
       const dbMap = await fetchExistingHeaders(pool, headerIdCol, schema.headers, ids);
+      const posCounts = await fetchPositionCounts(pool, headerIdCol, ids);
       for (const h of existingHeaders) {
-        const dbRow = dbMap.get(idStr(h));
+        const id = idStr(h);
+        const dbRow = dbMap.get(id);
         if (!dbRow) continue;
         const diffs = diffHeader(h, dbRow, schema.headers);
-        if (!diffs.length) { unchanged++; continue; }
-        await updateHeaderRow(pool, schema.headers, h, diffs, headerIdCol);
-        const posForDoc = result.positions.filter(p => idStr(p) === idStr(h));
-        await replacePositionsForDoc(pool, schema.positions, headerIdCol, h.csDocsHeadersId, posForDoc);
-        updatedHeaders++;
-        positionsReplaced += posForDoc.length;
-        const changed = diffs.map(d => d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new)).join('; ');
-        console.log('[aktualizacja] ' + (h.DocNumber || idStr(h)) + ' (id=' + idStr(h) + '): ' +
-          changed + ' | pozycje zastąpione: ' + posForDoc.length);
+        const pozErp = result.positions.filter(p => idStr(p) === id).length;
+        const pozBaza = posCounts.get(id) || 0;
+        const posDiff = pozErp !== pozBaza;
+        if (!diffs.length && !posDiff) { unchanged++; continue; }
+
+        const czesci = [];
+        if (diffs.length) czesci.push(diffs.map(d => d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new)).join('; '));
+        if (posDiff) czesci.push('liczba pozycji: ' + pozBaza + ' -> ' + pozErp);
+        console.warn('[rozbieżność] ' + (h.DocNumber || id) + ' (id=' + id + '): ' + czesci.join(' | ') +
+          ' (baza -> ERP) — rekord w bazie NIE zmieniony, tylko zgłoszenie.');
+        rozbieznosci.push({
+          docNumber: h.DocNumber || null,
+          csDocsHeadersId: id,
+          zmianyNaglowka: diffs.map(d => ({ pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) })),
+          pozycjeBaza: pozBaza,
+          pozycjeErp: pozErp
+        });
       }
     }
 
+    const rozbHeaders = rozbieznosci.filter(r => r.zmianyNaglowka.length).length;
+    const rozbPoz = rozbieznosci.filter(r => r.pozycjeBaza !== r.pozycjeErp).length;
+
     const parts = ['dopisano ' + insertedHeaders + ' nagł./' + insertedPositions + ' poz.'];
-    if (updatedHeaders) parts.push('zaktualizowano ' + updatedHeaders + ' nagł. (poz. zastąpione: ' + positionsReplaced + ')');
+    if (rozbieznosci.length) parts.push('ROZBIEŻNOŚCI z ERP: ' + rozbHeaders + ' nagł. / ' + rozbPoz +
+      ' dok. z inną liczbą pozycji (bazy NIE zmieniono — zgłoszone)');
     if (unchanged) parts.push('bez zmian ' + unchanged);
     console.log('[wynik] Zapis do "' + DB_NAME + '" (' + TARGET_HEADERS + '/' + TARGET_POSITIONS + '): ' + parts.join(', ') + '.');
 
-    return { insertedHeaders, insertedPositions, updatedHeaders, positionsReplaced, unchanged };
+    return { insertedHeaders, insertedPositions, rozbieznosci, rozbHeaders, rozbPoz, unchanged };
   } finally {
     await pool.close();
   }
@@ -805,8 +815,9 @@ async function main() {
 
   let totalHeaders = 0;
   let totalPositions = 0;
-  let totalUpdated = 0;       // nagłówki zaktualizowane (dok. zmieniony w ERP po scrapie)
-  let totalPosReplaced = 0;   // pozycje zastąpione przy tych aktualizacjach
+  let totalRozbHeaders = 0;   // nagłówki różniące się od ERP (NIE zmieniamy bazy, tylko zgłaszamy)
+  let totalRozbPoz = 0;       // dok. z inną liczbą pozycji niż w ERP
+  const allRozbieznosci = []; // pełna lista rozbieżności — do zbiorczego maila po biegu
   let allPagesExhausted = false;
   let lastStoppedReason = null;
   let expectedTotal = null;
@@ -890,7 +901,11 @@ async function main() {
 
       applyFixedValues(batch);
       const wr = await saveResult(batch, csvLabel);
-      if (wr) { totalUpdated += wr.updatedHeaders || 0; totalPosReplaced += wr.positionsReplaced || 0; }
+      if (wr) {
+        totalRozbHeaders += wr.rozbHeaders || 0;
+        totalRozbPoz += wr.rozbPoz || 0;
+        if (wr.rozbieznosci && wr.rozbieznosci.length) allRozbieznosci.push(...wr.rozbieznosci);
+      }
 
       batch.completedDocNumbers.forEach(d => processedThisRun.add(d));
       totalHeaders += batch.headers.length;
@@ -920,8 +935,15 @@ async function main() {
     }
 
     console.log('[mm] Koniec sesji. Zebrano w tej sesji: ' + totalHeaders + ' MM, ' + totalPositions + ' pozycji.' +
-      (totalUpdated ? ' Zaktualizowano ' + totalUpdated + ' nagł. (poz. zastąpione: ' + totalPosReplaced + ').' : '') +
+      (allRozbieznosci.length ? ' ROZBIEŻNOŚCI z ERP (bazy NIE zmieniono): ' + totalRozbHeaders + ' nagł. / ' +
+        totalRozbPoz + ' dok. z inną liczbą pozycji.' : '') +
       (lastStoppedReason ? ' Powód zatrzymania: ' + lastStoppedReason + '.' : ' (lista wyczerpana).'));
+
+    // Zbiorcze powiadomienie o rozbieżnościach (jeden mail na bieg, tylko gdy są).
+    // Helper nigdy nie rzuca; bez SMTP w .env tylko loguje, że mail pominięto.
+    if (allRozbieznosci.length) {
+      await powiadomORozbieznosciach('mm', allRozbieznosci, { label: csvLabel });
+    }
 
     // UWAGA (MM vs WZ): pager ERP (expectedTotal) liczy WSZYSTKIE podtypy listy
     // przesunięć — MM (269000798) + "Usunięcie blokady" + "Blokada" — a my
@@ -948,8 +970,8 @@ async function main() {
       sessionMinutes: Number(sessionMinutes.toFixed(1)),
       maxDocs: MAX_DOCS, batchSize: BATCH_SIZE,
       docsZebraneWTejSesji: totalHeaders,
-      zaktualizowaneNaglowki: totalUpdated,
-      pozycjeZastapione: totalPosReplaced,
+      rozbieznosciNaglowki: totalRozbHeaders,
+      rozbieznosciPozycje: totalRozbPoz,
       pozycjeZebraneWTejSesji: totalPositions,
       docsLacznieDlaZakresu: (dateFrom || dateTo) ? processedThisRun.size : null,
       expectedTotal,
