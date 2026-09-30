@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Przeglądarka worka</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #fff; --line: #dfe3e8; --text: #1d2330; --muted: #6b7482;
+    --accent: #2f6fdd; --accent-bg: #e8f0fd; --hover: #f1f4f8; --err: #b3261e; --err-bg: #fdecea;
+    --null: #a0a7b3; --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181d; --panel: #1d2128; --line: #2e343d; --text: #e3e7ee; --muted: #8b94a3;
+      --accent: #6ea2ff; --accent-bg: #22314b; --hover: #252a33; --err: #ff8a80; --err-bg: #3a1f1e;
+      --null: #5f6774;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.4 system-ui, "Segoe UI", sans-serif; display: flex; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: default; }
+  input, select, textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+
+  aside { width: 280px; min-width: 220px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+  aside header { padding: 12px; border-bottom: 1px solid var(--line); }
+  aside h1 { font-size: 15px; margin: 0 0 2px; }
+  aside .sub { color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  aside input { width: 100%; }
+  #tables { overflow: auto; flex: 1; padding: 4px 0; }
+  #tables .t { display: flex; justify-content: space-between; gap: 8px; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
+  #tables .t:hover { background: var(--hover); }
+  #tables .t.on { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+  #tables .t .n { color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 400; }
+  #tables .t .nm { overflow: hidden; text-overflow: ellipsis; }
+  #tables .grp { padding: 8px 12px 2px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  #sqlBtn { margin: 8px 12px 12px; }
+
+  main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  .bar h2 { font-size: 14px; margin: 0 8px 0 0; }
+  .bar .sp { flex: 1; }
+  .muted { color: var(--muted); }
+  #msg { padding: 8px 12px; display: none; }
+  #msg.err { display: block; background: var(--err-bg); color: var(--err); }
+  #msg.ok { display: block; color: var(--muted); }
+
+  #sqlPane { display: none; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  #sqlPane textarea { width: 100%; min-height: 110px; font-family: var(--mono); resize: vertical; }
+  #sqlPane .row { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+
+  #colsPane { display: none; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); max-height: 40vh; overflow: auto; }
+
+  .grid { flex: 1; overflow: auto; }
+  table { border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; }
+  th, td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 3px 8px; text-align: left; white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+  thead th { position: sticky; top: 0; background: var(--panel); z-index: 1; cursor: pointer; user-select: none; }
+  thead tr.filters th { top: 26px; cursor: default; padding: 2px 4px; }
+  thead tr.filters input { width: 100%; min-width: 60px; padding: 1px 4px; font-size: 12px; }
+  thead th .ty { color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 4px; }
+  tbody tr:hover td { background: var(--hover); }
+  td.num { text-align: right; }
+  td.null { color: var(--null); font-style: italic; }
+  td { cursor: pointer; }
+  td.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+  #colsPane table td { cursor: default; }
+
+  #cell { display: none; border-top: 1px solid var(--line); background: var(--panel); padding: 8px 12px; max-height: 30vh; overflow: auto; }
+  #cell pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; }
+
+  .empty { padding: 40px; color: var(--muted); text-align: center; }
+  @media (max-width: 700px) { body { flex-direction: column; } aside { width: auto; max-height: 40vh; } }
+</style>
+</head>
+<body>
+<aside>
+  <header>
+    <h1>Worek <span class="muted" style="font-weight:400">· tylko odczyt</span></h1>
+    <div class="sub" id="dbInfo">łączę…</div>
+    <input id="search" placeholder="Szukaj tabeli…" autocomplete="off">
+    <label class="muted" style="display:block;margin-top:6px"><input type="checkbox" id="hideEmpty" checked> ukryj puste i <code>_changes</code></label>
+  </header>
+  <div id="tables"></div>
+  <button id="sqlBtn">Zapytanie SQL</button>
+</aside>
+
+<main>
+  <div class="bar">
+    <h2 id="title">Wybierz tabelę</h2>
+    <span class="muted" id="count"></span>
+    <span class="sp"></span>
+    <button id="colsBtn" disabled>Struktura</button>
+    <button id="clearF" disabled>Wyczyść filtry</button>
+    <label class="muted">Na stronę
+      <select id="size"><option>50</option><option selected>100</option><option>250</option><option>500</option><option>1000</option></select>
+    </label>
+    <button id="prev" disabled>‹</button>
+    <span id="pageInfo" class="muted"></span>
+    <button id="next" disabled>›</button>
+    <button id="copy" disabled title="Kopiuje widoczne wiersze jako TSV — wklejasz prosto do Excela albo do Claude">Kopiuj do schowka</button>
+  </div>
+
+  <div id="sqlPane">
+    <textarea id="sqlText" spellcheck="false" placeholder="SELECT TOP 100 * FROM dbo.… ORDER BY …   (Ctrl+Enter uruchamia)"></textarea>
+    <div class="row">
+      <button class="primary" id="run">Uruchom (Ctrl+Enter)</button>
+      <span class="muted">Tylko SELECT / WITH. Każde zapytanie i tak kończy się ROLLBACK.</span>
+    </div>
+  </div>
+
+  <div id="colsPane"></div>
+  <div id="msg"></div>
+  <div class="grid" id="grid"><div class="empty">Kliknij tabelę po lewej albo otwórz „Zapytanie SQL”.<br>Filtr (Enter): <code>WZ</code> = zaczyna się od · <code>*abc*</code> = zawiera (wolne) · <code>=5</code> <code>&gt;=2026-09-01</code> <code>!=0</code> · <code>NULL</code> <code>!NULL</code>.<br>Kliknięcie nagłówka sortuje, kliknięcie komórki pokazuje pełną wartość.</div></div>
+  <div id="cell"><span class="muted" id="cellName"></span> <button id="cellCopy" style="margin-left:8px">Kopiuj wartość</button><pre id="cellVal"></pre></div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const state = { mode: 'table', table: null, page: 1, sort: null, dir: 'asc', filters: {}, data: null, sqlData: null };
+let allTables = [];
+// Tabele, do których piszą scrapery (wz/mm/pz/produkty) — przypięte na górze.
+const SCRAPER_TABLES = ['dbo.csDocsHeaders', 'dbo.csDocsItemsPositions', 'dbo.csItems', 'dbo.csPhotos',
+  'dbo.csDocsHeaders_test', 'dbo.csDocsItemsPositions_test'];
+
+const fmtN = n => n == null ? '' : Number(n).toLocaleString('pl-PL');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function msg(text, kind) { const m = $('#msg'); m.className = text ? kind : ''; m.textContent = text || ''; }
+
+async function api(url, opts) {
+  const r = await fetch(url, opts);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return true; } catch (_) {}
+  const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+  const ok = document.execCommand('copy'); ta.remove(); return ok;
+}
+
+// --- lista tabel ---
+async function loadTables() {
+  try {
+    const info = await api('/api/info');
+    $('#dbInfo').textContent = info.database + ' @ ' + info.host;
+    allTables = await api('/api/tabele');
+    renderTables();
+  } catch (e) { $('#dbInfo').textContent = 'błąd połączenia'; msg(e.message, 'err'); }
+}
+
+function renderTables() {
+  const f = $('#search').value.trim().toLowerCase();
+  const hide = $('#hideEmpty').checked;
+  const full = t => t.schema + '.' + t.name;
+  const match = t => !f || full(t).toLowerCase().includes(f);
+  const pinned = SCRAPER_TABLES.map(n => allTables.find(t => full(t) === n)).filter(t => t && match(t));
+  const rest = allTables.filter(t => match(t) && !SCRAPER_TABLES.includes(full(t)) &&
+    !(hide && (t.rows === 0 || /_changes$/i.test(t.name))));
+  const list = pinned.map(t => ({ ...t, pin: true })).concat(rest);
+  let html = '', lastGrp = null;
+  if (rest.length > 800) list.length = pinned.length + 800;
+  for (const t of list) {
+    const grp = t.pin ? 'tabele scraperów' : t.schema + (t.view ? ' · widoki' : '');
+    if (grp !== lastGrp) { html += '<div class="grp">' + esc(grp) + '</div>'; lastGrp = grp; }
+    const id = full(t);
+    html += '<div class="t' + (state.table === id && state.mode === 'table' ? ' on' : '') + '" data-t="' + esc(id) + '">' +
+      '<span class="nm">' + esc(t.name) + '</span><span class="n">' + fmtN(t.rows) + '</span></div>';
+  }
+  if (rest.length > 800) html += '<div class="grp">…i ' + fmtN(rest.length - 800) + ' więcej — zawęź wyszukiwanie</div>';
+  $('#tables').innerHTML = html || '<div class="empty">brak</div>';
+}
+
+$('#tables').addEventListener('click', e => {
+  const el = e.target.closest('.t'); if (!el) return;
+  openTable(el.dataset.t);
+});
+$('#search').addEventListener('input', renderTables);
+$('#hideEmpty').addEventListener('change', renderTables);
+
+// --- widok tabeli ---
+function openTable(full) {
+  Object.assign(state, { mode: 'table', table: full, page: 1, sort: null, dir: 'asc', filters: {} });
+  $('#sqlPane').style.display = 'none';
+  $('#colsPane').style.display = 'none';
+  renderTables();
+  loadRows();
+}
+
+let loadSeq = 0;
+async function loadRows() {
+  const seq = ++loadSeq;
+  const p = new URLSearchParams({ t: state.table, page: state.page, size: $('#size').value, f: JSON.stringify(state.filters) });
+  if (state.sort) { p.set('sort', state.sort); p.set('dir', state.dir); }
+  msg('Wczytuję…', 'ok');
+  try {
+    const d = await api('/api/wiersze?' + p);
+    if (seq !== loadSeq) return;
+    state.data = d; state.sort = d.sort; state.dir = d.dir; msg('');
+    renderTableView();
+  } catch (e) { if (seq === loadSeq) msg(e.message, 'err'); }
+}
+
+function renderTableView() {
+  const d = state.data;
+  const pages = d.total == null ? null : Math.max(1, Math.ceil(d.total / d.size));
+  $('#title').textContent = state.table;
+  $('#count').textContent = d.total == null ? 'po filtrze' + (d.hasMore ? ' — więcej niż jedna strona' : ', wierszy: ' + fmtN((d.page - 1) * d.size + d.rows.length)) : '≈ ' + fmtN(d.total) + ' wierszy';
+  $('#pageInfo').textContent = 'str. ' + d.page + (pages ? ' / ' + fmtN(pages) : '');
+  $('#prev').disabled = d.page <= 1; $('#next').disabled = !d.hasMore;
+  $('#colsBtn').disabled = false; $('#copy').disabled = !d.rows.length;
+  $('#clearF').disabled = !Object.values(state.filters).some(v => v);
+  ['#size'].forEach(s => $(s).disabled = false);
+
+  const cols = d.columns;
+  let h = '<table><thead><tr>';
+  for (const c of cols) {
+    const arrow = state.sort === c.name ? (state.dir === 'asc' ? ' ▲' : ' ▼') : '';
+    h += '<th data-sort="' + esc(c.name) + '" title="' + esc(c.type + (c.len ? '(' + c.len + ')' : '')) + '">' + (c.pk ? '🔑 ' : '') + esc(c.name) + '<span class="ty">' + esc(c.type) + '</span>' + arrow + '</th>';
+  }
+  h += '</tr><tr class="filters">';
+  for (const c of cols) h += '<th><input data-f="' + esc(c.name) + '" value="' + esc(state.filters[c.name] || '') + '" placeholder="filtr ⏎"></th>';
+  h += '</tr></thead><tbody>' + bodyRows(cols.map(c => c.name), d.rows, cols) + '</tbody></table>';
+  $('#grid').innerHTML = d.rows.length ? h : h + '<div class="empty">Brak wierszy.</div>';
+
+  renderCols(cols);
+}
+
+const NUM_TYPES = /int|decimal|numeric|money|float|real/;
+function bodyRows(names, rows, meta) {
+  const isNum = names.map((n, i) => meta ? NUM_TYPES.test(meta[i].type) : rows.some(r => typeof r[n] === 'number'));
+  return rows.map((r, ri) => '<tr>' + names.map((n, i) => {
+    const v = r[n];
+    if (v == null) return '<td class="null" data-r="' + ri + '" data-c="' + i + '">NULL</td>';
+    return '<td' + (isNum[i] ? ' class="num"' : '') + ' data-r="' + ri + '" data-c="' + i + '" title="' + esc(String(v).slice(0, 500)) + '">' + esc(String(v).slice(0, 300)) + '</td>';
+  }).join('') + '</tr>').join('');
+}
+
+function renderCols(cols) {
+  $('#colsPane').innerHTML = '<table><thead><tr><th>Kolumna</th><th>Typ</th><th>NULL?</th><th>Domyślnie</th></tr></thead><tbody>' +
+    cols.map(c => '<tr><td>' + (c.pk ? '🔑 ' : '') + esc(c.name) + '</td><td>' + esc(c.type + (c.len ? '(' + (c.len === -1 ? 'max' : c.len) + ')' : '')) + '</td><td>' + esc(c.nullable) + '</td><td>' + esc(c.def || '') + '</td></tr>').join('') +
+    '</tbody></table>';
+}
+
+$('#grid').addEventListener('click', e => {
+  const th = e.target.closest('th[data-sort]');
+  if (th && state.mode === 'table') {
+    const c = th.dataset.sort;
+    if (state.sort === c) state.dir = state.dir === 'asc' ? 'desc' : 'asc'; else { state.sort = c; state.dir = 'asc'; }
+    state.page = 1; loadRows(); return;
+  }
+  const td = e.target.closest('td[data-r]');
+  if (td) showCell(td);
+});
+
+// Filtr idzie do bazy dopiero po Enterze — każde zapytanie na dużej tabeli
+// kosztuje serwer ERP, więc nie strzelamy przy każdym wciśniętym klawiszu.
+$('#grid').addEventListener('keydown', e => {
+  const inp = e.target.closest('input[data-f]'); if (!inp || e.key !== 'Enter') return;
+  document.querySelectorAll('input[data-f]').forEach(x => { state.filters[x.dataset.f] = x.value.trim(); });
+  const focused = inp.dataset.f;
+  state.page = 1;
+  loadRows().then(() => {
+    const again = document.querySelector('input[data-f="' + CSS.escape(focused) + '"]');
+    if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+  });
+});
+
+function currentSet() {
+  if (state.mode === 'table') return state.data && { columns: state.data.columns.map(c => c.name), rows: state.data.rows };
+  return state.sqlData && state.sqlData.sets[0];
+}
+
+function showCell(td) {
+  document.querySelectorAll('td.sel').forEach(x => x.classList.remove('sel'));
+  td.classList.add('sel');
+  const set = currentSet(); if (!set) return;
+  const name = set.columns[+td.dataset.c];
+  const v = set.rows[+td.dataset.r][name];
+  $('#cell').style.display = 'block';
+  $('#cellName').textContent = name;
+  let text = v == null ? 'NULL' : String(v);
+  if (typeof v === 'string' && /^\s*[\[{]/.test(v)) { try { text = JSON.stringify(JSON.parse(v), null, 2); } catch (_) {} }
+  $('#cellVal').textContent = text;
+}
+$('#cellCopy').addEventListener('click', async () => { if (await copyText($('#cellVal').textContent)) msg('Skopiowano wartość komórki.', 'ok'); });
+
+$('#prev').addEventListener('click', () => { state.page--; loadRows(); });
+$('#next').addEventListener('click', () => { state.page++; loadRows(); });
+$('#size').addEventListener('change', () => { state.page = 1; if (state.mode === 'table' && state.table) loadRows(); });
+$('#clearF').addEventListener('click', () => { state.filters = {}; state.page = 1; loadRows(); });
+$('#colsBtn').addEventListener('click', () => { const p = $('#colsPane'); p.style.display = p.style.display === 'block' ? 'none' : 'block'; });
+
+// --- schowek: TSV z nagłówkiem opisującym źródło ---
+const tsvCell = v => v == null ? '' : String(v).replace(/[\t\r\n]+/g, ' ');
+$('#copy').addEventListener('click', async () => {
+  const set = currentSet(); if (!set) return;
+  const head = state.mode === 'table'
+    ? '# worek · ' + state.table + ' · str. ' + state.data.page + ' (' + set.rows.length + ' wierszy)' +
+      (state.sort ? ' · sort ' + state.sort + ' ' + state.dir : '') +
+      (Object.values(state.filters).some(v => v) ? ' · filtr ' + JSON.stringify(state.filters) : '')
+    : '# worek · SQL: ' + $('#sqlText').value.replace(/\s+/g, ' ').trim();
+  const text = head + ' · ' + new Date().toLocaleString('pl-PL') + '\n' +
+    set.columns.join('\t') + '\n' +
+    set.rows.map(r => set.columns.map(c => tsvCell(r[c])).join('\t')).join('\n');
+  msg(await copyText(text) ? 'Skopiowano ' + set.rows.length + ' wierszy (' + fmtN(text.length) + ' znaków).' : 'Nie udało się skopiować.', 'ok');
+});
+
+// --- SQL ---
+$('#sqlBtn').addEventListener('click', () => {
+  state.mode = 'sql'; renderTables();
+  $('#sqlPane').style.display = 'block'; $('#colsPane').style.display = 'none';
+  $('#title').textContent = 'Zapytanie SQL'; $('#count').textContent = ''; $('#pageInfo').textContent = '';
+  ['#prev', '#next', '#colsBtn', '#clearF', '#size'].forEach(s => $(s).disabled = true);
+  $('#copy').disabled = !(state.sqlData && state.sqlData.sets[0] && state.sqlData.sets[0].rows.length);
+  try { const last = localStorage.getItem('worek-sql'); if (last && !$('#sqlText').value) $('#sqlText').value = last; } catch (_) {}
+  if (!$('#sqlText').value && state.table) $('#sqlText').value = 'SELECT TOP 100 *\nFROM ' + state.table.split('.').map(x => '[' + x + ']').join('.') + '\n';
+  if (state.sqlData) renderSql(); else $('#grid').innerHTML = '<div class="empty">Wpisz zapytanie i Ctrl+Enter.</div>';
+  $('#sqlText').focus();
+});
+
+async function runSql() {
+  const text = $('#sqlText').value.trim(); if (!text) return;
+  try { localStorage.setItem('worek-sql', text); } catch (_) {}
+  msg('Wykonuję…', 'ok');
+  try {
+    state.sqlData = await api('/api/sql', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ q: text }) });
+    renderSql();
+  } catch (e) { msg(e.message, 'err'); }
+}
+$('#run').addEventListener('click', runSql);
+$('#sqlText').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); runSql(); } });
+
+function renderSql() {
+  const d = state.sqlData; const s = d.sets[0];
+  if (!s) { $('#grid').innerHTML = '<div class="empty">Zapytanie nie zwróciło wyników.</div>'; msg('Gotowe w ' + d.ms + ' ms.', 'ok'); return; }
+  const cut = s.total > s.rows.length ? ' — pokazano pierwsze ' + fmtN(s.rows.length) : '';
+  msg(fmtN(s.total) + ' wierszy w ' + d.ms + ' ms' + cut + (d.sets.length > 1 ? ' · (pokazuję 1. z ' + d.sets.length + ' wyników)' : ''), 'ok');
+  $('#count').textContent = fmtN(s.total) + ' wierszy';
+  $('#copy').disabled = !s.rows.length;
+  $('#grid').innerHTML = '<table><thead><tr>' + s.columns.map(c => '<th style="cursor:default">' + esc(c) + '</th>').join('') +
+    '</tr></thead><tbody>' + bodyRows(s.columns, s.rows) + '</tbody></table>';
+}
+
+loadTables();
+</script>
+</body>
+</html>
