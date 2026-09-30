@@ -576,36 +576,65 @@ function fmtVal(v) {
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v);
 }
-// Akumulator rozbieżności całego biegu (saveResult woła się per paczka; mail i
-// licznik w run-log powstają raz, na końcu biegu w main()).
-const rozbieznosciNaglowki = [];
-
-// Zbiorcze powiadomienie po biegu — TYLKO gdy są rozbieżności. Wysyłkę robi
-// wspólny helper lib-wspolne/powiadom.js (utrzymuje go sesja MM, SMTP z .env);
-// dopóki go nie ma, mail jest pomijany, a rozbieżności zostają w logu i
-// run-log.jsonl. Interfejs helpera do dopięcia z sesją MM.
-async function wyslijPowiadomienie(rozb, dateFrom, dateTo) {
-  const zakres = dateFrom ? (dateFrom + (dateTo && dateTo !== dateFrom ? '..' + dateTo : '')) : 'bieżący widok';
-  const tekst = 'WZ — wykryto ' + rozb.length + ' rozbieżności ERP↔baza (' + zakres + '). ' +
-    'Rekordy w bazie NIE zostały zmienione (insert-only).\n\n' +
-    rozb.map(r => '- ' + r.doc + ': ' + r.changed).join('\n');
-  try {
-    const powiadom = require('../lib-wspolne/powiadom.js');
-    if (powiadom && typeof powiadom.wyslijMail === 'function') {
-      await powiadom.wyslijMail({
-        do: 'l.dutkiewicz@savpol.pl',
-        temat: 'WZ: rozbieżności ERP↔baza (' + rozb.length + ')',
-        tekst
-      });
-      console.log('[powiadom] Wysłano zbiorczy mail o rozbieżnościach.');
-      return;
-    }
-    console.warn('[powiadom] lib-wspolne/powiadom.js jest, ale bez wyslijMail — mail pominięty (dopiąć z sesją MM).');
-  } catch (e) {
-    console.warn('[powiadom] Mail pominięty — brak lib-wspolne/powiadom.js (helper robi sesja MM). ' +
-      'Rozbieżności są w logu i run-log.jsonl.');
-  }
+// Pozycje — analogicznie do nagłówka. Klucz dopasowania: csDocsItemsPositionsId
+// (inna liczba pozycji niż w ERP to też rozbieżność). Wzór wspólny z PZ/MM.
+const POSITION_FIXED_SET = new Set(F.POSITION_FIXED_FIELDS || Object.keys(POSITION_FIXED_VALUES || {}));
+function comparablePositionColumns(columnsMeta) {
+  return columnsMeta.filter(c => !c.IS_COMPUTED
+    && c.COLUMN_NAME !== 'csDocsItemsPositionsId'
+    && !POSITION_FIXED_SET.has(c.COLUMN_NAME));
 }
+function diffPositions(scrapedRows, dbRows, columnsMeta) {
+  const empty = (v) => v === null || v === undefined || v === '';
+  // Klucz normalizowany: scrape zwraca id ze spacjami-separatorami tysięcy
+  // ("30 639 543 684"), baza czysty bigint ("30639543684"). Bez usunięcia
+  // spacji KAŻDA pozycja fałszywie wyglądałaby na "nowa"/"brak" (analog buga
+  // GUID case-insensitive, tylko na kluczu pozycji).
+  const normId = (v) => String(v).replace(/[\s ]/g, '');
+  const byId = (rows) => new Map(rows.map(r => [normId(r.csDocsItemsPositionsId), r]));
+  const scrapedById = byId(scrapedRows);
+  const dbById = byId(dbRows);
+  const diffs = [];
+  for (const [id, scrapedRow] of scrapedById) {
+    const dbRow = dbById.get(id);
+    if (!dbRow) { diffs.push({ id, kind: 'nowa-w-ERP' }); continue; }
+    for (const col of comparablePositionColumns(columnsMeta)) {
+      const name = col.COLUMN_NAME;
+      const newVal = coerceValue(scrapedRow[name], col);
+      if (empty(newVal) && !empty(dbRow[name])) continue;
+      if (!valuesEqual(dbRow[name], newVal, col)) diffs.push({ id, field: name, old: dbRow[name], new: newVal });
+    }
+  }
+  for (const id of dbById.keys()) {
+    if (!scrapedById.has(id)) diffs.push({ id, kind: 'brak-w-ERP' });
+  }
+  return diffs;
+}
+async function fetchExistingPositions(pool, headerIdColMeta, columnsMeta, ids) {
+  const map = new Map(); // csDocsHeadersId (string) -> wiersze pozycji
+  if (!ids.length) return map;
+  const cols = columnsMeta.map(c => '[' + c.COLUMN_NAME + ']').join(', ');
+  const request = pool.request();
+  const ph = ids.map((id, i) => { request.input('p' + i, mssqlType(headerIdColMeta), id); return '@p' + i; });
+  const rs = await request.query('SELECT ' + cols + ' FROM dbo.' + TARGET_POSITIONS +
+    ' WHERE [csDocsHeadersId] IN (' + ph.join(', ') + ')');
+  rs.recordset.forEach(r => {
+    const key = String(r.csDocsHeadersId);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(r);
+  });
+  return map;
+}
+
+// Wspólny mailer o rozbieżnościach (SMTP z .env; bez SMTP tylko loguje, NIGDY
+// nie rzuca; adresat w helperze). Utrzymuje go sesja MM.
+const powiadomORozbieznosciach = require('../lib-wspolne/powiadom');
+
+// Akumulator rozbieżności całego biegu (saveResult woła się per paczka; licznik
+// w run-log i zbiorczy mail powstają raz, na końcu biegu). Element wg kontraktu:
+// { docNumber, csDocsHeadersId, zmianyNaglowka:[{pole,baza,erp}],
+//   pozycjeBaza, pozycjeErp, zmianyPozycji:[{id,pole,baza,erp}] }.
+const rozbieznosci = [];
 
 async function saveResult(result, label) {
   const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
@@ -649,22 +678,47 @@ async function saveResult(result, label) {
     console.log('[wynik] Zapisano do bazy "' + DB_NAME + '": ' + insertedHeaders + ' wierszy w ' +
       TARGET_HEADERS + ', ' + insertedPositions + ' wierszy w ' + TARGET_POSITIONS + '.');
 
-    // Dokumenty JUŻ w bazie: NIE modyfikujemy (insert-only). Porównujemy scrapowane
-    // kolumny nagłówka z wersją w bazie i tylko LOGUJEMY rozbieżność — zbiorcze
-    // powiadomienie idzie na końcu biegu (main). Rekord w bazie zostaje nietknięty.
+    // Dokumenty JUŻ w bazie: WYŁĄCZNIE porównanie (odczyt), zero UPDATE/DELETE
+    // (decyzja Lecha 2026-09-30 — insert-only). Rozbieżności trafiają do logu,
+    // liczników run-log i zbiorczego maila (koniec biegu). Baza nietknięta.
     const existingHeaders = result.headers.filter(h => existingIds.has(String(coerceValue(h.csDocsHeadersId, headerIdCol))));
     if (existingHeaders.length && headerIdCol) {
       const ids = existingHeaders.map(h => coerceValue(h.csDocsHeadersId, headerIdCol)).filter(v => v !== null);
-      const dbMap = await fetchExistingHeaders(pool, headerIdCol, schema.headers, ids);
+      const dbHeaderMap = await fetchExistingHeaders(pool, headerIdCol, schema.headers, ids);
+      const dbPositionsMap = await fetchExistingPositions(pool, headerIdCol, schema.positions, ids);
       for (const h of existingHeaders) {
-        const idS = String(coerceValue(h.csDocsHeadersId, headerIdCol));
-        const dbRow = dbMap.get(idS);
-        if (!dbRow) continue;
-        const diffs = diffHeader(h, dbRow, schema.headers);
-        if (!diffs.length) continue;
-        const changed = diffs.map(d => d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new)).join('; ');
-        console.warn('[rozbieżność] ' + (h.DocNumber || idS) + ': ' + changed);
-        rozbieznosciNaglowki.push({ doc: h.DocNumber || idS, id: idS, changed });
+        const key = String(coerceValue(h.csDocsHeadersId, headerIdCol));
+        const dbRow = dbHeaderMap.get(key);
+        const zmianyNaglowka = dbRow
+          ? diffHeader(h, dbRow, schema.headers).map(d => ({ pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) }))
+          : [];
+
+        const scrapedPositions = result.positions.filter(p => String(coerceValue(p.csDocsHeadersId, headerIdCol)) === key);
+        const dbPositions = dbPositionsMap.get(key) || [];
+        const zmianyPozycji = diffPositions(scrapedPositions, dbPositions, schema.positions).map(d => d.kind
+          ? ({ id: d.id, pole: d.kind, baza: '', erp: '' })
+          : ({ id: d.id, pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) }));
+
+        if (!zmianyNaglowka.length && !zmianyPozycji.length) continue;
+
+        if (zmianyNaglowka.length) {
+          console.warn('[rozbieżność] ' + (h.DocNumber || key) + ' (id=' + key + '): ' +
+            zmianyNaglowka.map(z => z.pole + ': ' + z.baza + ' -> ' + z.erp).join('; '));
+        }
+        if (zmianyPozycji.length) {
+          console.warn('[rozbieżność-pozycje] ' + (h.DocNumber || key) + ' (id=' + key + '): ' +
+            zmianyPozycji.map(z => (z.baza === '' && z.erp === '')
+              ? ('poz. ' + z.id + ' ' + z.pole)
+              : ('poz. ' + z.id + ' ' + z.pole + ': ' + z.baza + ' -> ' + z.erp)).join('; '));
+        }
+        rozbieznosci.push({
+          docNumber: h.DocNumber || key,
+          csDocsHeadersId: key,
+          zmianyNaglowka,
+          pozycjeBaza: dbPositions.length,
+          pozycjeErp: scrapedPositions.length,
+          zmianyPozycji
+        });
       }
     }
   } finally {
@@ -997,10 +1051,13 @@ async function main() {
       }
     }
 
-    if (rozbieznosciNaglowki.length) {
-      console.warn('[rozbieżność] RAZEM ' + rozbieznosciNaglowki.length +
-        ' dokumentów z bazy różni się od ERP — baza NIE zmieniona (insert-only).');
-      await wyslijPowiadomienie(rozbieznosciNaglowki, dateFrom, dateTo);
+    if (rozbieznosci.length) {
+      const rozbH = rozbieznosci.filter(r => r.zmianyNaglowka.length).length;
+      const rozbP = rozbieznosci.filter(r => r.zmianyPozycji.length).length;
+      console.warn('[rozbieżność] RAZEM ' + rozbieznosci.length + ' dok. różni się od ERP (' +
+        rozbH + ' nagł. / ' + rozbP + ' poz.) — baza NIE zmieniona (insert-only).');
+      const label = dateFrom ? (dateFrom + '..' + (dateTo || dateFrom)) : null;
+      await powiadomORozbieznosciach('wz', rozbieznosci, { label });
     }
   } catch (err) {
     errorMsg = err.message;
@@ -1016,7 +1073,8 @@ async function main() {
       expectedTotal,
       allPagesExhausted,
       stoppedReason: lastStoppedReason,
-      rozbieznosciNaglowki: rozbieznosciNaglowki.length,
+      rozbieznosciNaglowki: rozbieznosci.filter(r => r.zmianyNaglowka.length).length,
+      rozbieznosciPozycje: rozbieznosci.filter(r => r.zmianyPozycji.length).length,
       czasTrwaniaMs: Date.now() - runStarted,
       blad: errorMsg
     });
