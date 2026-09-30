@@ -507,6 +507,142 @@ async function insertRows(pool, tableName, columnsMeta, rows) {
   return inserted;
 }
 
+// ---------- Wykrywanie rozbieżności (dokument zmieniony w ERP po scrapie) ----------
+// Decyzja Lecha 2026-09-30 (zmieniona tego samego dnia): NIE modyfikujemy
+// istniejących rekordów w bazie — dedup po csDocsHeadersId nadal TYLKO
+// pomija (jak wcześniej). Jeśli dane z ERP różnią się od tego, co już jest w
+// worku, WYŁĄCZNIE logujemy różnicę (konsola + run-log.jsonl) — żaden UPDATE
+// ani DELETE na tabelach docelowych. Powiadomienie mailowe (l.dutkiewicz@savpol.pl)
+// ma iść przez wspólny lib-wspolne/powiadom.js (budowany w sesji Scraper MM) —
+// nie duplikujemy własnego mailera tutaj, dopinamy gdy będzie gotowy.
+
+// Kolumny nagłówka do PORÓWNANIA (tylko wykrywanie, bez zapisu): scrapowane,
+// nie wyliczane, nie klucz i nie stałe (HEADER_FIXED_VALUES są stałe per typ
+// — zawsze równe, nie ma sensu ich porównywać).
+const HEADER_FIXED_SET = new Set(F.HEADER_FIXED_FIELDS);
+function comparableHeaderColumns(columnsMeta) {
+  return columnsMeta.filter(c => !c.IS_COMPUTED
+    && c.COLUMN_NAME !== 'csDocsHeadersId'
+    && !HEADER_FIXED_SET.has(c.COLUMN_NAME));
+}
+
+// Równość wg TYPU kolumny — normalizacja, żeby nie robić fałszywych różnic:
+// data z/bez czasu, decimal jako string vs number, bigint bez utraty precyzji,
+// uniqueidentifier (csDocsHeadersG: baza WIELKIMI, ERP małymi liter — to samo).
+// newVal jest już SKOERCOWANY (coerceValue), oldVal to wartość z bazy.
+function valuesEqual(oldVal, newVal, col) {
+  const empty = (v) => v === null || v === undefined || v === '';
+  if (empty(oldVal) && empty(newVal)) return true;
+  if (empty(oldVal) || empty(newVal)) return false;
+  switch (col.DATA_TYPE) {
+    case 'date': case 'datetime': case 'datetime2': case 'smalldatetime': {
+      const d = (v) => (v instanceof Date ? v : new Date(v));
+      const a = d(oldVal), b = d(newVal);
+      if (isNaN(a.getTime()) || isNaN(b.getTime())) return String(oldVal) === String(newVal);
+      return a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+    }
+    case 'int': case 'bigint': case 'smallint': case 'tinyint': {
+      const norm = (v) => (typeof v === 'number' ? String(Math.trunc(v)) : String(v).replace(/\s/g, '').trim());
+      return norm(oldVal) === norm(newVal);
+    }
+    case 'decimal': case 'numeric': case 'float': case 'real': case 'money': case 'smallmoney': {
+      const a = Number(oldVal), b = Number(newVal);
+      if (isNaN(a) || isNaN(b)) return String(oldVal) === String(newVal);
+      return Math.abs(a - b) < 1e-6;
+    }
+    case 'bit':
+      return (Number(oldVal) ? 1 : 0) === (Number(newVal) ? 1 : 0);
+    case 'uniqueidentifier':
+      return String(oldVal).toLowerCase() === String(newVal).toLowerCase();
+    default:
+      return String(oldVal).trim() === String(newVal).trim();
+  }
+}
+
+function diffHeader(scrapedRow, dbRow, columnsMeta) {
+  const empty = (v) => v === null || v === undefined || v === '';
+  const diffs = [];
+  for (const col of comparableHeaderColumns(columnsMeta)) {
+    const name = col.COLUMN_NAME;
+    const newVal = coerceValue(scrapedRow[name], col);
+    // OCHRONA: nie nadpisuj niepustej wartości w bazie scrapowanym PUSTYM.
+    // Puste pole ze scrapowania to niemal zawsze "kolumna nie renderowała się w
+    // gridzie" (zły układ listy), a nie "wyczyszczono w ERP". Bez tego jedna
+    // wyłączona kolumna wyzerowałaby to pole we WSZYSTKICH dokumentach. Realne
+    // czyszczenie pola w ERP jest rzadkie — świadomie je tu pomijamy.
+    if (empty(newVal) && !empty(dbRow[name])) continue;
+    if (!valuesEqual(dbRow[name], newVal, col)) diffs.push({ field: name, old: dbRow[name], new: newVal });
+  }
+  return diffs;
+}
+
+// Pobiera z bazy istniejące wiersze nagłówków (komplet kolumn) po ID — do
+// porównania z tym, co zescrapowano.
+async function fetchExistingHeaders(pool, headerIdColMeta, columnsMeta, ids) {
+  const map = new Map();
+  if (!ids.length) return map;
+  const cols = columnsMeta.map(c => '[' + c.COLUMN_NAME + ']').join(', ');
+  const request = pool.request();
+  const ph = ids.map((id, i) => { request.input('h' + i, mssqlType(headerIdColMeta), id); return '@h' + i; });
+  const rs = await request.query('SELECT ' + cols + ' FROM dbo.' + TARGET_HEADERS + ' WHERE [csDocsHeadersId] IN (' + ph.join(', ') + ')');
+  rs.recordset.forEach(r => map.set(String(r.csDocsHeadersId), r));
+  return map;
+}
+
+// Kolumny pozycji do PORÓWNANIA: scrapowane, nie wyliczane, nie klucz i nie
+// stałe — analogicznie do nagłówka. Klucz dopasowania to csDocsItemsPositionsId
+// (jeśli dokument ma inną liczbę pozycji niż w ERP, to też jest rozbieżność).
+const POSITION_FIXED_SET = new Set(F.POSITION_FIXED_FIELDS);
+function comparablePositionColumns(columnsMeta) {
+  return columnsMeta.filter(c => !c.IS_COMPUTED
+    && c.COLUMN_NAME !== 'csDocsItemsPositionsId'
+    && !POSITION_FIXED_SET.has(c.COLUMN_NAME));
+}
+
+function diffPositions(scrapedRows, dbRows, columnsMeta) {
+  const empty = (v) => v === null || v === undefined || v === '';
+  const byId = (rows) => new Map(rows.map(r => [String(r.csDocsItemsPositionsId), r]));
+  const scrapedById = byId(scrapedRows);
+  const dbById = byId(dbRows);
+  const diffs = [];
+  for (const [id, scrapedRow] of scrapedById) {
+    const dbRow = dbById.get(id);
+    if (!dbRow) { diffs.push({ id, kind: 'nowa-w-ERP' }); continue; }
+    for (const col of comparablePositionColumns(columnsMeta)) {
+      const name = col.COLUMN_NAME;
+      const newVal = coerceValue(scrapedRow[name], col);
+      if (empty(newVal) && !empty(dbRow[name])) continue;
+      if (!valuesEqual(dbRow[name], newVal, col)) diffs.push({ id, field: name, old: dbRow[name], new: newVal });
+    }
+  }
+  for (const id of dbById.keys()) {
+    if (!scrapedById.has(id)) diffs.push({ id, kind: 'brak-w-ERP' });
+  }
+  return diffs;
+}
+
+// Istniejące pozycje z bazy dla listy nagłówków (do porównania, bez modyfikacji).
+async function fetchExistingPositions(pool, headerIdColMeta, columnsMeta, ids) {
+  const map = new Map(); // csDocsHeadersId (string) -> wiersze
+  if (!ids.length) return map;
+  const cols = columnsMeta.map(c => '[' + c.COLUMN_NAME + ']').join(', ');
+  const request = pool.request();
+  const ph = ids.map((id, i) => { request.input('p' + i, mssqlType(headerIdColMeta), id); return '@p' + i; });
+  const rs = await request.query('SELECT ' + cols + ' FROM dbo.' + TARGET_POSITIONS + ' WHERE [csDocsHeadersId] IN (' + ph.join(', ') + ')');
+  rs.recordset.forEach(r => {
+    const key = String(r.csDocsHeadersId);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(r);
+  });
+  return map;
+}
+
+function fmtVal(v) {
+  if (v === null || v === undefined) return 'NULL';
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v);
+}
+
 // Prosty CSV (średnik jako separator). DOPISUJE do pliku (nagłówek tylko przy
 // pierwszym zapisie) — zapisujemy PACZKAMI w trakcie przebiegu.
 function appendCsv(filePath, rows) {
@@ -536,7 +672,7 @@ async function saveResult(result, label) {
     console.log('[wynik]', forceCsv ? '--csv wymuszone' : (!DB_NAME ? 'DB_NAME nie ustawione' : 'brak schema-test-tables.json'),
       '— dopisano do', headersPath, 'i', positionsPath,
       '(+' + result.headers.length + ' PZ, +' + result.positions.length + ' pozycji w tej paczce, partial=' + result.partial + ')');
-    return;
+    return { insertedHeaders: 0, insertedPositions: 0, headersWithDiff: 0, positionRowsWithDiff: 0 };
   }
 
   const config = {
@@ -547,13 +683,15 @@ async function saveResult(result, label) {
   const pool = await sql.connect(config);
   try {
     const headerIdCol = schema.headers.find(c => c.COLUMN_NAME === 'csDocsHeadersId');
+    const idStr = (r) => String(coerceValue(r.csDocsHeadersId, headerIdCol));
     const existingIds = headerIdCol ? await findExistingHeaderIds(pool, headerIdCol, result.headers) : new Set();
 
-    const newHeaders = result.headers.filter(h => !existingIds.has(String(coerceValue(h.csDocsHeadersId, headerIdCol))));
-    const newPositions = result.positions.filter(p => !existingIds.has(String(coerceValue(p.csDocsHeadersId, headerIdCol))));
+    const newHeaders = result.headers.filter(h => !existingIds.has(idStr(h)));
+    const existingHeaders = result.headers.filter(h => existingIds.has(idStr(h)));
+    const newPositions = result.positions.filter(p => !existingIds.has(idStr(p)));
 
     if (existingIds.size) {
-      console.log('[wynik] Pominięto ' + existingIds.size + ' dokumentów, które już były w bazie (ochrona przed duplikatem).');
+      console.log('[wynik] Pominięto ' + existingIds.size + ' dokumentów, które już były w bazie (dedup — TYLKO odczyt, bez modyfikacji istniejących rekordów).');
     }
 
     if (WRITE_TO_PROD) {
@@ -563,6 +701,39 @@ async function saveResult(result, label) {
     const insertedPositions = await insertRows(pool, TARGET_POSITIONS, schema.positions, newPositions);
     console.log('[wynik] Zapisano do bazy "' + DB_NAME + '": ' + insertedHeaders + ' wierszy w ' +
       TARGET_HEADERS + ', ' + insertedPositions + ' wierszy w ' + TARGET_POSITIONS + '.');
+
+    // Dokumenty już w bazie: WYŁĄCZNIE porównanie (odczyt) z tym, co zescrapowano
+    // teraz — zero UPDATE/DELETE na tabelach docelowych (decyzja Lecha 2026-09-30).
+    // Rozbieżność trafia do logu konsoli i do liczników w run-log.jsonl; mail do
+    // l.dutkiewicz@savpol.pl idzie osobno przez wspólny lib-wspolne/powiadom.js
+    // (gdy będzie gotowy — patrz komentarz przy diffHeader wyżej).
+    let headersWithDiff = 0, positionRowsWithDiff = 0;
+    if (existingHeaders.length) {
+      const ids = existingHeaders.map(h => coerceValue(h.csDocsHeadersId, headerIdCol)).filter(v => v !== null);
+      const dbHeaderMap = await fetchExistingHeaders(pool, headerIdCol, schema.headers, ids);
+      const dbPositionsMap = await fetchExistingPositions(pool, headerIdCol, schema.positions, ids);
+      for (const h of existingHeaders) {
+        const key = idStr(h);
+        const dbRow = dbHeaderMap.get(key);
+        if (dbRow) {
+          const diffs = diffHeader(h, dbRow, schema.headers);
+          if (diffs.length) {
+            headersWithDiff++;
+            const changed = diffs.map(d => d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new)).join('; ');
+            console.log('[rozbieżność] ' + (h.DocNumber || key) + ' (id=' + key + '): ' + changed);
+          }
+        }
+        const scrapedPositions = result.positions.filter(p => idStr(p) === key);
+        const dbPositions = dbPositionsMap.get(key) || [];
+        const posDiffs = diffPositions(scrapedPositions, dbPositions, schema.positions);
+        if (posDiffs.length) {
+          positionRowsWithDiff += posDiffs.length;
+          const changed = posDiffs.map(d => d.kind ? ('poz. ' + d.id + ' ' + d.kind) : ('poz. ' + d.id + ' ' + d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new))).join('; ');
+          console.log('[rozbieżność-pozycje] ' + (h.DocNumber || key) + ' (id=' + key + '): ' + changed);
+        }
+      }
+    }
+    return { insertedHeaders, insertedPositions, headersWithDiff, positionRowsWithDiff };
   } finally {
     await pool.close();
   }
@@ -739,6 +910,8 @@ async function main() {
 
   let totalHeaders = 0;
   let totalPositions = 0;
+  let totalHeadersWithDiff = 0;   // rozbieżności nagłówka wobec bazy (TYLKO log, bez zapisu)
+  let totalPositionRowsWithDiff = 0; // j.w., pozycje
   let allPagesExhausted = false;
   let lastStoppedReason = null;
   let expectedTotal = null;
@@ -819,7 +992,11 @@ async function main() {
       });
 
       applyFixedValues(batch);
-      await saveResult(batch, csvLabel);
+      const wr = await saveResult(batch, csvLabel);
+      if (wr) {
+        totalHeadersWithDiff += wr.headersWithDiff || 0;
+        totalPositionRowsWithDiff += wr.positionRowsWithDiff || 0;
+      }
 
       batch.completedDocNumbers.forEach(d => processedThisRun.add(d));
       totalHeaders += batch.headers.length;
@@ -855,7 +1032,9 @@ async function main() {
     }
 
     console.log('[pz] Koniec sesji. Zebrano w tej sesji: ' + totalHeaders + ' PZ, ' + totalPositions + ' pozycji.' +
-      (lastStoppedReason ? ' Powód zatrzymania: ' + lastStoppedReason + '.' : ' (lista wyczerpana).'));
+      (lastStoppedReason ? ' Powód zatrzymania: ' + lastStoppedReason + '.' : ' (lista wyczerpana).') +
+      (totalHeadersWithDiff ? ' UWAGA: ' + totalHeadersWithDiff + ' dok. już w bazie ma rozbieżność wobec ERP (poz.: ' +
+        totalPositionRowsWithDiff + ') — TYLKO zalogowane, baza NIE zmodyfikowana.' : ''));
 
     if (expectedTotal) {
       const haveTotal = processedThisRun.size;
@@ -877,6 +1056,8 @@ async function main() {
       sessionMinutes: Number(sessionMinutes.toFixed(1)),
       maxDocs: MAX_DOCS, batchSize: BATCH_SIZE,
       docsZebraneWTejSesji: totalHeaders,
+      rozbieznosciNaglowki: totalHeadersWithDiff,
+      rozbieznosciPozycje: totalPositionRowsWithDiff,
       pozycjeZebraneWTejSesji: totalPositions,
       docsLacznieDlaZakresu: (dateFrom || dateTo) ? processedThisRun.size : null,
       expectedTotal,
