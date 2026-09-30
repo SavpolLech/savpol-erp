@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.3.1
+// @version      4.3.2
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -126,15 +126,26 @@
     'l.dutkiewicz@savpol.pl'   // dokładną wartość sprawdzisz przez savpolKtoJestem()
   ];
 
+  // Login zapamiętujemy między odświeżeniami. Bez tego przyciski znikały po
+  // każdym F5 aż do przechwycenia sesji (kilka sekund) — wyglądało to jak
+  // „przycisk zniknął". Zapamiętany login pozwala pokazać je OD RAZU właściwej
+  // osobie; po przechwyceniu i tak aktualizujemy go świeżym.
+  const LOGIN_KLUCZ = 'savpol_login_erp';
+
   function aktualnyLoginErp() {
     const li = erpPodsluch && erpPodsluch.koperta && erpPodsluch.koperta.LoginInfo;
-    return li && li.UserName ? String(li.UserName) : '';
+    const live = li && li.UserName ? String(li.UserName) : '';
+    if (live) {
+      try { if (typeof GM_setValue === 'function') GM_setValue(LOGIN_KLUCZ, live); } catch (e) { /* nieistotne */ }
+      return live;
+    }
+    try { return typeof GM_getValue === 'function' ? String(GM_getValue(LOGIN_KLUCZ, '') || '') : ''; }
+    catch (e) { return ''; }
   }
 
-  // Dopóki nie mamy jeszcze sesji, login jest pusty — przy niepustej liście
-  // znaczy to „nie pokazuj", więc przyciski pojawią się dopiero, gdy skrypt
-  // przechwyci sesję (sekunda–dwie po wejściu na katalog). Świadomie: lepiej
-  // pokazać z opóźnieniem właściwej osobie niż mignąć wszystkim.
+  // Przy niepustej liście dostęp mają tylko wskazane loginy. Login bierzemy z
+  // aktualnej sesji, a zanim ją przechwycimy — z zapamiętanego (patrz wyżej),
+  // więc uprawniona osoba widzi przyciski natychmiast po odświeżeniu.
   function czyDostepZaawansowany() {
     if (!DOSTEP_ZAAWANSOWANY.length) return true;
     const login = aktualnyLoginErp().toLowerCase();
