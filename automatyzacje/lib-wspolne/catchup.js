@@ -59,7 +59,8 @@ module.exports = function runCatchup(opts) {
   // okno — bierzemy dokładnie te dni, które są jeszcze niekompletne wg state/
   // (ręczny reset stanu sprawia, że dzień znów jest "niekompletny" i wejdzie).
   const targets = [];
-  if (Array.isArray(opts.days) && opts.days.length) {
+  const explicit = Array.isArray(opts.days) && opts.days.length;
+  if (explicit) {
     for (const day of opts.days) if (!isComplete(day)) targets.push(day);
   } else {
     const today = new Date();
@@ -71,7 +72,10 @@ module.exports = function runCatchup(opts) {
     }
   }
 
-  console.log(`[catchup ${label}] ${new Date().toISOString()} okno ${WINDOW} dni -> ${targetLabel}. ` +
+  const zakresOpis = explicit
+    ? `zakres ${opts.days[0]}..${opts.days[opts.days.length - 1]} (${opts.days.length} dni)`
+    : `okno ${WINDOW} dni`;
+  console.log(`[catchup ${label}] ${new Date().toISOString()} ${zakresOpis} -> ${targetLabel}. ` +
     `Do zrobienia: ${targets.join(', ') || '(nic — wszystko kompletne)'}`);
   emit('start', `${label} scrape — start`, targets.length
     ? `Dobijam (${targetLabel}): ${targets.join(', ')}`

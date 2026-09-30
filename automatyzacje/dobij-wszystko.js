@@ -53,6 +53,32 @@ const SCRAPERS = (process.env.SCRAPERS || ALL.join(','))
 // (np. jednorazowy backfill do weryfikacji, bez ruszania produkcji).
 const TARGET = process.env.TARGET || 'prod';
 
+// Zakres dat. DOMYŚLNIE: okno wsteczne z catchup (CATCHUP_WINDOW dni, codzienny
+// bieg). FROM=RRRR-MM-DD (+ opcjonalnie TO, domyślnie wczoraj) daje JAWNĄ listę
+// dni — do kawałkowanego backfillu historycznego (np. FROM=2026-08-13 TO=2026-08-26).
+function ymd(d) { return d.toISOString().slice(0, 10); }
+function parseDay(name, v) {
+  // Round-trip: odrzuca nie tylko zły format, ale i nieistniejące daty
+  // (2026-13-01, 2026-02-30 dają Invalid Date / rollover, które NIE wrócą 1:1).
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { console.error(`BŁĄD: ${name}='${v}' musi być RRRR-MM-DD.`); process.exit(2); }
+  const d = new Date(v + 'T00:00:00Z');
+  if (Number.isNaN(d.getTime()) || ymd(d) !== v) { console.error(`BŁĄD: ${name}='${v}' nie istnieje w kalendarzu.`); process.exit(2); }
+  return d;
+}
+function buildDays(from, to) {
+  const start = parseDay('FROM', from);
+  const end = parseDay('TO', to);
+  if (start > end) { console.error(`BŁĄD: FROM (${from}) jest po TO (${to}).`); process.exit(2); }
+  const days = [];
+  for (let d = start; d <= end; d.setUTCDate(d.getUTCDate() + 1)) days.push(ymd(d));
+  return days; // zawsze >=1 dzień, gdy FROM/TO poprawne — brak cichego spadku do okna
+}
+let DAYS = null;
+if (process.env.FROM) {
+  const to = process.env.TO || ymd(new Date(Date.now() - 86400000)); // domyślnie wczoraj
+  DAYS = buildDays(process.env.FROM, to);
+}
+
 if (!acquireLock()) process.exit(3);
 
 const cleanup = () => releaseLock();
@@ -60,7 +86,8 @@ process.on('exit', cleanup);
 process.on('SIGINT', () => { cleanup(); process.exit(130); });
 process.on('SIGTERM', () => { cleanup(); process.exit(143); });
 
-console.log(`[dobij-wszystko] ${new Date().toISOString()} start, kolejność: ${SCRAPERS.join(' -> ')}, cel: ${TARGET.toUpperCase()}`);
+console.log(`[dobij-wszystko] ${new Date().toISOString()} start, kolejność: ${SCRAPERS.join(' -> ')}, cel: ${TARGET.toUpperCase()}` +
+  (DAYS ? `, zakres: ${DAYS[0]}..${DAYS[DAYS.length - 1]} (${DAYS.length} dni)` : ''));
 
 const summary = [];
 for (const type of SCRAPERS) {
@@ -72,6 +99,7 @@ for (const type of SCRAPERS) {
   console.log(`\n[dobij-wszystko] ===== ${type.toUpperCase()} =====`);
   const wynik = runCatchup({
     dir, prefix: type, label: type.toUpperCase(), target: TARGET,
+    days: DAYS || undefined,
     onEvent: (_kind, title, message) => toast(title, message)
   });
   summary.push({ type, ...wynik });
