@@ -602,7 +602,14 @@ function comparablePositionColumns(columnsMeta) {
 
 function diffPositions(scrapedRows, dbRows, columnsMeta) {
   const empty = (v) => v === null || v === undefined || v === '';
-  const byId = (rows) => new Map(rows.map(r => [String(r.csDocsItemsPositionsId), r]));
+  // Klucz dopasowania MUSI być znormalizowany: surowy scrape ma spacje jako
+  // separator tysięcy ("30 639 543 684", w tym U+00A0 nierozdzielająca — stąd
+  // [\s ], nie samo \s), baza zwraca czysty bigint ("30639543684"). Bez tego
+  // KAŻDA pozycja fałszywie wychodzi "nowa-w-ERP"+"brak-w-ERP" (znaleziono na
+  // WZ testem 09-20 — bug analogiczny do GUID case-insensitive, tylko na
+  // kluczu pozycji; przy SMTP zalałoby to spurious mailami co bieg).
+  const normId = (v) => String(v).replace(/[\s ]/g, '');
+  const byId = (rows) => new Map(rows.map(r => [normId(r.csDocsItemsPositionsId), r]));
   const scrapedById = byId(scrapedRows);
   const dbById = byId(dbRows);
   const diffs = [];
