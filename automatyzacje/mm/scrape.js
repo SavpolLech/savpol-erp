@@ -483,6 +483,11 @@ function valuesEqual(oldVal, newVal, col) {
     }
     case 'bit':
       return (Number(oldVal) ? 1 : 0) === (Number(newVal) ? 1 : 0);
+    case 'uniqueidentifier':
+      // GUID jest case-insensitive: baza zwraca WIELKIMI literami, ERP renderuje
+      // małymi — ten sam identyfikator. Bez tego KAŻDY dokument fałszywie
+      // "różniłby się" na csDocsHeadersG i był bez sensu aktualizowany.
+      return String(oldVal).toLowerCase() === String(newVal).toLowerCase();
     default:
       return String(oldVal).trim() === String(newVal).trim();
   }
