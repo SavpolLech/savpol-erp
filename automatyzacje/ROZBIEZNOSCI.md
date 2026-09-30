@@ -233,3 +233,8 @@ Dokumenty, których dane w ERP różnią się od tego, co JUŻ jest w bazie (wor
 - [ ] 0021226 (id=444730853): csItemsBarCodes.EAN (Ord=1): 2000150000002N [id 450824501] -> 2000150000002N [id 30719774436]
 - [ ] 0021287 (id=449577026): csItemsBarCodes.EAN (Ord=1): 2000120000001B [id 450824504] -> 2000120000001B [id 30719774445]
 - [ ] 0021306 (id=449576984): csItemsBarCodes.EAN (Ord=1): 2000120000001N [id 450824510] -> 2000120000001N [id 30719774442]
+
+## 2026-09-30T12:22:30.217Z · PRODUKTY · wgraj-grupy csItemsGroupsItems · 1 dok.
+
+- [ ] 0013530 (id=218529880): csItemsGroupsItems.Def4Analysis: 1 -> 0
+- [ ] 0013530 (id=218529880): csItemsGroupsItems.isMain: NULL -> 0
