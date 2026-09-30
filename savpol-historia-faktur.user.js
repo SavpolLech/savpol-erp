@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.1.2
+// @version      4.2.0
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -5557,6 +5557,32 @@
     noticeEl.appendChild(t);
   }
 
+  // Usuwanie węzłów po strukturze (DOM), nie regexem — bezpieczne dla
+  // zagnieżdżonego HTML. Parsujemy opis, wycinamy pasujące węzły, serializujemy.
+  //   'css'       — blok(i) <style> (CSS jest już ładowany globalnie).
+  //   'crosssell' — sekcja div.svp-pdp__section ZAWIERAJĄCA .svp-pdp__cards
+  //                 (pozostałe svp-pdp__section to inne części PDP — zostają).
+  // Zwraca nową treść i liczbę usuniętych węzłów.
+  function usunWezly(html, tryb) {
+    const d = document.createElement('div');
+    d.innerHTML = String(html);
+    let usun = 0;
+    if (tryb === 'css') {
+      d.querySelectorAll('style').forEach(n => { n.remove(); usun++; });
+    } else if (tryb === 'crosssell') {
+      Array.from(d.querySelectorAll('.svp-pdp__section'))
+        .filter(s => s.querySelector('.svp-pdp__cards'))
+        .forEach(n => { n.remove(); usun++; });
+    }
+    return { nowa: d.innerHTML, usun: usun };
+  }
+
+  const BULK_OPIS = {
+    tekst: 'podmiana tekstu',
+    crosssell: 'usuń sekcję cross-sell (div.svp-pdp__section z .svp-pdp__cards)',
+    css: 'usuń blok CSS (<style>)'
+  };
+
   function createBulkPanel() {
     const old = document.getElementById(BULK_TOOL.PANEL_ID);
     if (old) old.remove();
@@ -5588,16 +5614,23 @@
       '     border-radius:4px;border-left:3px solid transparent;font-size:12px;',
       '     white-space:pre-wrap;max-height:170px;overflow:auto"></div>',
       '<div data-role="pelne">',
-      '  <div style="font-size:12px;opacity:.75;margin-bottom:6px">',
-      '    Podmienia fragment HTML w polu „Opis produktu", wszystkie wystąpienia ',
-      '    w każdym SKU. Najpierw dosłownie; gdy nie trafi, próbuje formy ',
-      '    znormalizowanej (ERP rozwija np. „&lt;rect/&gt;" do „&lt;rect&gt;&lt;/rect&gt;").</div>',
+      '  <div style="font-size:12px;opacity:.85;margin-bottom:4px">Operacja:</div>',
+      '  <div style="display:flex;flex-direction:column;gap:3px;font-size:12px;margin-bottom:8px">',
+      '    <label style="cursor:pointer"><input type="radio" name="savpol-bulk-tryb" data-role="tryb-tekst" checked> Podmień tekst (dosłownie / po normalizacji)</label>',
+      '    <label style="cursor:pointer"><input type="radio" name="savpol-bulk-tryb" data-role="tryb-crosssell"> Usuń sekcję cross-sell</label>',
+      '    <label style="cursor:pointer"><input type="radio" name="savpol-bulk-tryb" data-role="tryb-css"> Usuń blok CSS (&lt;style&gt;)</label>',
+      '  </div>',
       '  <div style="font-size:12px;opacity:.85;margin-top:6px">SKU (po jednym w wierszu):</div>',
       '  <textarea data-role="sku" rows="4" spellcheck="false" style="' + field + '"></textarea>',
-      '  <div style="font-size:12px;opacity:.85;margin-top:8px">Szukam (HTML):</div>',
-      '  <textarea data-role="szukam" rows="4" spellcheck="false" style="' + field + '"></textarea>',
-      '  <div style="font-size:12px;opacity:.85;margin-top:8px">Zmieniam na:</div>',
-      '  <textarea data-role="naco" rows="4" spellcheck="false" style="' + field + '"></textarea>',
+      '  <div data-role="pola-tekst">',
+      '    <div style="font-size:12px;opacity:.85;margin-top:8px">Szukam (HTML):</div>',
+      '    <textarea data-role="szukam" rows="4" spellcheck="false" style="' + field + '"></textarea>',
+      '    <div style="font-size:12px;opacity:.85;margin-top:8px">Zmieniam na:</div>',
+      '    <textarea data-role="naco" rows="4" spellcheck="false" style="' + field + '"></textarea>',
+      '  </div>',
+      '  <div data-role="pola-usun" style="display:none;font-size:12px;opacity:.75;margin-top:8px">',
+      '    Tryb usuwania: podaj SKU, puść „Sprawdź na sucho" — raport pokaże, ',
+      '    które produkty faktycznie to mają. Nic nie rusza do „Zapisz naprawdę".</div>',
       '  <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">',
       '    <button data-role="sucho" style="' + btn + ';background:#3b82f6;color:#fff">Sprawdź na sucho</button>',
       '    <button data-role="zapisz" style="' + btn + ';background:#b91c1c;color:#fff" disabled>Zapisz naprawdę</button>',
@@ -5623,13 +5656,33 @@
     const el = r => panel.querySelector('[data-role="' + r + '"]');
     const info = (t, rodzaj) => ustawBulkNotice(el('notice'), rodzaj || 'busy', t);
 
+    const tryb = el('tryb-crosssell').checked ? 'crosssell'
+      : el('tryb-css').checked ? 'css' : 'tekst';
     const skuLista = parsujSku(el('sku').value);
     const szukam = el('szukam').value;
     const naco = el('naco').value;
 
     if (!skuLista.length) { info('Wklej przynajmniej jedno SKU.', 'error'); return; }
-    if (!szukam) { info('Podaj fragment, którego mam szukać.', 'error'); return; }
-    if (szukam === naco) { info('Szukany i docelowy fragment są identyczne — nie ma czego zmieniać.', 'error'); return; }
+    if (tryb === 'tekst') {
+      if (!szukam) { info('Podaj fragment, którego mam szukać.', 'error'); return; }
+      if (szukam === naco) { info('Szukany i docelowy fragment są identyczne — nie ma czego zmieniać.', 'error'); return; }
+    }
+
+    // Jedno miejsce liczące, co zrobić z opisem danego produktu — zależnie od
+    // trybu. Zwraca null, gdy nie ma nic do zrobienia (brak trafienia/węzłów).
+    const przygotuj = stara => {
+      if (tryb === 'tekst') {
+        const t = dopasujFragment(stara, szukam, naco);
+        if (t.n === 0) return null;
+        return {
+          nowa: stara.split(t.szukam).join(t.naco), n: t.n,
+          opis: t.n + '× ' + (t.tryb === 'dosłownie' ? 'do podmiany' : 'do podmiany [' + t.tryb + ']')
+        };
+      }
+      const r = usunWezly(stara, tryb);
+      if (r.usun === 0 || r.nowa === stara) return null;
+      return { nowa: r.nowa, n: r.usun, opis: r.usun + (tryb === 'css' ? '× <style> do usunięcia' : '× sekcja cross-sell do usunięcia') };
+    };
 
     bulkRun.running = true;
     bulkRun.stop = false;
@@ -5654,20 +5707,19 @@
         }
         const wiersz = opisPoKluczu(lista.wiersze, BULK_TOOL.POLE);
         const stara = wiersz ? String(wiersz.ItemDesc1_PL || wiersz.ItemTranslatedDesc1 || '') : '';
-        const traf = dopasujFragment(stara, szukam, naco);
+        const r = przygotuj(stara);
 
-        if (traf.n === 0) {
+        if (!r) {
           pominiete++;
-          wyniki.push('· ' + sku + ' — nie znaleziono fragmentu, pomijam');
+          wyniki.push('· ' + sku + ' — ' + (tryb === 'tekst' ? 'nie znaleziono fragmentu' : 'brak tego elementu') + ', pomijam');
           continue;
         }
-        sumaWystapien += traf.n;
-        const nowa = stara.split(traf.szukam).join(traf.naco);
-        const jak = traf.tryb === 'dosłownie' ? '' : ' [' + traf.tryb + ']';
+        sumaWystapien += r.n;
+        const nowa = r.nowa;
 
         if (naSucho) {
           zmienione++;
-          wyniki.push('~ ' + sku + ' — ' + traf.n + '× do podmiany' + jak + '  ('
+          wyniki.push('~ ' + sku + ' — ' + r.opis + '  ('
             + stara.length + ' → ' + nowa.length + ' znaków)');
           continue;
         }
@@ -5682,12 +5734,12 @@
         if (w.ok) {
           zmienione++;
           udaneSku.push(sku);
-          wyniki.push('✓ ' + sku + ' — ' + traf.n + '× podmienione i potwierdzone' + jak + '  ('
-            + stara.length + ' → ' + nowa.length + ' znaków)'
+          wyniki.push('✓ ' + sku + ' — ' + r.opis.replace('do ', '').replace('usunięcia', 'usunięte').replace('podmiany', 'podmienione')
+            + ' i potwierdzone  (' + stara.length + ' → ' + nowa.length + ' znaków)'
             + (w.lustro ? '' : '  [uwaga: repo apki nieodświeżone]'));
         } else {
           bledy++;
-          wyniki.push('✗ ' + sku + ' — zapis odrzucony' + jak + ': ' + w.blad);
+          wyniki.push('✗ ' + sku + ' — zapis odrzucony: ' + w.blad);
         }
       } catch (e) {
         bledy++;
@@ -5702,11 +5754,14 @@
     // Zapis odblokowujemy dopiero, gdy sucho pokazało realne trafienia.
     if (naSucho) el('zapisz').disabled = !(zmienione > 0);
 
+    const opisOperacji = tryb === 'tekst'
+      ? ('\nSzukam: ' + JSON.stringify(szukam.slice(0, 120)) + (szukam.length > 120 ? '…' : '')
+        + '\nZmieniam na: ' + JSON.stringify(naco.slice(0, 120)) + (naco.length > 120 ? '…' : ''))
+      : ('\nOperacja: ' + BULK_OPIS[tryb]);
     const naglowek = (naSucho ? 'BULK EDIT — SUCHO (nic nie zapisano)' : 'BULK EDIT — ZAPIS')
       + '\n' + location.href + '\n' + new Date().toISOString()
       + '\nPole: „Opis produktu"'
-      + '\nSzukam: ' + JSON.stringify(szukam.slice(0, 120)) + (szukam.length > 120 ? '…' : '')
-      + '\nZmieniam na: ' + JSON.stringify(naco.slice(0, 120)) + (naco.length > 120 ? '…' : '')
+      + opisOperacji
       + '\nSKU: ' + skuLista.length
       + ' | z trafieniem: ' + zmienione
       + ' | bez trafienia: ' + pominiete
@@ -5757,8 +5812,8 @@
     b.id = BULK_TOOL.BUTTON_ID;
     b.className = 'csButton _csControl csButtonAction csAutogenerateButton UnderlinedButton icon-left';
     b.style.cursor = 'pointer';
-    b.innerHTML = '<div class="caption" title="Podmień dosłowny fragment HTML w opisach '
-      + 'produktów — lista SKU, szukany fragment, docelowy fragment">🔁 Podmień w opisach</div>';
+    b.innerHTML = '<div class="caption" title="Masowa edycja opisów: podmiana tekstu, '
+      + 'usuwanie sekcji cross-sell lub bloku CSS — lista SKU, sucho, zapis">🔁 Podmień w opisach</div>';
     b.addEventListener('click', () => {
       const panel = createBulkPanel();
       const el = r => panel.querySelector('[data-role="' + r + '"]');
@@ -5776,6 +5831,18 @@
         else { panel.style.top = 'auto'; panel.style.bottom = '16px'; }
       };
       el('min').addEventListener('click', () => ustawZwiniecie(!zwiniety));
+
+      // Przełączanie pól wg operacji: tekst pokazuje szukam/naco, tryby
+      // usuwania — krótką instrukcję. Zmiana trybu resetuje blokadę „Zapisz",
+      // żeby nie dało się zapisać usuwania po sucho zrobionym dla podmiany.
+      const odswiezTryb = () => {
+        const tekst = el('tryb-tekst').checked;
+        el('pola-tekst').style.display = tekst ? '' : 'none';
+        el('pola-usun').style.display = tekst ? 'none' : '';
+        el('zapisz').disabled = true;
+      };
+      ['tryb-tekst', 'tryb-crosssell', 'tryb-css'].forEach(r =>
+        el(r).addEventListener('change', odswiezTryb));
 
       el('close').addEventListener('click', () => { bulkRun.stop = true; panel.remove(); });
       el('stop').addEventListener('click', () => {
