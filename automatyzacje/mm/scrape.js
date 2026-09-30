@@ -622,9 +622,14 @@ async function saveResult(result, label) {
     let unchanged = 0;
     const rozbieznosci = []; // { docNumber, csDocsHeadersId, zmianyNaglowka:[{pole,baza,erp}], zmianyPozycji:[{id,pole,baza,erp}] }
     if (existingHeaders.length) {
-      const posIdCol = schema.positions.find(c => c.COLUMN_NAME === 'csDocsItemsPositionsId');
       const posCols = comparablePositionColumns(schema.positions);
-      const pidStr = (p) => String(coerceValue(p.csDocsItemsPositionsId, posIdCol));
+      // Klucz pozycji: normalizujemy STRINGOWO (usuwamy spacje i nbsp), NIE przez
+      // Number. Scrape daje id ze spacjami-separatorami tysięcy ("30 639 543 684"),
+      // baza czysty bigint — bez tego każda pozycja fałszywie wychodziłaby
+      // "nowa"/"brak" (analog buga GUID, tyle że na kluczu pozycji). String zamiast
+      // Number chroni dodatkowo przed utratą precyzji dla bardzo dużych id.
+      const normId = (v) => (v === null || v === undefined) ? '' : String(v).replace(/[\s ]/g, '');
+      const pidStr = (p) => normId(p.csDocsItemsPositionsId);
       const ids = existingHeaders.map(h => coerceValue(h.csDocsHeadersId, headerIdCol)).filter(v => v !== null);
       const dbMap = await fetchExistingHeaders(pool, headerIdCol, schema.headers, ids);
       const dbPosMap = await fetchExistingPositions(pool, headerIdCol, schema.positions, ids);
@@ -637,7 +642,7 @@ async function saveResult(result, label) {
 
         // Pozycje — dopasowanie po csDocsItemsPositionsId.
         const scrapedByPid = new Map(result.positions.filter(p => idStr(p) === id).map(p => [pidStr(p), p]));
-        const dbByPid = new Map((dbPosMap.get(id) || []).map(r => [String(r.csDocsItemsPositionsId), r]));
+        const dbByPid = new Map((dbPosMap.get(id) || []).map(r => [normId(r.csDocsItemsPositionsId), r]));
         const zmianyPozycji = [];
         for (const [pid, dbr] of dbByPid) {
           const sp = scrapedByPid.get(pid);
