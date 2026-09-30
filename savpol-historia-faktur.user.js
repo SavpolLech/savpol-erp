@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.3.0
+// @version      4.3.1
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2003,6 +2003,18 @@
       console.warn('[ERP] Nie rozpoznaję karty ' + sku + '. Otwarte zakładki: '
         + Array.from(document.querySelectorAll('li.k-item[aria-controls]'))
           .map(li => (li.textContent || '').trim()).join(' | '));
+      // SPRZĄTANIE PO NIEUDANEJ PRÓBIE. Edycja mogła się otworzyć, tylko jej
+      // nie rozpoznaliśmy w czasie — bez tego każda taka próba ZOSTAWIA kartę,
+      // a otwarte karty psują kolejne odczyty (lawina „nie doczekałem się karty"
+      // przy większych partiach). Zamykamy wszystko, co przybyło od `przed`.
+      const nowe = Array.from(tabIdSet()).filter(id => !przed.has(id));
+      if (nowe.length) {
+        console.warn('[ERP] Zamykam ' + nowe.length + ' kart(y) po nieudanej próbie ' + sku + '.');
+        nowe.forEach(id => { try { closeTabById(id); } catch (e) { /* nieistotne */ } });
+        await sleep(400);
+        if (!isCatalogTabActive()) await switchToCatalogTab();
+        await waitFor(() => findVisibleCatalogSearchInput() !== null, 20, 200);
+      }
       return { ok: false, blad: 'nie doczekałem się karty produktu ' + sku
         + ' (czekałem 30 sekund)' };
     }
@@ -3251,7 +3263,13 @@
 
     // Czy ktoś ruszył opis od czasu generowania. Ostrzegamy PRZED kopią, bo to
     // powód, żeby się zatrzymać, a nie żeby ostrożniej nadpisać.
-    const czyjeZmiany = ktoZmienil(sku, lista.wiersze, klucze);
+    //
+    // Bulk edit tę straż POMIJA ({ pomijajStrazZmian: true }): pracuje na
+    // AKTUALNEJ treści (czyta teraz → przekształca → zapisuje), a nie odtwarza
+    // wygenerowanego opisu, więc migawka sprzed generowania jest bez znaczenia
+    // i tylko fałszywie blokuje. Kopia zapasowa i kontrola po zapisie zostają.
+    const czyjeZmiany = (opcje && opcje.pomijajStrazZmian)
+      ? { zmienione: [] } : ktoZmienil(sku, lista.wiersze, klucze);
     if (czyjeZmiany.zmienione.length) {
       return { ok: false, blad: 'ktoś zmienił w ERP pola: '
         + czyjeZmiany.zmienione.join(', ') + ' już po wygenerowaniu opisu ('
@@ -5745,7 +5763,7 @@
         // tolerujNormalizacje: ERP przy zapisie normalizuje HTML, więc bez tego
         // kontrola „znak w znak" zgłaszałaby fałszywy błąd mimo dobrego zapisu.
         const w = await zapiszOpisy(sku, { [BULK_TOOL.POLE]: nowa },
-          { zapisz: true, tolerujNormalizacje: true });
+          { zapisz: true, tolerujNormalizacje: true, pomijajStrazZmian: true });
         if (w.ok) {
           zmienione++;
           udaneSku.push(sku);
