@@ -506,6 +506,107 @@ function appendCsv(filePath, rows) {
 // `label` = zakres dat (np. "2026-08-03_2026-08-03") — osobne pliki na
 // zakres, żeby wznowienie tego samego dnia dopisywało do właściwego pliku,
 // a nie mieszało się z danymi z zupełnie innego dnia/testu.
+// ---------- Wykrywanie rozbieżności (BEZ modyfikacji bazy) ----------
+// Decyzja Lecha (2026-09-30): istniejących rekordów NIE zmieniamy (insert-only).
+// Jeśli scrape pokazuje, że dokument JUŻ w bazie ma inne dane — tylko WYKRYWAMY,
+// logujemy i powiadamiamy zbiorczo po biegu. Rekord w bazie zostaje nietknięty.
+// Kontrakt wspólny dla wz/mm/pz — te same nazwy i format co MM.
+const HEADER_FIXED_SET = new Set(F.HEADER_FIXED_FIELDS || Object.keys(HEADER_FIXED_VALUES || {}));
+function comparableHeaderColumns(columnsMeta) {
+  // Porównujemy tylko kolumny SCRAPOWANE: bez klucza, bez computed, bez stałych
+  // wartości (HEADER_FIXED_VALUES są zawsze równe — nie ma ich sensu porównywać).
+  return columnsMeta.filter(c => !c.IS_COMPUTED
+    && c.COLUMN_NAME !== 'csDocsHeadersId'
+    && !HEADER_FIXED_SET.has(c.COLUMN_NAME));
+}
+function valuesEqual(oldVal, newVal, col) {
+  const empty = (v) => v === null || v === undefined || v === '';
+  if (empty(oldVal) && empty(newVal)) return true;
+  if (empty(oldVal) || empty(newVal)) return false;
+  switch (col.DATA_TYPE) {
+    case 'date': case 'datetime': case 'datetime2': case 'smalldatetime': {
+      const d = (v) => (v instanceof Date ? v : new Date(v));
+      const a = d(oldVal), b = d(newVal);
+      if (isNaN(a.getTime()) || isNaN(b.getTime())) return String(oldVal) === String(newVal);
+      return a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+    }
+    case 'int': case 'bigint': case 'smallint': case 'tinyint':
+      return String(oldVal).trim() === String(newVal).trim();
+    case 'decimal': case 'numeric': case 'float': case 'real': case 'money': case 'smallmoney': {
+      const a = Number(oldVal), b = Number(newVal);
+      if (isNaN(a) || isNaN(b)) return String(oldVal) === String(newVal);
+      return Math.abs(a - b) < 1e-6;
+    }
+    case 'bit':
+      return (Number(oldVal) ? 1 : 0) === (Number(newVal) ? 1 : 0);
+    case 'uniqueidentifier':
+      // GUID case-insensitive: baza zwraca WIELKIMI, ERP małymi — ten sam id.
+      // Bez tego KAŻDY dokument fałszywie "różniłby się" na csDocsHeadersG.
+      return String(oldVal).toLowerCase() === String(newVal).toLowerCase();
+    default:
+      return String(oldVal).trim() === String(newVal).trim();
+  }
+}
+function diffHeader(scrapedRow, dbRow, columnsMeta) {
+  const empty = (v) => v === null || v === undefined || v === '';
+  const diffs = [];
+  for (const col of comparableHeaderColumns(columnsMeta)) {
+    const name = col.COLUMN_NAME;
+    const newVal = coerceValue(scrapedRow[name], col); // wartość z ERP (scrape)
+    // Pustość ze scrapowania to niemal zawsze "kolumna nie renderowała się w
+    // gridzie", a nie realne wyczyszczenie w ERP — NIE traktujemy jako różnicy.
+    if (empty(newVal) && !empty(dbRow[name])) continue;
+    if (!valuesEqual(dbRow[name], newVal, col)) diffs.push({ field: name, old: dbRow[name], new: newVal });
+  }
+  return diffs;
+}
+async function fetchExistingHeaders(pool, headerIdColMeta, columnsMeta, ids) {
+  const map = new Map();
+  if (!ids.length) return map;
+  const cols = columnsMeta.map(c => '[' + c.COLUMN_NAME + ']').join(', ');
+  const request = pool.request();
+  const ph = ids.map((id, i) => { request.input('h' + i, mssqlType(headerIdColMeta), id); return '@h' + i; });
+  const rs = await request.query('SELECT ' + cols + ' FROM dbo.' + TARGET_HEADERS +
+    ' WHERE [csDocsHeadersId] IN (' + ph.join(', ') + ')');
+  rs.recordset.forEach(r => map.set(String(r.csDocsHeadersId), r));
+  return map;
+}
+function fmtVal(v) {
+  if (v === null || v === undefined) return 'NULL';
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v);
+}
+// Akumulator rozbieżności całego biegu (saveResult woła się per paczka; mail i
+// licznik w run-log powstają raz, na końcu biegu w main()).
+const rozbieznosciNaglowki = [];
+
+// Zbiorcze powiadomienie po biegu — TYLKO gdy są rozbieżności. Wysyłkę robi
+// wspólny helper lib-wspolne/powiadom.js (utrzymuje go sesja MM, SMTP z .env);
+// dopóki go nie ma, mail jest pomijany, a rozbieżności zostają w logu i
+// run-log.jsonl. Interfejs helpera do dopięcia z sesją MM.
+async function wyslijPowiadomienie(rozb, dateFrom, dateTo) {
+  const zakres = dateFrom ? (dateFrom + (dateTo && dateTo !== dateFrom ? '..' + dateTo : '')) : 'bieżący widok';
+  const tekst = 'WZ — wykryto ' + rozb.length + ' rozbieżności ERP↔baza (' + zakres + '). ' +
+    'Rekordy w bazie NIE zostały zmienione (insert-only).\n\n' +
+    rozb.map(r => '- ' + r.doc + ': ' + r.changed).join('\n');
+  try {
+    const powiadom = require('../lib-wspolne/powiadom.js');
+    if (powiadom && typeof powiadom.wyslijMail === 'function') {
+      await powiadom.wyslijMail({
+        do: 'l.dutkiewicz@savpol.pl',
+        temat: 'WZ: rozbieżności ERP↔baza (' + rozb.length + ')',
+        tekst
+      });
+      console.log('[powiadom] Wysłano zbiorczy mail o rozbieżnościach.');
+      return;
+    }
+    console.warn('[powiadom] lib-wspolne/powiadom.js jest, ale bez wyslijMail — mail pominięty (dopiąć z sesją MM).');
+  } catch (e) {
+    console.warn('[powiadom] Mail pominięty — brak lib-wspolne/powiadom.js (helper robi sesja MM). ' +
+      'Rozbieżności są w logu i run-log.jsonl.');
+  }
+}
+
 async function saveResult(result, label) {
   const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
   const forceCsv = process.argv.includes('--csv');
@@ -547,6 +648,25 @@ async function saveResult(result, label) {
     const insertedPositions = await insertRows(pool, TARGET_POSITIONS, schema.positions, newPositions);
     console.log('[wynik] Zapisano do bazy "' + DB_NAME + '": ' + insertedHeaders + ' wierszy w ' +
       TARGET_HEADERS + ', ' + insertedPositions + ' wierszy w ' + TARGET_POSITIONS + '.');
+
+    // Dokumenty JUŻ w bazie: NIE modyfikujemy (insert-only). Porównujemy scrapowane
+    // kolumny nagłówka z wersją w bazie i tylko LOGUJEMY rozbieżność — zbiorcze
+    // powiadomienie idzie na końcu biegu (main). Rekord w bazie zostaje nietknięty.
+    const existingHeaders = result.headers.filter(h => existingIds.has(String(coerceValue(h.csDocsHeadersId, headerIdCol))));
+    if (existingHeaders.length && headerIdCol) {
+      const ids = existingHeaders.map(h => coerceValue(h.csDocsHeadersId, headerIdCol)).filter(v => v !== null);
+      const dbMap = await fetchExistingHeaders(pool, headerIdCol, schema.headers, ids);
+      for (const h of existingHeaders) {
+        const idS = String(coerceValue(h.csDocsHeadersId, headerIdCol));
+        const dbRow = dbMap.get(idS);
+        if (!dbRow) continue;
+        const diffs = diffHeader(h, dbRow, schema.headers);
+        if (!diffs.length) continue;
+        const changed = diffs.map(d => d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new)).join('; ');
+        console.warn('[rozbieżność] ' + (h.DocNumber || idS) + ': ' + changed);
+        rozbieznosciNaglowki.push({ doc: h.DocNumber || idS, id: idS, changed });
+      }
+    }
   } finally {
     await pool.close();
   }
@@ -876,6 +996,12 @@ async function main() {
             'Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.'));
       }
     }
+
+    if (rozbieznosciNaglowki.length) {
+      console.warn('[rozbieżność] RAZEM ' + rozbieznosciNaglowki.length +
+        ' dokumentów z bazy różni się od ERP — baza NIE zmieniona (insert-only).');
+      await wyslijPowiadomienie(rozbieznosciNaglowki, dateFrom, dateTo);
+    }
   } catch (err) {
     errorMsg = err.message;
     throw err;
@@ -890,6 +1016,7 @@ async function main() {
       expectedTotal,
       allPagesExhausted,
       stoppedReason: lastStoppedReason,
+      rozbieznosciNaglowki: rozbieznosciNaglowki.length,
       czasTrwaniaMs: Date.now() - runStarted,
       blad: errorMsg
     });
