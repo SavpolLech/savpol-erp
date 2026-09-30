@@ -43,6 +43,7 @@ function applyFixedValues(batch) {
 }
 const { loadState, saveState, appendRunLog } = require('../lib-wspolne/state')(__dirname, 'pz');
 const { pushLogs } = require('../lib-wspolne/git-log-push');
+const powiadomORozbieznosciach = require('../lib-wspolne/powiadom');
 
 // ---------- Konfiguracja ----------
 
@@ -672,7 +673,7 @@ async function saveResult(result, label) {
     console.log('[wynik]', forceCsv ? '--csv wymuszone' : (!DB_NAME ? 'DB_NAME nie ustawione' : 'brak schema-test-tables.json'),
       '— dopisano do', headersPath, 'i', positionsPath,
       '(+' + result.headers.length + ' PZ, +' + result.positions.length + ' pozycji w tej paczce, partial=' + result.partial + ')');
-    return { insertedHeaders: 0, insertedPositions: 0, headersWithDiff: 0, positionRowsWithDiff: 0 };
+    return { insertedHeaders: 0, insertedPositions: 0, rozbieznosci: [], rozbHeaders: 0, rozbPoz: 0 };
   }
 
   const config = {
@@ -704,10 +705,13 @@ async function saveResult(result, label) {
 
     // Dokumenty już w bazie: WYŁĄCZNIE porównanie (odczyt) z tym, co zescrapowano
     // teraz — zero UPDATE/DELETE na tabelach docelowych (decyzja Lecha 2026-09-30).
-    // Rozbieżność trafia do logu konsoli i do liczników w run-log.jsonl; mail do
-    // l.dutkiewicz@savpol.pl idzie osobno przez wspólny lib-wspolne/powiadom.js
-    // (gdy będzie gotowy — patrz komentarz przy diffHeader wyżej).
-    let headersWithDiff = 0, positionRowsWithDiff = 0;
+    // Rozbieżność trafia do logu, do liczników w run-log.jsonl i do zbiorczego
+    // maila (lib-wspolne/powiadom.js, wołany raz na koniec biegu w main()).
+    // Format rozbieznosci: { docNumber, csDocsHeadersId, zmianyNaglowka:[{pole,baza,erp}],
+    // pozycjeBaza, pozycjeErp, zmianyPozycji:[{id,pole,baza,erp}] } — ten sam
+    // kontrakt co MM, z dodatkowym zmianyPozycji (porównanie pozycji PO POLACH,
+    // nie tylko liczba — patrz diffPositions).
+    const rozbieznosci = [];
     if (existingHeaders.length) {
       const ids = existingHeaders.map(h => coerceValue(h.csDocsHeadersId, headerIdCol)).filter(v => v !== null);
       const dbHeaderMap = await fetchExistingHeaders(pool, headerIdCol, schema.headers, ids);
@@ -715,25 +719,45 @@ async function saveResult(result, label) {
       for (const h of existingHeaders) {
         const key = idStr(h);
         const dbRow = dbHeaderMap.get(key);
-        if (dbRow) {
-          const diffs = diffHeader(h, dbRow, schema.headers);
-          if (diffs.length) {
-            headersWithDiff++;
-            const changed = diffs.map(d => d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new)).join('; ');
-            console.log('[rozbieżność] ' + (h.DocNumber || key) + ' (id=' + key + '): ' + changed);
-          }
-        }
+        const diffs = dbRow ? diffHeader(h, dbRow, schema.headers) : [];
+
         const scrapedPositions = result.positions.filter(p => idStr(p) === key);
         const dbPositions = dbPositionsMap.get(key) || [];
         const posDiffs = diffPositions(scrapedPositions, dbPositions, schema.positions);
-        if (posDiffs.length) {
-          positionRowsWithDiff += posDiffs.length;
-          const changed = posDiffs.map(d => d.kind ? ('poz. ' + d.id + ' ' + d.kind) : ('poz. ' + d.id + ' ' + d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new))).join('; ');
-          console.log('[rozbieżność-pozycje] ' + (h.DocNumber || key) + ' (id=' + key + '): ' + changed);
+
+        if (!diffs.length && !posDiffs.length) continue;
+
+        if (diffs.length) {
+          const changed = diffs.map(d => d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new)).join('; ');
+          console.warn('[rozbieżność] ' + (h.DocNumber || key) + ' (id=' + key + '): ' + changed +
+            ' (baza -> ERP) — rekord w bazie NIE zmieniony, tylko zgłoszenie.');
         }
+        if (posDiffs.length) {
+          const changed = posDiffs.map(d => d.kind ? ('poz. ' + d.id + ' ' + d.kind) : ('poz. ' + d.id + ' ' + d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new))).join('; ');
+          console.warn('[rozbieżność-pozycje] ' + (h.DocNumber || key) + ' (id=' + key + '): ' + changed +
+            ' (baza -> ERP) — pozycje w bazie NIE zmienione, tylko zgłoszenie.');
+        }
+
+        rozbieznosci.push({
+          docNumber: h.DocNumber || null,
+          csDocsHeadersId: key,
+          zmianyNaglowka: diffs.map(d => ({ pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) })),
+          pozycjeBaza: dbPositions.length,
+          pozycjeErp: scrapedPositions.length,
+          zmianyPozycji: posDiffs.map(d => d.kind
+            ? { id: d.id, pole: null, baza: d.kind === 'brak-w-ERP' ? '(jest)' : '(brak)', erp: d.kind === 'nowa-w-ERP' ? '(jest)' : '(brak)' }
+            : { id: d.id, pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) })
+        });
       }
     }
-    return { insertedHeaders, insertedPositions, headersWithDiff, positionRowsWithDiff };
+
+    const rozbHeaders = rozbieznosci.filter(r => r.zmianyNaglowka.length).length;
+    const rozbPoz = rozbieznosci.filter(r => r.zmianyPozycji.length).length;
+    if (rozbieznosci.length) {
+      console.log('[wynik] ROZBIEŻNOŚCI z ERP: ' + rozbHeaders + ' nagł. / ' + rozbPoz +
+        ' dok. z inną zawartością pozycji (bazy NIE zmieniono — zgłoszone).');
+    }
+    return { insertedHeaders, insertedPositions, rozbieznosci, rozbHeaders, rozbPoz };
   } finally {
     await pool.close();
   }
@@ -910,8 +934,9 @@ async function main() {
 
   let totalHeaders = 0;
   let totalPositions = 0;
-  let totalHeadersWithDiff = 0;   // rozbieżności nagłówka wobec bazy (TYLKO log, bez zapisu)
-  let totalPositionRowsWithDiff = 0; // j.w., pozycje
+  let totalRozbHeaders = 0;   // dok. z rozbieżnością nagłówka wobec bazy (TYLKO log, bez zapisu)
+  let totalRozbPoz = 0;       // dok. z rozbieżnością w pozycjach (j.w.)
+  const allRozbieznosci = []; // do zbiorczego maila po biegu (lib-wspolne/powiadom.js)
   let allPagesExhausted = false;
   let lastStoppedReason = null;
   let expectedTotal = null;
@@ -994,8 +1019,9 @@ async function main() {
       applyFixedValues(batch);
       const wr = await saveResult(batch, csvLabel);
       if (wr) {
-        totalHeadersWithDiff += wr.headersWithDiff || 0;
-        totalPositionRowsWithDiff += wr.positionRowsWithDiff || 0;
+        totalRozbHeaders += wr.rozbHeaders || 0;
+        totalRozbPoz += wr.rozbPoz || 0;
+        if (wr.rozbieznosci && wr.rozbieznosci.length) allRozbieznosci.push(...wr.rozbieznosci);
       }
 
       batch.completedDocNumbers.forEach(d => processedThisRun.add(d));
@@ -1032,9 +1058,15 @@ async function main() {
     }
 
     console.log('[pz] Koniec sesji. Zebrano w tej sesji: ' + totalHeaders + ' PZ, ' + totalPositions + ' pozycji.' +
-      (lastStoppedReason ? ' Powód zatrzymania: ' + lastStoppedReason + '.' : ' (lista wyczerpana).') +
-      (totalHeadersWithDiff ? ' UWAGA: ' + totalHeadersWithDiff + ' dok. już w bazie ma rozbieżność wobec ERP (poz.: ' +
-        totalPositionRowsWithDiff + ') — TYLKO zalogowane, baza NIE zmodyfikowana.' : ''));
+      (allRozbieznosci.length ? ' ROZBIEŻNOŚCI z ERP (bazy NIE zmieniono): ' + totalRozbHeaders + ' nagł. / ' +
+        totalRozbPoz + ' dok. z inną zawartością pozycji.' : '') +
+      (lastStoppedReason ? ' Powód zatrzymania: ' + lastStoppedReason + '.' : ' (lista wyczerpana).'));
+
+    // Zbiorcze powiadomienie o rozbieżnościach (jeden mail na bieg, tylko gdy są).
+    // Helper nigdy nie rzuca; bez SMTP w .env tylko loguje, że mail pominięto.
+    if (allRozbieznosci.length) {
+      await powiadomORozbieznosciach('pz', allRozbieznosci, { label: csvLabel });
+    }
 
     if (expectedTotal) {
       const haveTotal = processedThisRun.size;
@@ -1056,8 +1088,8 @@ async function main() {
       sessionMinutes: Number(sessionMinutes.toFixed(1)),
       maxDocs: MAX_DOCS, batchSize: BATCH_SIZE,
       docsZebraneWTejSesji: totalHeaders,
-      rozbieznosciNaglowki: totalHeadersWithDiff,
-      rozbieznosciPozycje: totalPositionRowsWithDiff,
+      rozbieznosciNaglowki: totalRozbHeaders,
+      rozbieznosciPozycje: totalRozbPoz,
       pozycjeZebraneWTejSesji: totalPositions,
       docsLacznieDlaZakresu: (dateFrom || dateTo) ? processedThisRun.size : null,
       expectedTotal,
