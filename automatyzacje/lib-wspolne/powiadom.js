@@ -20,17 +20,27 @@
 // Użycie (z scrape.js danego typu):
 //   const powiadom = require('../lib-wspolne/powiadom');
 //   await powiadom('mm', rozbieznosci, { label: '2026-09-29..2026-09-29' });
-// gdzie rozbieznosci = [{ docNumber, csDocsHeadersId, zmianyNaglowka:[{pole,baza,erp}], pozycjeBaza, pozycjeErp }]
+// gdzie rozbieznosci = [{ docNumber, csDocsHeadersId,
+//   zmianyNaglowka:[{pole,baza,erp}],
+//   zmianyPozycji:[{id,pole,baza,erp}]  // pole=null => cała pozycja; baza=null => nowa w ERP, erp=null => brak w ERP
+// }]
+
+function opiszZmianePozycji(z) {
+  if (z.pole) return '    · pozycja ' + z.id + ' — ' + z.pole + ': ' + z.baza + ' -> ' + z.erp;
+  if (z.erp === null) return '    · pozycja ' + z.id + ' — brak w ERP';
+  return '    · pozycja ' + z.id + ' — nowa w ERP';
+}
 
 function opiszRozbieznosc(r) {
-  const czesci = [];
+  const linie = ['- ' + (r.docNumber || r.csDocsHeadersId || '(?)') + ':'];
   if (r.zmianyNaglowka && r.zmianyNaglowka.length) {
-    czesci.push(r.zmianyNaglowka.map(z => z.pole + ': ' + z.baza + ' -> ' + z.erp).join('; '));
+    linie.push('  nagłówek: ' + r.zmianyNaglowka.map(z => z.pole + ': ' + z.baza + ' -> ' + z.erp).join('; '));
   }
-  if (r.pozycjeBaza !== undefined && r.pozycjeErp !== undefined && r.pozycjeBaza !== r.pozycjeErp) {
-    czesci.push('liczba pozycji: ' + r.pozycjeBaza + ' -> ' + r.pozycjeErp);
+  if (r.zmianyPozycji && r.zmianyPozycji.length) {
+    linie.push('  pozycje:');
+    r.zmianyPozycji.forEach(z => linie.push(opiszZmianePozycji(z)));
   }
-  return '- ' + (r.docNumber || r.csDocsHeadersId || '(?)') + ': ' + czesci.join(' | ');
+  return linie.join('\n');
 }
 
 module.exports = async function powiadomORozbieznosciach(scraper, rozbieznosci, opts = {}) {

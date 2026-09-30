@@ -459,6 +459,17 @@ function comparableHeaderColumns(columnsMeta) {
     && !HEADER_FIXED_SET.has(c.COLUMN_NAME));
 }
 
+// Kolumny pozycji do porównania: scrapowane, nie wyliczane, nie stałe
+// (POSITION_FIXED_FIELDS, w tym createdDate), nie klucz (csDocsItemsPositionsId,
+// po nim DOPASOWUJEMY) i nie FK nagłówka (csDocsHeadersId, ustawiamy sami).
+const POSITION_FIXED_SET = new Set(F.POSITION_FIXED_FIELDS);
+function comparablePositionColumns(columnsMeta) {
+  return columnsMeta.filter(c => !c.IS_COMPUTED
+    && c.COLUMN_NAME !== 'csDocsItemsPositionsId'
+    && c.COLUMN_NAME !== 'csDocsHeadersId'
+    && !POSITION_FIXED_SET.has(c.COLUMN_NAME));
+}
+
 // Równość wg TYPU kolumny — normalizacja, żeby nie robić fałszywych różnic:
 // data z/bez czasu, decimal jako string vs number, bigint bez utraty precyzji.
 // newVal jest już SKOERCOWANY (coerceValue), oldVal to wartość z bazy.
@@ -494,21 +505,24 @@ function valuesEqual(oldVal, newVal, col) {
   }
 }
 
-function diffHeader(scrapedRow, dbRow, columnsMeta) {
+// Różnice pól między wierszem zescrapowanym a wierszem w bazie, dla podanych
+// kolumn. OCHRONA: puste pole ze scrapowania NIE jest różnicą, jeśli w bazie
+// jest wartość — to niemal zawsze "kolumna nie renderowała się w gridzie", a
+// nie "wyczyszczono w ERP" (inaczej jedna wyłączona kolumna zgłaszałaby różnicę
+// na wszystkich dokumentach). Realne czyszczenie pola w ERP jest rzadkie.
+function diffFields(scrapedRow, dbRow, cols) {
   const empty = (v) => v === null || v === undefined || v === '';
   const diffs = [];
-  for (const col of comparableHeaderColumns(columnsMeta)) {
+  for (const col of cols) {
     const name = col.COLUMN_NAME;
     const newVal = coerceValue(scrapedRow[name], col);
-    // OCHRONA: nie nadpisuj niepustej wartości w bazie scrapowanym PUSTYM.
-    // Puste pole ze scrapowania to niemal zawsze "kolumna nie renderowała się w
-    // gridzie" (zły układ listy), a nie "wyczyszczono w ERP". Bez tego jedna
-    // wyłączona kolumna wyzerowałaby to pole we WSZYSTKICH dokumentach. Realne
-    // czyszczenie pola w ERP jest rzadkie — świadomie je tu pomijamy.
     if (empty(newVal) && !empty(dbRow[name])) continue;
     if (!valuesEqual(dbRow[name], newVal, col)) diffs.push({ field: name, old: dbRow[name], new: newVal });
   }
   return diffs;
+}
+function diffHeader(scrapedRow, dbRow, columnsMeta) {
+  return diffFields(scrapedRow, dbRow, comparableHeaderColumns(columnsMeta));
 }
 
 // Pobiera z bazy istniejące wiersze nagłówków (komplet kolumn) po ID — do
@@ -524,16 +538,21 @@ async function fetchExistingHeaders(pool, headerIdColMeta, columnsMeta, ids) {
   return map;
 }
 
-// Liczba pozycji w bazie per csDocsHeadersId — do wykrycia rozbieżności liczby
-// pozycji (pełnego porównania pól pozycji nie robimy). Zwraca Map(idString -> n).
-async function fetchPositionCounts(pool, headerIdColMeta, ids) {
+// Pozycje z bazy dla podanych nagłówków (komplet kolumn) — do porównania per
+// csDocsItemsPositionsId. Zwraca Map(headerIdString -> [wiersze pozycji z bazy]).
+async function fetchExistingPositions(pool, headerIdColMeta, columnsMeta, ids) {
   const map = new Map();
   if (!ids.length) return map;
+  const cols = columnsMeta.map(c => '[' + c.COLUMN_NAME + ']').join(', ');
   const request = pool.request();
   const ph = ids.map((id, i) => { request.input('c' + i, mssqlType(headerIdColMeta), id); return '@c' + i; });
-  const rs = await request.query('SELECT [csDocsHeadersId] AS id, COUNT(*) AS n FROM dbo.' + TARGET_POSITIONS +
-    ' WHERE [csDocsHeadersId] IN (' + ph.join(', ') + ') GROUP BY [csDocsHeadersId]');
-  rs.recordset.forEach(r => map.set(String(r.id), r.n));
+  const rs = await request.query('SELECT ' + cols + ' FROM dbo.' + TARGET_POSITIONS +
+    ' WHERE [csDocsHeadersId] IN (' + ph.join(', ') + ')');
+  rs.recordset.forEach(r => {
+    const k = String(r.csDocsHeadersId);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(r);
+  });
   return map;
 }
 
@@ -596,46 +615,64 @@ async function saveResult(result, label) {
     const insertedPositions = await insertRows(pool, TARGET_POSITIONS, schema.positions, newPositions);
 
     // Dokumenty już w bazie: NIE ZMIENIAMY rekordu (decyzja Lecha 2026-09-30 —
-    // do worka tylko DOPISUJEMY). Porównujemy nagłówek (kolumny scrapowane) i
-    // liczbę pozycji; różnicę tylko ZGŁASZAMY (log + zbiorczy mail po biegu),
-    // bazy NIE ruszamy — żadnego UPDATE/DELETE. Patrz [[dedup-insert-only-edycje-erp]].
+    // do worka tylko DOPISUJEMY). Porównujemy nagłówek (kolumny scrapowane) oraz
+    // pozycje per csDocsItemsPositionsId (różnica pól, pozycja brakująca w ERP
+    // lub nowa w ERP); różnicę tylko ZGŁASZAMY (log + zbiorczy mail po biegu),
+    // bazy NIE ruszamy. Standard wspólny z WZ/PZ. Patrz [[dedup-insert-only-edycje-erp]].
     let unchanged = 0;
-    const rozbieznosci = []; // { docNumber, csDocsHeadersId, zmianyNaglowka:[{pole,baza,erp}], pozycjeBaza, pozycjeErp }
+    const rozbieznosci = []; // { docNumber, csDocsHeadersId, zmianyNaglowka:[{pole,baza,erp}], zmianyPozycji:[{id,pole,baza,erp}] }
     if (existingHeaders.length) {
+      const posIdCol = schema.positions.find(c => c.COLUMN_NAME === 'csDocsItemsPositionsId');
+      const posCols = comparablePositionColumns(schema.positions);
+      const pidStr = (p) => String(coerceValue(p.csDocsItemsPositionsId, posIdCol));
       const ids = existingHeaders.map(h => coerceValue(h.csDocsHeadersId, headerIdCol)).filter(v => v !== null);
       const dbMap = await fetchExistingHeaders(pool, headerIdCol, schema.headers, ids);
-      const posCounts = await fetchPositionCounts(pool, headerIdCol, ids);
+      const dbPosMap = await fetchExistingPositions(pool, headerIdCol, schema.positions, ids);
       for (const h of existingHeaders) {
         const id = idStr(h);
         const dbRow = dbMap.get(id);
         if (!dbRow) continue;
-        const diffs = diffHeader(h, dbRow, schema.headers);
-        const pozErp = result.positions.filter(p => idStr(p) === id).length;
-        const pozBaza = posCounts.get(id) || 0;
-        const posDiff = pozErp !== pozBaza;
-        if (!diffs.length && !posDiff) { unchanged++; continue; }
+        const zmianyNaglowka = diffHeader(h, dbRow, schema.headers)
+          .map(d => ({ pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) }));
 
-        const czesci = [];
-        if (diffs.length) czesci.push(diffs.map(d => d.field + ': ' + fmtVal(d.old) + ' -> ' + fmtVal(d.new)).join('; '));
-        if (posDiff) czesci.push('liczba pozycji: ' + pozBaza + ' -> ' + pozErp);
-        console.warn('[rozbieżność] ' + (h.DocNumber || id) + ' (id=' + id + '): ' + czesci.join(' | ') +
-          ' (baza -> ERP) — rekord w bazie NIE zmieniony, tylko zgłoszenie.');
-        rozbieznosci.push({
-          docNumber: h.DocNumber || null,
-          csDocsHeadersId: id,
-          zmianyNaglowka: diffs.map(d => ({ pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) })),
-          pozycjeBaza: pozBaza,
-          pozycjeErp: pozErp
+        // Pozycje — dopasowanie po csDocsItemsPositionsId.
+        const scrapedByPid = new Map(result.positions.filter(p => idStr(p) === id).map(p => [pidStr(p), p]));
+        const dbByPid = new Map((dbPosMap.get(id) || []).map(r => [String(r.csDocsItemsPositionsId), r]));
+        const zmianyPozycji = [];
+        for (const [pid, dbr] of dbByPid) {
+          const sp = scrapedByPid.get(pid);
+          if (!sp) { zmianyPozycji.push({ id: pid, pole: null, baza: 'pozycja', erp: null }); continue; } // brak w ERP
+          diffFields(sp, dbr, posCols).forEach(d =>
+            zmianyPozycji.push({ id: pid, pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) }));
+        }
+        for (const [pid] of scrapedByPid) {
+          if (!dbByPid.has(pid)) zmianyPozycji.push({ id: pid, pole: null, baza: null, erp: 'pozycja' }); // nowa w ERP
+        }
+
+        if (!zmianyNaglowka.length && !zmianyPozycji.length) { unchanged++; continue; }
+
+        if (zmianyNaglowka.length) {
+          console.warn('[rozbieżność] ' + (h.DocNumber || id) + ' (id=' + id + '): ' +
+            zmianyNaglowka.map(z => z.pole + ': ' + z.baza + ' -> ' + z.erp).join('; ') +
+            ' (baza -> ERP) — rekord w bazie NIE zmieniony, tylko zgłoszenie.');
+        }
+        zmianyPozycji.forEach(z => {
+          const opis = z.pole ? (z.pole + ': ' + z.baza + ' -> ' + z.erp)
+            : (z.erp === null ? 'brak w ERP' : 'nowa w ERP');
+          console.warn('[rozbieżność-pozycje] ' + (h.DocNumber || id) + ' (id=' + z.id + '): ' + opis +
+            ' — rekord w bazie NIE zmieniony, tylko zgłoszenie.');
         });
+
+        rozbieznosci.push({ docNumber: h.DocNumber || null, csDocsHeadersId: id, zmianyNaglowka, zmianyPozycji });
       }
     }
 
     const rozbHeaders = rozbieznosci.filter(r => r.zmianyNaglowka.length).length;
-    const rozbPoz = rozbieznosci.filter(r => r.pozycjeBaza !== r.pozycjeErp).length;
+    const rozbPoz = rozbieznosci.filter(r => r.zmianyPozycji.length).length;
 
     const parts = ['dopisano ' + insertedHeaders + ' nagł./' + insertedPositions + ' poz.'];
     if (rozbieznosci.length) parts.push('ROZBIEŻNOŚCI z ERP: ' + rozbHeaders + ' nagł. / ' + rozbPoz +
-      ' dok. z inną liczbą pozycji (bazy NIE zmieniono — zgłoszone)');
+      ' dok. z różnicą pozycji (bazy NIE zmieniono — zgłoszone)');
     if (unchanged) parts.push('bez zmian ' + unchanged);
     console.log('[wynik] Zapis do "' + DB_NAME + '" (' + TARGET_HEADERS + '/' + TARGET_POSITIONS + '): ' + parts.join(', ') + '.');
 
