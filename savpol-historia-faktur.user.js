@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.3.2
+// @version      4.3.3
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -5736,6 +5736,12 @@
     const wyniki = [];
     const udaneSku = [];   // tylko potwierdzone zapisy — te wykreślamy z pola
     let zmienione = 0, pominiete = 0, bledy = 0, sumaWystapien = 0;
+    let sesjaPadla = false;
+
+    // Wygasła/unieważniona sesja ERP (np. równoległe logowanie) — po niej KAŻDY
+    // kolejny SKU padnie tak samo, więc nie ma sensu mielić dalej. Przerywamy
+    // całą partię z czytelnym komunikatem, zamiast produkować serię błędów.
+    const czyPadlaSesja = b => /hasło nie jest prawidłow/i.test(String(b || ''));
 
     for (let i = 0; i < skuLista.length; i++) {
       if (bulkRun.stop) { wyniki.push('— przerwano na życzenie —'); break; }
@@ -5747,6 +5753,7 @@
         if (!lista.ok) {
           bledy++;
           wyniki.push('✗ ' + sku + ' — nie odczytałem opisów: ' + lista.blad);
+          if (czyPadlaSesja(lista.blad)) { sesjaPadla = true; break; }
           continue;
         }
         const wiersz = opisPoKluczu(lista.wiersze, BULK_TOOL.POLE);
@@ -5784,6 +5791,7 @@
         } else {
           bledy++;
           wyniki.push('✗ ' + sku + ' — zapis odrzucony: ' + w.blad);
+          if (czyPadlaSesja(w.blad)) { sesjaPadla = true; break; }
         }
       } catch (e) {
         bledy++;
@@ -5791,6 +5799,11 @@
       }
 
       if (i < skuLista.length - 1) await new Promise(r => setTimeout(r, BULK_TOOL.DELAY_MS));
+    }
+    if (sesjaPadla) {
+      wyniki.push('⚠ Przerwano: sesja ERP wygasła lub została unieważniona '
+        + '(np. równoległe logowanie). Zaloguj się w ERP jeszcze raz i puść '
+        + 'partię ponownie — w polu zostały same nieukończone SKU.');
     }
 
     bulkRun.running = false;
@@ -5824,9 +5837,11 @@
     const podsumowanie = (naSucho ? 'Sucho gotowe. ' : 'Zapis gotowy. ')
       + zmienione + (naSucho ? ' z trafieniem' : ' zapisanych') + ', '
       + pominiete + ' bez trafienia, ' + bledy + ' błędów.'
-      + (naSucho && zmienione > 0 ? ' Sprawdź raport, potem „Zapisz naprawdę".' : '');
-    const rodzaj = bledy > 0 ? (zmienione === 0 ? 'error' : 'warning')
-      : (zmienione > 0 ? 'success' : 'info');
+      + (sesjaPadla ? ' Sesja ERP wygasła — zaloguj się ponownie i powtórz.' : '')
+      + (naSucho && zmienione > 0 && !sesjaPadla ? ' Sprawdź raport, potem „Zapisz naprawdę".' : '');
+    const rodzaj = sesjaPadla ? 'error'
+      : (bledy > 0 ? (zmienione === 0 ? 'error' : 'warning')
+        : (zmienione > 0 ? 'success' : 'info'));
 
     // Po REALNYM zapisie wykreślamy z pola SKU te, które się udały — zostają
     // tylko nieukończone (błędy, brak trafienia, nieprzetworzone po przerwaniu),
