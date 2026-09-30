@@ -61,6 +61,27 @@ ERP_PASSWORD=...
 
 Zapisz plik.
 
+**Opcjonalnie: `GITHUB_TOKEN` (powiadomienia o rozbieżnościach jako GitHub Issue)**
+
+Gdy scraper wykryje, że dane w ERP różnią się od tego, co już jest w bazie,
+zgłasza to do pliku `automatyzacje\ROZBIEZNOSCI.md` (zawsze) i — jeśli w `.env`
+jest `GITHUB_TOKEN` — dodatkowo zakłada GitHub Issue. Bez tokenu Issue jest po
+prostu pomijane (plik działa dalej), więc ten krok jest opcjonalny.
+
+To **inny** token niż ten wbudowany w `pierwsza-instalacja.bat` (tamten służy
+tylko do pobierania kodu). Ten musi mieć prawo do **Issues**:
+
+1. https://github.com/settings/personal-access-tokens/new
+2. Repository access → „Only select repositories" → `SavpolLech/savpol-erp`.
+3. Permissions → Repository permissions → **Issues: Read and write**.
+4. Wygeneruj, skopiuj i dopisz do `.env` (dane od Lecha):
+
+```
+GITHUB_TOKEN=github_pat_...
+```
+
+Token trzymaj **wyłącznie** w `.env` (jest w `.gitignore`) — nigdy w repo.
+
 ## 6. Zarejestruj zadanie w Harmonogramie Zadań Windows
 
 Zadanie odpala się **raz dziennie, w dni robocze (pon–pt), o 9:30**. Jeden
