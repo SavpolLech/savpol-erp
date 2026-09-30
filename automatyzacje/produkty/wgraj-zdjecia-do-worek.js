@@ -31,6 +31,7 @@ dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, 
 
 const { fetchColumnsMeta, mssqlType, coerceValue } =
   require(path.join(__dirname, '..', 'wz', 'lib', 'schema'));
+const R = require('./lib/rozbieznosci');
 
 const REALNE = process.argv.includes('--realne');
 const TEST_TABLE = REALNE ? 'csPhotos' : 'csPhotos_test';
@@ -63,6 +64,7 @@ async function main() {
   const produkty = loadResults(skuFilter);
   const wszystkieZdjecia = [];
   produkty.forEach(p => p.zdjecia.forEach(z => wszystkieZdjecia.push(z)));
+  const skuPoId = new Map(produkty.map(p => [String(p.dopasowane && p.dopasowane.csItemsId), p.sku]));
   if (!wszystkieZdjecia.length) throw new Error('Brak zdjęć do wgrania w ' + OUT_DIR + ' (uruchom najpierw scrape.js).');
   console.log('[wgraj-zdjecia] Znaleziono ' + wszystkieZdjecia.length + ' zdjęć z ' + produkty.length + ' produktów.');
 
@@ -167,6 +169,17 @@ async function main() {
       wstawione++;
     }
     console.log('[wgraj-zdjecia] SUKCES: wstawiono ' + wstawione + ' zdjęć do dbo.' + TEST_TABLE + ' w bazie "' + database + '".');
+
+    // Już obecnych NIE zmieniamy (tylko dopisujemy) — różnice zgłaszamy.
+    // Porównanie na surowym scrapie: pola, których stary JSON nie ma
+    // (csPhotosG/imageSourceType sprzed 2026-09-22), są puste → nie są różnicą.
+    const rozb = await R.porownajIstniejace(pool, {
+      tabela: TEST_TABLE, idCol: 'csPhotosId', kolumny: columnsMeta,
+      rekordy: wszystkieZdjecia.filter(z => existing.has(String(z.csPhotosId))),
+      wartosc: (z, k) => z[k.charAt(0).toLowerCase() + k.slice(1)],
+      opis: z => ({ sku: skuPoId.get(String(z.csSourceId)) || null, csItemsId: z.csSourceId })
+    });
+    await R.zglos('wgraj-zdjecia ' + TEST_TABLE, R.tylkoNowe('[wgraj-zdjecia]', rozb));
   } finally {
     await pool.close();
   }

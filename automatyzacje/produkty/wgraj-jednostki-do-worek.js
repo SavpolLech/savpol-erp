@@ -28,6 +28,7 @@ dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, 
 const { fetchColumnsMeta, mssqlType, coerceValue } =
   require(path.join(__dirname, '..', 'wz', 'lib', 'schema'));
 const F = require('./lib/fields');
+const R = require('./lib/rozbieznosci');
 
 const OUT_DIR = path.join(__dirname, 'wynik');
 
@@ -44,8 +45,8 @@ function loadResults(skuFilter) {
 
 // Wspólna logika dla obu tabel (jednostki i kody kreskowe) — różnią się
 // tylko nazwą tabeli, listą kolumn i kluczem głównym do dedupu.
-async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCols, idCol, rekordy }) {
-  if (!rekordy.length) { console.log('[wgraj-jednostki] Brak rekordów dla ' + testTable + ' — pomijam.'); return; }
+async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCols, idCol, rekordy, skuPoId }) {
+  if (!rekordy.length) { console.log('[wgraj-jednostki] Brak rekordów dla ' + testTable + ' — pomijam.'); return []; }
 
   const { found, missing } = await fetchColumnsMeta(pool, 'dbo', realTable, dopasowaneCols);
   if (missing.length) console.warn('[wgraj-jednostki] Nie znalazłem w dbo.' + realTable + ': ' + missing.join(', '));
@@ -81,11 +82,15 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
     }
   }
 
+  const wartosc = (r, k) => (r[k] && typeof r[k] === 'object' && 'Item' in r[k]) ? r[k].Item : r[k];
+  const opis = r => ({ sku: skuPoId.get(String(wartosc(r, 'csItemsId'))) || null, csItemsId: wartosc(r, 'csItemsId') });
+
   let wstawione = 0, pominiete = 0;
   const konflikty = [];
+  const obecne = [];
   for (const r of rekordy) {
-    const surowaWartosc = (k) => (r[k] && typeof r[k] === 'object' && 'Item' in r[k]) ? r[k].Item : r[k];
-    if (idColMeta && existing.has(String(surowaWartosc(idCol)))) { pominiete++; continue; }
+    const surowaWartosc = (k) => wartosc(r, k);
+    if (idColMeta && existing.has(String(surowaWartosc(idCol)))) { pominiete++; obecne.push(r); continue; }
     const request = pool.request();
     const colNames = [];
     const paramNames = [];
@@ -130,7 +135,7 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
       // Tabela już ma inny wiersz pod tym samym kluczem biznesowym (np. EAN
       // o tym samym Ord z niezależnej synchronizacji worek) — nie nadpisujemy.
       if (e.number === 2627 || e.number === 2601) {
-        konflikty.push(String(surowaWartosc(idCol)) + ' (csItemsId ' + surowaWartosc('csItemsId') + ')');
+        konflikty.push(r);
         continue;
       }
       console.error('[wgraj-jednostki] BŁĄD INSERT dla rekordu: ' + JSON.stringify(r).slice(0, 500));
@@ -139,9 +144,27 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
     wstawione++;
   }
   if (pominiete) console.log('[wgraj-jednostki] ' + testTable + ': pominięto ' + pominiete + ' już obecnych.');
-  if (konflikty.length) console.warn('[wgraj-jednostki] ' + testTable + ': ' + konflikty.length +
-    ' pominięto przez konflikt klucza unikalnego (inny wiersz już zajmuje to miejsce): ' + konflikty.join(', '));
   console.log('[wgraj-jednostki] SUKCES: wstawiono ' + wstawione + ' do dbo.' + testTable + ' w bazie "' + database + '".');
+
+  // Już obecnych NIE zmieniamy (tylko dopisujemy) — różnice zgłaszamy.
+  const rozb = await R.porownajIstniejace(pool, { tabela: testTable, idCol, kolumny: columnsMeta, rekordy: obecne, wartosc, opis });
+
+  // Konflikt klucza unikalnego = to samo miejsce (firma, produkt, Ord) zajmuje
+  // w bazie inny wiersz. Dotyczy kodów EAN; zgłaszamy, co jest w bazie a co w ERP.
+  for (const r of konflikty) {
+    const zmiany = [];
+    if (testTable.startsWith(F.EAN_TABLE)) {
+      const q = await pool.request()
+        .input('c', sql.BigInt, wartosc(r, 'csCompaniesId')).input('i', sql.BigInt, wartosc(r, 'csItemsId')).input('o', sql.Int, wartosc(r, 'Ord'))
+        .query('SELECT CAST(csItemsBarCodesId AS varchar(30)) AS id, EAN FROM dbo.' + testTable + ' WHERE csCompaniesId=@c AND csItemsId=@i AND Ord=@o');
+      const w = q.recordset[0] || {};
+      zmiany.push({ pole: testTable + '.EAN (Ord=' + wartosc(r, 'Ord') + ')', baza: (w.EAN || 'NULL') + ' [id ' + (w.id || '?') + ']', erp: wartosc(r, 'EAN') + ' [id ' + wartosc(r, idCol) + ']' });
+    } else {
+      zmiany.push({ pole: testTable + ' (klucz unikalny zajęty)', baza: 'inny wiersz', erp: String(wartosc(r, idCol)) });
+    }
+    rozb.push(Object.assign({ id: String(wartosc(r, idCol)), zmiany }, opis(r)));
+  }
+  return R.tylkoNowe('[wgraj-jednostki] ' + testTable + ':', rozb);
 }
 
 async function main() {
@@ -165,15 +188,18 @@ async function main() {
   });
 
   const REALNE = process.argv.includes('--realne');
+  const skuPoId = new Map(produkty.map(p => [String(p.dopasowane && p.dopasowane.csItemsId), p.sku]));
   try {
-    await wgrajTabele(pool, database, {
+    const rozb = [];
+    rozb.push(...await wgrajTabele(pool, database, {
       realTable: F.JEDNOSTKI_TABLE, testTable: REALNE ? F.JEDNOSTKI_TABLE : F.JEDNOSTKI_TABLE + '_test',
-      dopasowaneCols: F.DOPASOWANE_JEDNOSTKI, idCol: 'csItemsUnitsId', rekordy: wszystkieJednostki
-    });
-    await wgrajTabele(pool, database, {
+      dopasowaneCols: F.DOPASOWANE_JEDNOSTKI, idCol: 'csItemsUnitsId', rekordy: wszystkieJednostki, skuPoId
+    }));
+    rozb.push(...await wgrajTabele(pool, database, {
       realTable: F.EAN_TABLE, testTable: REALNE ? F.EAN_TABLE : F.EAN_TABLE + '_test',
-      dopasowaneCols: F.DOPASOWANE_EAN, idCol: 'csItemsBarCodesId', rekordy: wszystkieEan
-    });
+      dopasowaneCols: F.DOPASOWANE_EAN, idCol: 'csItemsBarCodesId', rekordy: wszystkieEan, skuPoId
+    }));
+    await R.zglos('wgraj-jednostki ' + (REALNE ? 'prod' : '_test'), rozb);
   } finally {
     await pool.close();
   }

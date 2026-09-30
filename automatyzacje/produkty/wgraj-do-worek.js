@@ -29,6 +29,7 @@ dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, 
 const { fetchColumnsMeta, buildCreateTableSQL, mssqlType, coerceValue } =
   require(path.join(__dirname, '..', 'wz', 'lib', 'schema'));
 const F = require('./lib/fields');
+const R = require('./lib/rozbieznosci');
 const { ITEMS_FIXED_VALUES, ITEMS_SQL_NOW_COLUMNS, ITEMS_FIXED_FIELDS } = require('./lib/fixed-values');
 
 const REALNE = process.argv.includes('--realne');
@@ -154,21 +155,14 @@ async function main() {
     const wstawione = await insertRows(pool, columnsMeta, fixedColumnsMeta, nowe);
     console.log('[wgraj] SUKCES: wstawiono ' + wstawione + ' produktów do dbo.' + TEST_TABLE + ' w bazie "' + database + '".');
 
-    // Wiersze już wcześniej wgrane (przed dodaniem tych 5 kolumn do
-    // insertu) — dopełniamy je teraz, żeby nie zostały z NULL-ami. Warunek
-    // "createdDate IS NULL" chroni przed nadpisywaniem daty utworzenia przy
-    // każdym kolejnym uruchomieniu tego skryptu.
-    if (fixedColumnsMeta.length) {
-      const setClauses = fixedColumnsMeta.map(col =>
-        '[' + col.COLUMN_NAME + '] = ' + (ITEMS_SQL_NOW_COLUMNS.includes(col.COLUMN_NAME) ? 'SYSDATETIME()' : ITEMS_FIXED_VALUES[col.COLUMN_NAME])
-      );
-      const upd = await pool.request().query(
-        'UPDATE dbo.' + TEST_TABLE + ' SET ' + setClauses.join(', ') + ' WHERE createdDate IS NULL'
-      );
-      if (upd.rowsAffected[0]) {
-        console.log('[wgraj] Dopełniono ' + upd.rowsAffected[0] + ' wcześniej wgranych wierszy (DefSort/IsPhoto/IsPhotoPrev/daty).');
-      }
-    }
+    // Już obecnych NIE zmieniamy (tylko dopisujemy) — różnice zgłaszamy.
+    const rozb = await R.porownajIstniejace(pool, {
+      tabela: TEST_TABLE, idCol: 'csItemsId', kolumny: columnsMeta,
+      rekordy: results.filter(r => existing.has(String(r.dopasowane.csItemsId))),
+      wartosc: (r, k) => r.dopasowane[k],
+      opis: r => ({ sku: r.sku, csItemsId: r.dopasowane.csItemsId })
+    });
+    await R.zglos('wgraj-do-worek ' + TEST_TABLE, R.tylkoNowe('[wgraj]', rozb));
   } finally {
     await pool.close();
   }

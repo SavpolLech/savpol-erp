@@ -27,6 +27,7 @@ dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, 
 const { fetchColumnsMeta, mssqlType, coerceValue } =
   require(path.join(__dirname, '..', 'wz', 'lib', 'schema'));
 const F = require('./lib/fields');
+const R = require('./lib/rozbieznosci');
 
 const REALNE = process.argv.includes('--realne');
 const TEST_TABLE = REALNE ? F.GRUPY_TABLE : F.GRUPY_TABLE + '_test';
@@ -123,6 +124,16 @@ async function main() {
       wstawione++;
     }
     console.log('[wgraj-grupy] SUKCES: wstawiono ' + wstawione + ' grup do dbo.' + TEST_TABLE + ' w bazie "' + database + '".');
+
+    // Już obecnych NIE zmieniamy (tylko dopisujemy) — różnice zgłaszamy.
+    const skuPoId = new Map(produkty.map(p => [String(p.dopasowane && p.dopasowane.csItemsId), p.sku]));
+    const rozb = await R.porownajIstniejace(pool, {
+      tabela: TEST_TABLE, idCol: 'csItemsGroupsItemsId', kolumny: columnsMeta,
+      rekordy: wszystkieGrupy.filter(g => existing.has(String(g.csItemsGroupsItemsId))),
+      wartosc: (g, k) => g[k],
+      opis: g => ({ sku: skuPoId.get(String(g.csItemsId)) || null, csItemsId: g.csItemsId })
+    });
+    await R.zglos('wgraj-grupy ' + TEST_TABLE, R.tylkoNowe('[wgraj-grupy]', rozb));
   } finally {
     await pool.close();
   }
