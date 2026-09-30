@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.2.1
+// @version      4.3.0
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -5559,15 +5559,18 @@
 
   // Usuwanie węzłów po strukturze (DOM), nie regexem — bezpieczne dla
   // zagnieżdżonego HTML. Parsujemy opis, wycinamy pasujące węzły, serializujemy.
-  // opcje: { crosssell, css } — można oba naraz, w jednym parsowaniu.
-  //   crosssell — sekcja div.svp-pdp__section ZAWIERAJĄCA .svp-pdp__cards
-  //               (pozostałe svp-pdp__section to inne części PDP — zostają).
-  //   css       — blok(i) <style> (CSS jest już ładowany globalnie).
-  // Zwraca nową treść oraz liczby usuniętych węzłów (osobno i łącznie).
+  // opcje: { crosssell, css, przepisyAlt } — dowolna kombinacja, jedno parsowanie.
+  //   crosssell   — usuwa sekcję div.svp-pdp__section ZAWIERAJĄCĄ .svp-pdp__cards
+  //                 (pozostałe svp-pdp__section to inne części PDP — zostają).
+  //   css         — usuwa blok(i) <style> (CSS jest już ładowany globalnie).
+  //   przepisyAlt — zdejmuje klasę svp-pdp__section--alt WYŁĄCZNIE z sekcji
+  //                 zawierającej .svp-pdp__recipes (inne --alt zostają). Potrzebne,
+  //                 bo usunięcie cross-sellu zmienia parzystość naprzemiennego tła.
+  // Zwraca nową treść oraz liczby zmian (osobno i łącznie).
   function usunWezly(html, opcje) {
     const d = document.createElement('div');
     d.innerHTML = String(html);
-    let usunCross = 0, usunCss = 0;
+    let usunCross = 0, usunCss = 0, altZdjete = 0;
     if (opcje.crosssell) {
       Array.from(d.querySelectorAll('.svp-pdp__section'))
         .filter(s => s.querySelector('.svp-pdp__cards'))
@@ -5576,7 +5579,16 @@
     if (opcje.css) {
       d.querySelectorAll('style').forEach(n => { n.remove(); usunCss++; });
     }
-    return { nowa: d.innerHTML, usunCross: usunCross, usunCss: usunCss, usun: usunCross + usunCss };
+    if (opcje.przepisyAlt) {
+      Array.from(d.querySelectorAll('.svp-pdp__section--alt'))
+        .filter(s => s.querySelector('.svp-pdp__recipes'))
+        .forEach(n => { n.classList.remove('svp-pdp__section--alt'); altZdjete++; });
+    }
+    return {
+      nowa: d.innerHTML,
+      usunCross: usunCross, usunCss: usunCss, altZdjete: altZdjete,
+      usun: usunCross + usunCss + altZdjete
+    };
   }
 
   function createBulkPanel() {
@@ -5614,7 +5626,8 @@
       '  <div style="display:flex;flex-direction:column;gap:3px;font-size:12px;margin-bottom:8px">',
       '    <label style="cursor:pointer"><input type="checkbox" data-role="usun-crosssell"> Usuń sekcję cross-sell</label>',
       '    <label style="cursor:pointer"><input type="checkbox" data-role="usun-css"> Usuń blok CSS (&lt;style&gt;)</label>',
-      '    <div style="opacity:.6;margin-top:2px">Zaznacz oba, żeby usunąć naraz. Nic nie zaznaczone = tryb podmiany tekstu poniżej.</div>',
+      '    <label style="cursor:pointer"><input type="checkbox" data-role="usun-przepisy-alt"> Zdejmij klasę --alt z sekcji przepisów</label>',
+      '    <div style="opacity:.6;margin-top:2px">Zaznacz dowolną kombinację — robione naraz. Nic nie zaznaczone = tryb podmiany tekstu poniżej.</div>',
       '  </div>',
       '  <div style="font-size:12px;opacity:.85;margin-top:6px">SKU (po jednym w wierszu):</div>',
       '  <textarea data-role="sku" rows="4" spellcheck="false" style="' + field + '"></textarea>',
@@ -5654,7 +5667,8 @@
 
     const usunCross = el('usun-crosssell').checked;
     const usunCss = el('usun-css').checked;
-    const tryb = (usunCross || usunCss) ? 'usun' : 'tekst';
+    const przepisyAlt = el('usun-przepisy-alt').checked;
+    const tryb = (usunCross || usunCss || przepisyAlt) ? 'usun' : 'tekst';
     const skuLista = parsujSku(el('sku').value);
     const szukam = el('szukam').value;
     const naco = el('naco').value;
@@ -5673,15 +5687,16 @@
         if (t.n === 0) return null;
         return {
           nowa: stara.split(t.szukam).join(t.naco), n: t.n,
-          opis: t.n + '× ' + (t.tryb === 'dosłownie' ? 'do podmiany' : 'do podmiany [' + t.tryb + ']')
+          opis: t.n + '× podmiana' + (t.tryb === 'dosłownie' ? '' : ' [' + t.tryb + ']')
         };
       }
-      const r = usunWezly(stara, { crosssell: usunCross, css: usunCss });
+      const r = usunWezly(stara, { crosssell: usunCross, css: usunCss, przepisyAlt: przepisyAlt });
       if (r.usun === 0 || r.nowa === stara) return null;
       const czesci = [];
       if (usunCross) czesci.push('cross-sell ×' + r.usunCross);
       if (usunCss) czesci.push('CSS ×' + r.usunCss);
-      return { nowa: r.nowa, n: r.usun, opis: czesci.join(', ') + ' do usunięcia' };
+      if (przepisyAlt) czesci.push('przepisy --alt ×' + r.altZdjete);
+      return { nowa: r.nowa, n: r.usun, opis: czesci.join(', ') };
     };
 
     bulkRun.running = true;
@@ -5719,7 +5734,7 @@
 
         if (naSucho) {
           zmienione++;
-          wyniki.push('~ ' + sku + ' — ' + r.opis + '  ('
+          wyniki.push('~ ' + sku + ' — do zrobienia: ' + r.opis + '  ('
             + stara.length + ' → ' + nowa.length + ' znaków)');
           continue;
         }
@@ -5734,8 +5749,8 @@
         if (w.ok) {
           zmienione++;
           udaneSku.push(sku);
-          wyniki.push('✓ ' + sku + ' — ' + r.opis.replace('do ', '').replace('usunięcia', 'usunięte').replace('podmiany', 'podmienione')
-            + ' i potwierdzone  (' + stara.length + ' → ' + nowa.length + ' znaków)'
+          wyniki.push('✓ ' + sku + ' — zrobione i potwierdzone: ' + r.opis
+            + '  (' + stara.length + ' → ' + nowa.length + ' znaków)'
             + (w.lustro ? '' : '  [uwaga: repo apki nieodświeżone]'));
         } else {
           bledy++;
@@ -5757,7 +5772,8 @@
     const opisOperacji = tryb === 'tekst'
       ? ('\nSzukam: ' + JSON.stringify(szukam.slice(0, 120)) + (szukam.length > 120 ? '…' : '')
         + '\nZmieniam na: ' + JSON.stringify(naco.slice(0, 120)) + (naco.length > 120 ? '…' : ''))
-      : ('\nOperacja: usuwanie — ' + [usunCross ? 'sekcja cross-sell' : null, usunCss ? 'blok CSS (<style>)' : null].filter(Boolean).join(' + '));
+      : ('\nOperacja: ' + [usunCross ? 'usuń cross-sell' : null, usunCss ? 'usuń CSS (<style>)' : null,
+        przepisyAlt ? 'zdejmij --alt z przepisów' : null].filter(Boolean).join(' + '));
     const naglowek = (naSucho ? 'BULK EDIT — SUCHO (nic nie zapisano)' : 'BULK EDIT — ZAPIS')
       + '\n' + location.href + '\n' + new Date().toISOString()
       + '\nPole: „Opis produktu"'
@@ -5836,12 +5852,13 @@
       // usuwania — krótką instrukcję. Zmiana trybu resetuje blokadę „Zapisz",
       // żeby nie dało się zapisać usuwania po sucho zrobionym dla podmiany.
       const odswiezTryb = () => {
-        const usuwanie = el('usun-crosssell').checked || el('usun-css').checked;
+        const usuwanie = el('usun-crosssell').checked || el('usun-css').checked
+          || el('usun-przepisy-alt').checked;
         el('pola-tekst').style.display = usuwanie ? 'none' : '';
         el('pola-usun').style.display = usuwanie ? '' : 'none';
         el('zapisz').disabled = true;
       };
-      ['usun-crosssell', 'usun-css'].forEach(r =>
+      ['usun-crosssell', 'usun-css', 'usun-przepisy-alt'].forEach(r =>
         el(r).addEventListener('change', odswiezTryb));
 
       el('close').addEventListener('click', () => { bulkRun.stop = true; panel.remove(); });
