@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.3.3
+// @version      4.3.4
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -133,8 +133,11 @@
   const LOGIN_KLUCZ = 'savpol_login_erp';
 
   function aktualnyLoginErp() {
+    // Kolejność: login złapany z dowolnego żądania (erpZapamietaj) → z koperty
+    // produktowej → zapamiętany z poprzedniej sesji. Pierwszy niepusty wygrywa.
     const li = erpPodsluch && erpPodsluch.koperta && erpPodsluch.koperta.LoginInfo;
-    const live = li && li.UserName ? String(li.UserName) : '';
+    const live = (erpPodsluch && erpPodsluch.login)
+      || (li && li.UserName ? String(li.UserName) : '');
     if (live) {
       try { if (typeof GM_setValue === 'function') GM_setValue(LOGIN_KLUCZ, live); } catch (e) { /* nieistotne */ }
       return live;
@@ -1384,6 +1387,16 @@
   };
 
   function erpZapamietaj(koperta) {
+    // Login łapiemy z KAŻDEGO żądania (LoginInfo jest w korzeniu koperty), nie
+    // dopiero z koperty produktowej — dzięki temu bramka dostępu zna login już
+    // po pierwszym wywołaniu API katalogu i przyciski nie znikają po F5.
+    const liLogin = koperta && koperta.LoginInfo && koperta.LoginInfo.UserName;
+    if (liLogin) {
+      erpPodsluch.login = String(liLogin);
+      try { if (typeof GM_setValue === 'function') GM_setValue(LOGIN_KLUCZ, erpPodsluch.login); }
+      catch (e) { /* nieistotne */ }
+    }
+
     const wej = koperta && koperta.OperationInvokeInput;
     const ri = wej && wej.RefreshInputObject;
     if (!wej) return;
