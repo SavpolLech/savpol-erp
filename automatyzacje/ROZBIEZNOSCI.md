@@ -213,3 +213,23 @@ Dokumenty, których dane w ERP różnią się od tego, co JUŻ jest w bazie (wor
 - [ ] 0033322 (id=30490213104): csItems.KeyWordsAuto_HR: x213217693x 0033322 3052911297564 Syrop rozgrzewający rozgrzewajacy 0_7L _ MONIN -> x213217693x 0033322 3052911297564 Syrop rozgrzewający rozgrzewajacy WINTER SPICE 0_7L _ MONIN
 - [ ] 0033330 (id=30491010147): csItems.SEOTitle_PL: NULL -> Butelka Palma 500ml do granity - ICECUP | Savpol
 - [ ] 0033330 (id=30491010147): csItems.SEODescription_PL: NULL -> Butelka Palma 500 ml do granity, sorbetu, shake'ów i drinków. Karton 130 szt. Atrakcyjny wzór, wygodna forma podania na eventach i w gastronomii.
+
+## 2026-09-30T12:22:19.992Z · PRODUKTY · wgraj-jednostki prod · 13 dok.
+
+- [ ] 0008742 (id=218529765): csItemsUnits.PackageWeight: NULL -> 0.01
+- [ ] 0008742 (id=218529765): csItemsUnits.GrossWeight: 0.25 -> 0.26
+- [ ] 0008742 (id=218529765): csItemsUnits.dimensionMax: NULL -> 430
+- [ ] 0013529 (id=218529879): csItemsUnits.dimensionMax: NULL -> 430
+- [ ] 0013530 (id=218529880): csItemsUnits.dimensionMax: NULL -> 430
+- [ ] 0014781 (id=266196090): csItemsUnits.IsPurchaseRound: 0 -> 1
+- [ ] 0014781 (id=266196090): csItemsUnits.dimensionMax: NULL -> 220
+- [ ] 0016721 (id=279052700): csItemsUnits.PackageWeight: NULL -> 0
+- [ ] 0016721 (id=279052700): csItemsUnits.dimensionMax: NULL -> 1
+- [ ] 0020647 (id=395788137): csItemsUnits.dimensionMax: NULL -> 430
+- [ ] 0020906 (id=413945330): csItemsUnits.dimensionMax: NULL -> 430
+- [ ] 0021621 (id=473904152): csItemsUnits.dimensionMax: NULL -> 430
+- [ ] 0007084 (id=218528073): csItemsBarCodes.EAN: 5901891491555 -> 590189149039
+- [ ] 0021219 (id=444730898): csItemsBarCodes.EAN (Ord=1): 2000170000006N [id 450824495] -> 2000170000006N [id 30719774448]
+- [ ] 0021226 (id=444730853): csItemsBarCodes.EAN (Ord=1): 2000150000002N [id 450824501] -> 2000150000002N [id 30719774436]
+- [ ] 0021287 (id=449577026): csItemsBarCodes.EAN (Ord=1): 2000120000001B [id 450824504] -> 2000120000001B [id 30719774445]
+- [ ] 0021306 (id=449576984): csItemsBarCodes.EAN (Ord=1): 2000120000001N [id 450824510] -> 2000120000001N [id 30719774442]
