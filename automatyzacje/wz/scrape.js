@@ -695,9 +695,13 @@ async function saveResult(result, label) {
 
         const scrapedPositions = result.positions.filter(p => String(coerceValue(p.csDocsHeadersId, headerIdCol)) === key);
         const dbPositions = dbPositionsMap.get(key) || [];
-        const zmianyPozycji = diffPositions(scrapedPositions, dbPositions, schema.positions).map(d => d.kind
-          ? ({ id: d.id, pole: d.kind, baza: '', erp: '' })
-          : ({ id: d.id, pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) }));
+        // Kodowanie wg wspólnego standardu (powiadom.js): pole=null => cała
+        // pozycja; baza=null => nowa w ERP; erp=null => brak w ERP.
+        const zmianyPozycji = diffPositions(scrapedPositions, dbPositions, schema.positions).map(d => {
+          if (d.kind === 'nowa-w-ERP') return { id: d.id, pole: null, baza: null, erp: 'pozycja' };
+          if (d.kind === 'brak-w-ERP') return { id: d.id, pole: null, baza: 'pozycja', erp: null };
+          return { id: d.id, pole: d.field, baza: fmtVal(d.old), erp: fmtVal(d.new) };
+        });
 
         if (!zmianyNaglowka.length && !zmianyPozycji.length) continue;
 
@@ -707,16 +711,13 @@ async function saveResult(result, label) {
         }
         if (zmianyPozycji.length) {
           console.warn('[rozbieżność-pozycje] ' + (h.DocNumber || key) + ' (id=' + key + '): ' +
-            zmianyPozycji.map(z => (z.baza === '' && z.erp === '')
-              ? ('poz. ' + z.id + ' ' + z.pole)
-              : ('poz. ' + z.id + ' ' + z.pole + ': ' + z.baza + ' -> ' + z.erp)).join('; '));
+            zmianyPozycji.map(z => z.pole ? ('poz. ' + z.id + ' ' + z.pole + ': ' + z.baza + ' -> ' + z.erp)
+              : (z.erp === null ? ('poz. ' + z.id + ' brak w ERP') : ('poz. ' + z.id + ' nowa w ERP'))).join('; '));
         }
         rozbieznosci.push({
-          docNumber: h.DocNumber || key,
+          docNumber: h.DocNumber || null,
           csDocsHeadersId: key,
           zmianyNaglowka,
-          pozycjeBaza: dbPositions.length,
-          pozycjeErp: scrapedPositions.length,
           zmianyPozycji
         });
       }
