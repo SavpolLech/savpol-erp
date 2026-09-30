@@ -13,8 +13,10 @@ cd /d "%~dp0"
 set "WT=C:\Users\l.dudkiewicz\Documents\claude_code\esavpol-pdp-odswiez"
 set "CSV=C:\Users\l.dudkiewicz\Documents\savpol-erp\savpol-erp\automatyzacje\produkty\wynik\etykiety-finalne.csv"
 set "NODE=C:\Program Files\nodejs\node.exe"
-REM Dzieci odswiez.mjs (buduj.mjs na 2,6 mln pozycji WZ) dziedzicza limit pamieci.
-set "NODE_OPTIONS=--max-old-space-size=6000"
+REM Dzieci odswiez.mjs (buduj.mjs na 2,6 mln pozycji WZ) dziedzicza limit pamieci. Szczyt 2026-09-30:
+REM 0,8 GB przy 0,77 GB wolnego RAM w systemie - limit 2 GB: przy skoku zuzycia blad zamiast dlawienia
+REM komputera (tego dnia zawiesil sie w trakcie przebiegu).
+set "NODE_OPTIONS=--max-old-space-size=2048"
 echo ==== %date% %time% start >> odswiez-baza.log
 "%NODE%" eksport-wz.js >> odswiez-baza.log 2>&1 || (echo BLAD eksportu WZ - baza bez zmian >> odswiez-baza.log & exit /b 1)
 git -C "%WT%" -c core.longpaths=true fetch -q origin main >> odswiez-baza.log 2>&1 || (echo BLAD git fetch >> odswiez-baza.log & exit /b 1)
