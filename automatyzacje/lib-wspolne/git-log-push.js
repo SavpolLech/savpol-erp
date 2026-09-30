@@ -50,4 +50,24 @@ function pushLogs(scraper, label) {
   }
 }
 
-module.exports = { pushLogs };
+// Commit + push POJEDYNCZEGO pliku repo (ścieżka względem korzenia repo, np.
+// 'automatyzacje/ROZBIEZNOSCI.md'). Ten sam mechanizm i te same gwarancje co
+// pushLogs — nigdy nie rzuca, błąd gita zostaje ostrzeżeniem w logu.
+function pushFile(relPath, message) {
+  try {
+    git(['add', relPath]);
+    const status = git(['status', '--porcelain', '--', relPath]);
+    if (!status.trim()) {
+      console.log('[git-log-push] Brak zmian w ' + relPath + ' — nic do commitowania.');
+      return;
+    }
+    git(['commit', '-m', message]);
+    git(['push']);
+    console.log('[git-log-push] ' + relPath + ' wypchnięty do repo.');
+  } catch (err) {
+    console.warn('[git-log-push] UWAGA: nie udało się wypchnąć ' + relPath + ': ' +
+      (err.stderr || err.message));
+  }
+}
+
+module.exports = { pushLogs, pushFile };
