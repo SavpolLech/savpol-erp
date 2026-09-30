@@ -1,0 +1,31 @@
+{
+  "dateFrom": "2026-09-25",
+  "dateTo": "2026-09-25",
+  "processedDocNumbers": [
+    "2026/PZ/WAS1/003624",
+    "2026/PZ/WAS1/003623",
+    "2026/PZ/WAS1/003622",
+    "2026/PZ/WAS1/003621",
+    "2026/PZ/WAS1/003620",
+    "2026/PZ/WAS1/003619",
+    "2026/PZ/WAS1/003618",
+    "2026/PZ/WAS1/003617",
+    "2026/PZ/WAS1/003616",
+    "2026/PZ/WAS1/003615",
+    "2026/PZ/WAS1/003614",
+    "2026/PZ/WAS1/003613",
+    "2026/PZ/WAS1/003612",
+    "2026/PZ/WAS1/003611",
+    "2026/PZ/WAS1/003610"
+  ],
+  "complete": false,
+  "lastUpdated": "2026-09-30T12:14:39.365Z",
+  "runs": [
+    {
+      "ts": "2026-09-30T12:14:39.364Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    }
+  ]
+}
