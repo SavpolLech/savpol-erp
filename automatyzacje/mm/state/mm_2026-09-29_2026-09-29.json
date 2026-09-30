@@ -30,7 +30,6 @@
     "2026/MM/KRS1/005977",
     "2026/MM/RZS1/000527",
     "2026/MM/GLS1/001749",
-    "2026/MM/RAS1/000247",
     "2026/MM/RZS1/000528",
     "2026/MM/GLS1/001750",
     "2026/MM/GLS1/001751",
@@ -41,7 +40,7 @@
     "2026/MM/KRS1/005971"
   ],
   "complete": true,
-  "lastUpdated": "2026-09-30T08:31:56.410Z",
+  "lastUpdated": "2026-09-30T08:39:01.276Z",
   "runs": [
     {
       "ts": "2026-09-30T07:28:26.879Z",
@@ -112,6 +111,24 @@
     {
       "ts": "2026-09-30T08:31:56.409Z",
       "paczkaDok": 7,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-09-30T08:37:44.536Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-09-30T08:38:40.451Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-09-30T08:39:01.276Z",
+      "paczkaDok": 6,
       "partial": false,
       "stoppedReason": null
     }
