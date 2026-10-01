@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.3.4
+// @version      4.4.0
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3614,6 +3614,73 @@
   // Cross-selling na stronie produktu liczy teraz esavpol po swojej stronie,
   // więc ta praca przestała być komukolwiek potrzebna. Z przebiegu zostało to,
   // czego esavpol nie ma skąd wziąć: specyfikacja z załączników ERP.
+  // Lekki wskaznik pracy: kolko i jedno zdanie.
+  //
+  // Przebieg trwa kilkanascie sekund i do 4.4.0 nie dawal w tym czasie zadnego
+  // znaku — po usunieciu nakladki ekran po prostu milczal, co wyglada jak
+  // zawieszenie. Pelna nakladka jest tu za ciezka: niesie przyciski i wynik,
+  // a tu chodzi wylacznie o „robie cos, poczekaj".
+  const WSKAZNIK_ID = 'savpol-wskaznik-pracy';
+
+  function wskaznikPracy(tekst) {
+    schowajWskaznik();
+    if (!document.getElementById('savpol-wskaznik-style')) {
+      const st = document.createElement('style');
+      st.id = 'savpol-wskaznik-style';
+      st.textContent = '@keyframes savpolObrot{to{transform:rotate(360deg)}}';
+      document.head.appendChild(st);
+    }
+    const box = document.createElement('div');
+    box.id = WSKAZNIK_ID;
+    box.style.cssText = [
+      'position:fixed', 'right:16px', 'bottom:16px', 'z-index:2147483000',
+      'display:flex', 'align-items:center', 'gap:10px',
+      'padding:12px 16px', 'border-radius:8px',
+      'background:#1f2933', 'color:#f5f7fa',
+      'box-shadow:0 6px 24px rgba(0,0,0,.35)',
+      'font:13px/1.45 system-ui,Segoe UI,Arial,sans-serif'
+    ].join(';');
+
+    const kolko = document.createElement('div');
+    kolko.style.cssText = [
+      'width:16px', 'height:16px', 'flex:0 0 auto', 'border-radius:50%',
+      'border:2px solid rgba(255,255,255,.25)', 'border-top-color:#f5f7fa',
+      'animation:savpolObrot .8s linear infinite'
+    ].join(';');
+    box.appendChild(kolko);
+
+    const napis = document.createElement('span');
+    napis.setAttribute('data-role', 'tekst');
+    napis.textContent = tekst || 'Pracuję...';
+    box.appendChild(napis);
+
+    document.body.appendChild(box);
+    return {
+      tekst(t) {
+        const el = box.querySelector('[data-role="tekst"]');
+        if (el) el.textContent = t;
+      },
+      schowaj: schowajWskaznik
+    };
+  }
+
+  function schowajWskaznik() {
+    const stary = document.getElementById(WSKAZNIK_ID);
+    if (stary) stary.remove();
+  }
+
+  // Otwarcie generatora i nasluch na gotowe opisy.
+  //
+  // Wspolne dla przebiegu (robi to sam) i dla przycisku w nakladce (gdy cos
+  // poszlo nie tak i czlowiek decyduje, czy mimo wszystko isc dalej).
+  function otworzGeneratorIPilnuj(sku, ui) {
+    openGenerator(sku);
+    if (pilnowane[sku]) return;
+    pilnowane[sku] = true;
+    if (ui) ui.detail('Czekam na opisy z apki dla ' + sku + '.');
+    pilnujOpisow(sku, ui || null).finally(() => { delete pilnowane[sku]; });
+  }
+
   async function runFullPipeline(button) {
     // Drugie kliknięcie w trakcie pracy = żądanie przerwania, nie drugi przebieg.
     if (ABORT.running) {
@@ -3625,7 +3692,19 @@
     const originalText = ORIGINAL_BUTTON_TEXT;
     ABORT.running = true;
     ABORT.requested = false;
-    const ui = PROGRESS.ENABLE ? createProgressOverlay() : noopProgress();
+    // Nakladka tylko wtedy, gdy jest co pokazac.
+    //
+    // Przy udanym przebiegu nie ma juz czego ogladac: analiza faktur zniknela,
+    // a jedyny przycisk nakladki otwieral generator — czyli kazal klikac po to,
+    // zeby zrobic rzecz, ktora i tak chcemy zrobic. Teraz generator otwiera sie
+    // sam, a nakladka wstaje dopiero przy bledzie albo przy braku specyfikacji.
+    let ui = noopProgress();
+    const pokazNakladke = () => {
+      if (ui.realna || !PROGRESS.ENABLE) return ui;
+      ui = createProgressOverlay();
+      ui.realna = true;
+      return ui;
+    };
     diagBuffer.length = 0;
     diagStarted = Date.now();
     describeDom('start przebiegu');
@@ -3644,6 +3723,7 @@
       }
       diagAnchorSku = mainSku;
       ui.detail('Produkt: ' + mainSku);
+      const wskaznik = wskaznikPracy('Pobieram specyfikację produktu ' + mainSku + '...');
 
       // Specyfikacja do apki. Niepowodzenie NIE przerywa przebiegu — najwyżej
       // wkleisz PDF ręcznie, czyli tak jak przed tą automatyzacją.
@@ -3655,35 +3735,44 @@
         if (!erpPodsluch.szablonZalacznikow) spec.rada = RADA_ZALACZNIKI;
       }
 
-      ui.finish('Gotowe — otwórz generator', true);
       if (spec.ok) {
-        ui.detail('Specyfikacja jest już w apce. Kliknij „Otwórz generator opisów".');
+        // Wszystko gotowe — otwieramy apke od razu, bez posrednika.
+        wskaznik.tekst('Otwieram generator opisów...');
+        setTimeout(schowajWskaznik, 1500);
+        button.textContent = '✅ Otwieram generator...';
+        otworzGeneratorIPilnuj(mainSku, null);
       } else {
-        ui.detail('Specyfikacji nie udało się pobrać'
-          + (spec.rada ? ' — ' + spec.rada : ' (' + spec.powod + ')')
-          + ' Generator otworzysz mimo to; PDF wklej ręcznie.');
+        // Brak specyfikacji to nie awaria, ale i nie „wszystko OK": opis bez
+        // niej bedzie gorszy. Pokazujemy powod i zostawiamy decyzje czlowiekowi,
+        // zamiast otwierac generator tak, jakby nic sie nie stalo.
+        schowajWskaznik();
+        const u = pokazNakladke();
+        u.finish('Specyfikacja nie została pobrana', false);
+        u.detail((spec.rada ? spec.rada : 'Powód: ' + spec.powod)
+          + ' Generator możesz otworzyć mimo to — PDF wklej ręcznie.');
+        u.result(' ', mainSku, {});
+        button.textContent = '⚠️ Bez specyfikacji';
       }
-      // Pusty pierwszy argument: lista cross-sellingu już nie istnieje, ale
-      // przycisk otwarcia generatora pokazuje się właśnie przez ui.result().
-      ui.result(' ', mainSku, {});
-      button.textContent = '✅ Gotowe — otwórz generator';
 
       diag('KONIEC', 'Przebieg zakończony. Specyfikacja: '
         + (spec.ok ? 'wysłana' : 'NIE wysłana (' + spec.powod + ')') + '.');
       setTimeout(() => { button.textContent = originalText; }, 3000);
     } catch (err) {
+      schowajWskaznik();
       if (err && err.isAbort) {
         console.warn('[Savpol Historia Faktur] Przerwano przez użytkownika.');
         diag('KONIEC', 'Przerwane przez użytkownika.');
-        ui.finish('⏹️ Zatrzymane', false);
-        ui.detail('Zatrzymane — nic nie zostało zapisane. Możesz uruchomić od nowa.');
+        const u = pokazNakladke();
+        u.finish('⏹️ Zatrzymane', false);
+        u.detail('Zatrzymane — nic nie zostało zapisane. Możesz uruchomić od nowa.');
         button.textContent = '⏹️ Przerwano';
       } else {
         console.error('[Savpol Historia Faktur] Błąd:', err);
         diag('BLAD', 'Przebieg zakończony błędem: ' + String(err && err.message || err));
         describeDom('błąd przebiegu');
-        ui.finish('⚠️ Coś poszło nie tak', false);
-        ui.detail('Nie udało się dokończyć. Kliknij „Zapisz szczegóły błędu" ' +
+        const u = pokazNakladke();
+        u.finish('⚠️ Coś poszło nie tak', false);
+        u.detail('Nie udało się dokończyć. Kliknij „Zapisz szczegóły błędu" ' +
           'i wyślij plik osobie, która opiekuje się skryptem. Szczegóły: ' +
           String(err && err.message || err));
         button.textContent = '⚠️ Coś poszło nie tak';
