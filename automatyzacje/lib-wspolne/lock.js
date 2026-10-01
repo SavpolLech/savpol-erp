@@ -16,6 +16,14 @@ const fs = require('fs');
 // staleMs: po ilu ms lock uznajemy za osierocony. Domyślnie 12 h > najdłuższy
 // realny bieg (3 typy × okno × sesje), więc żywy przebieg nie wyprzedzi sam
 // siebie, a trup nie blokuje kolejnego dnia.
+// process.kill(pid, 0) niczego nie zabija — tylko sprawdza istnienie procesu.
+// ESRCH = nie ma takiego procesu; EPERM = jest, tylko cudzy (żyje).
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (e) { return e.code === 'EPERM'; }
+}
+
 module.exports = function createLock(lockPath, opts = {}) {
   const staleMs = opts.staleMs || 12 * 60 * 60 * 1000;
 
@@ -23,12 +31,17 @@ module.exports = function createLock(lockPath, opts = {}) {
     try {
       const info = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
       const age = Date.now() - new Date(info.ts).getTime();
-      if (age < staleMs) {
+      // Właściciel nie żyje (np. okno zamknięte Ctrl+C) = lock osierocony od
+      // razu, bez czekania staleMs. 12 h zostaje siatką na ponownie użyty PID.
+      if (age < staleMs && !pidAlive(info.pid)) {
+        console.warn(`[lock] Właściciel locka (PID ${info.pid}) nie żyje — przejmuję.`);
+      } else if (age < staleMs) {
         console.error(`[lock] LOCK zajęty przez PID ${info.pid} od ${info.ts} ` +
           `(${Math.round(age / 60000)} min temu). Inny bieg trwa — nie wchodzę równolegle na ERP.`);
         return false;
+      } else {
+        console.warn(`[lock] LOCK przeterminowany (${Math.round(age / 60000)} min) — przejmuję.`);
       }
-      console.warn(`[lock] LOCK przeterminowany (${Math.round(age / 60000)} min) — przejmuję.`);
     } catch { /* brak locka albo śmieć w pliku — bierzemy */ }
     fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, ts: new Date().toISOString() }), 'utf8');
     return true;
