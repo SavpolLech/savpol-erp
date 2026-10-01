@@ -519,9 +519,13 @@ function comparableHeaderColumns(columnsMeta) {
     && c.COLUMN_NAME !== 'csDocsHeadersId'
     && !HEADER_FIXED_SET.has(c.COLUMN_NAME));
 }
+const LICZBOWE = new Set(['int', 'bigint', 'smallint', 'tinyint', 'bit', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney']);
 function valuesEqual(oldVal, newVal, col) {
   const empty = (v) => v === null || v === undefined || v === '';
   if (empty(oldVal) && empty(newVal)) return true;
+  // NULL w bazie vs 0 w ERP (np. FStock/QStock pozycji) to niewypełnione pole,
+  // nie zmiana danych — ta sama reguła co produkty/lib/rozbieznosci.js.
+  if (empty(oldVal) && LICZBOWE.has(col.DATA_TYPE) && Number(newVal) === 0) return true;
   if (empty(oldVal) || empty(newVal)) return false;
   switch (col.DATA_TYPE) {
     case 'date': case 'datetime': case 'datetime2': case 'smalldatetime': {

@@ -109,6 +109,8 @@ const MM_DOC_TYPE_ID = (process.env.MM_DOC_TYPE_ID || '269000798').replace(/\s/g
 const WRITE_TO_PROD = process.env.SCRAPE_TARGET === 'prod';
 const TARGET_HEADERS = WRITE_TO_PROD ? F.PROD_TABLE_HEADERS : F.TEST_TABLE_HEADERS;
 const TARGET_POSITIONS = WRITE_TO_PROD ? F.PROD_TABLE_POSITIONS : F.TEST_TABLE_POSITIONS;
+// csStatusesValues: 213217726 = "Do realizacji" (edytowalny), 213217724 = "Zaksięgowane".
+const STATUS_DO_REALIZACJI = '213217726';
 
 // Godziny "pracy" — poza tym oknem (i w weekendy) skrypt się NIE uruchamia.
 const BUSINESS_HOURS_START = parseInt(process.env.BUSINESS_HOURS_START || '7', 10);
@@ -473,9 +475,13 @@ function comparablePositionColumns(columnsMeta) {
 // Równość wg TYPU kolumny — normalizacja, żeby nie robić fałszywych różnic:
 // data z/bez czasu, decimal jako string vs number, bigint bez utraty precyzji.
 // newVal jest już SKOERCOWANY (coerceValue), oldVal to wartość z bazy.
+const LICZBOWE = new Set(['int', 'bigint', 'smallint', 'tinyint', 'bit', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney']);
 function valuesEqual(oldVal, newVal, col) {
   const empty = (v) => v === null || v === undefined || v === '';
   if (empty(oldVal) && empty(newVal)) return true;
+  // NULL w bazie vs 0 w ERP (np. FStock/QStock pozycji) to niewypełnione pole,
+  // nie zmiana danych — ta sama reguła co produkty/lib/rozbieznosci.js.
+  if (empty(oldVal) && LICZBOWE.has(col.DATA_TYPE) && Number(newVal) === 0) return true;
   if (empty(oldVal) || empty(newVal)) return false;
   switch (col.DATA_TYPE) {
     case 'date': case 'datetime': case 'datetime2': case 'smalldatetime': {
@@ -603,9 +609,23 @@ async function saveResult(result, label) {
     const idStr = (r) => String(coerceValue(r.csDocsHeadersId, headerIdCol));
     const existingIds = headerIdCol ? await findExistingHeaderIds(pool, headerIdCol, result.headers) : new Set();
 
-    const newHeaders = result.headers.filter(h => !existingIds.has(idStr(h)));
+    // MM "Do realizacji" (niezaksięgowane) NIE trafiają do worka: przy
+    // księgowaniu ERP zmienia im DocDate (na dzień księgowania), status i FStock,
+    // a my rekordu nie poprawiamy (tylko dopisujemy) — w worku zostałaby stara
+    // wersja + rozbieżność (7/7 MM z 30.09). Pomijamy i NIE zapisujemy w state/,
+    // więc zaksięgowany dokument wejdzie w biegu za dzień swojej nowej DocDate.
+    const doRealizacji = new Set(result.headers
+      .filter(h => !existingIds.has(idStr(h)) && String(h.csDocsHeadersStatusId || '').replace(/[\s ]/g, '') === STATUS_DO_REALIZACJI)
+      .map(idStr));
+    const pominieteDoRealizacji = result.headers.filter(h => doRealizacji.has(idStr(h))).map(h => h.DocNumber);
+    if (pominieteDoRealizacji.length) {
+      console.log('[wynik] Pomijam ' + pominieteDoRealizacji.length + ' MM w statusie "Do realizacji" (czekają na zaksięgowanie): ' +
+        pominieteDoRealizacji.join(', '));
+    }
+
+    const newHeaders = result.headers.filter(h => !existingIds.has(idStr(h)) && !doRealizacji.has(idStr(h)));
     const existingHeaders = result.headers.filter(h => existingIds.has(idStr(h)));
-    const newPositions = result.positions.filter(p => !existingIds.has(idStr(p)));
+    const newPositions = result.positions.filter(p => !existingIds.has(idStr(p)) && !doRealizacji.has(idStr(p)));
 
     if (WRITE_TO_PROD) {
       console.log('[wynik] UWAGA: zapis do tabel PRODUKCYJNYCH (' + TARGET_HEADERS + '/' + TARGET_POSITIONS + ').');
@@ -681,7 +701,7 @@ async function saveResult(result, label) {
     if (unchanged) parts.push('bez zmian ' + unchanged);
     console.log('[wynik] Zapis do "' + DB_NAME + '" (' + TARGET_HEADERS + '/' + TARGET_POSITIONS + '): ' + parts.join(', ') + '.');
 
-    return { insertedHeaders, insertedPositions, rozbieznosci, rozbHeaders, rozbPoz, unchanged };
+    return { insertedHeaders, insertedPositions, rozbieznosci, rozbHeaders, rozbPoz, unchanged, pominieteDoRealizacji };
   } finally {
     await pool.close();
   }
@@ -859,6 +879,7 @@ async function main() {
   let totalPositions = 0;
   let totalRozbHeaders = 0;   // nagłówki różniące się od ERP (NIE zmieniamy bazy, tylko zgłaszamy)
   let totalRozbPoz = 0;       // dok. z inną liczbą pozycji niż w ERP
+  const allPominieteDoRealizacji = new Set(); // MM "Do realizacji" — nie wpisane do worka
   const allRozbieznosci = []; // pełna lista rozbieżności — do zbiorczego maila po biegu
   let allPagesExhausted = false;
   let lastStoppedReason = null;
@@ -950,6 +971,11 @@ async function main() {
       }
 
       batch.completedDocNumbers.forEach(d => processedThisRun.add(d));
+      // Pominięte "Do realizacji" nie idą do state/ (patrz saveResult) — w tej
+      // sesji zostają w processedThisRun, żeby paczki nie zbierały ich w kółko.
+      const pominiete = new Set((wr && wr.pominieteDoRealizacji) || []);
+      pominiete.forEach(d => allPominieteDoRealizacji.add(d));
+      const doStanu = batch.completedDocNumbers.filter(d => !pominiete.has(d));
       totalHeaders += batch.headers.length;
       totalPositions += batch.positions.length;
       collectedThisSession += batch.headers.length;
@@ -958,7 +984,7 @@ async function main() {
 
       if (dateFrom || dateTo) {
         const saved = saveState(dateFrom, dateTo, {
-          newDocNumbers: batch.completedDocNumbers,
+          newDocNumbers: doStanu,
           complete: allPagesExhausted,
           runSummary: {
             ts: new Date().toISOString(),
@@ -1014,6 +1040,7 @@ async function main() {
       docsZebraneWTejSesji: totalHeaders,
       rozbieznosciNaglowki: totalRozbHeaders,
       rozbieznosciPozycje: totalRozbPoz,
+      pominieteDoRealizacji: Array.from(allPominieteDoRealizacji),
       pozycjeZebraneWTejSesji: totalPositions,
       docsLacznieDlaZakresu: (dateFrom || dateTo) ? processedThisRun.size : null,
       expectedTotal,

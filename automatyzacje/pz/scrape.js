@@ -531,9 +531,13 @@ function comparableHeaderColumns(columnsMeta) {
 // data z/bez czasu, decimal jako string vs number, bigint bez utraty precyzji,
 // uniqueidentifier (csDocsHeadersG: baza WIELKIMI, ERP małymi liter — to samo).
 // newVal jest już SKOERCOWANY (coerceValue), oldVal to wartość z bazy.
+const LICZBOWE = new Set(['int', 'bigint', 'smallint', 'tinyint', 'bit', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney']);
 function valuesEqual(oldVal, newVal, col) {
   const empty = (v) => v === null || v === undefined || v === '';
   if (empty(oldVal) && empty(newVal)) return true;
+  // NULL w bazie vs 0 w ERP (np. FStock/QStock pozycji) to niewypełnione pole,
+  // nie zmiana danych — ta sama reguła co produkty/lib/rozbieznosci.js.
+  if (empty(oldVal) && LICZBOWE.has(col.DATA_TYPE) && Number(newVal) === 0) return true;
   if (empty(oldVal) || empty(newVal)) return false;
   switch (col.DATA_TYPE) {
     case 'date': case 'datetime': case 'datetime2': case 'smalldatetime': {

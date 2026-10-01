@@ -158,6 +158,9 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
         .input('c', sql.BigInt, wartosc(r, 'csCompaniesId')).input('i', sql.BigInt, wartosc(r, 'csItemsId')).input('o', sql.Int, wartosc(r, 'Ord'))
         .query('SELECT CAST(csItemsBarCodesId AS varchar(30)) AS id, EAN FROM dbo.' + testTable + ' WHERE csCompaniesId=@c AND csItemsId=@i AND Ord=@o');
       const w = q.recordset[0] || {};
+      // Ten sam EAN, inne csItemsBarCodesId = ERP przepisał wiersz od nowa;
+      // kod się nie zmienił, więc to nie rozbieżność.
+      if (String(w.EAN || '').trim() === String(wartosc(r, 'EAN') || '').trim()) continue;
       zmiany.push({ pole: testTable + '.EAN (Ord=' + wartosc(r, 'Ord') + ')', baza: (w.EAN || 'NULL') + ' [id ' + (w.id || '?') + ']', erp: wartosc(r, 'EAN') + ' [id ' + wartosc(r, idCol) + ']' });
     } else {
       zmiany.push({ pole: testTable + ' (klucz unikalny zajęty)', baza: 'inny wiersz', erp: String(wartosc(r, idCol)) });
