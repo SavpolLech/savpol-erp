@@ -51,3 +51,6 @@ suchary.txt
 
 # Log miesiecznego przeliczenia bazy powiazan cross-sell
 automatyzacje/cross-sell/*.log
+
+# Logi z ręcznych/backfillowych biegów scrapera produktów — czysto lokalne
+automatyzacje/produkty/*.log
