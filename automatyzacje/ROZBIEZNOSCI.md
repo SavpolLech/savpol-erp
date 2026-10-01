@@ -316,3 +316,7 @@ Dokumenty, których dane w ERP różnią się od tego, co JUŻ jest w bazie (wor
 - [ ] 2026/MM/GLS1/001751 (id=30788305617): pozycja 30788305644 — QStock: NULL -> 0
 - [ ] 2026/MM/GLS1/001751 (id=30788305617): pozycja 30788305647 — FStock: NULL -> 0
 - [ ] 2026/MM/GLS1/001751 (id=30788305617): pozycja 30788305647 — QStock: NULL -> 0
+
+## 2026-10-01T09:12:58.375Z · PRODUKTY · wgraj-do-worek csItems · 1 dok.
+
+- [ ] 0004492 (id=218529999): csItems.csItemsStatusesValuesId: 218526189 -> 218526185
