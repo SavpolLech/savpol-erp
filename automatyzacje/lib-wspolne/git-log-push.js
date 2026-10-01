@@ -41,7 +41,9 @@ function pushLogs(scraper, label) {
       return;
     }
 
-    git(['commit', '-m', 'Log automatyzacji ' + scraper.toUpperCase() + (label ? ' — ' + label : '')]);
+    // Pathspec po `--`: commit bierze TYLKO log i stan, nawet jeśli w indeksie
+    // czeka coś innego (automat może lecieć na maszynie, na której ktoś pracuje).
+    git(['commit', '-m', 'Log automatyzacji ' + scraper.toUpperCase() + (label ? ' — ' + label : ''), '--', runLog, stateDir]);
     git(['push']);
     console.log('[git-log-push] Log i stan wypchnięte do repo.');
   } catch (err) {
@@ -61,7 +63,7 @@ function pushFile(relPath, message) {
       console.log('[git-log-push] Brak zmian w ' + relPath + ' — nic do commitowania.');
       return;
     }
-    git(['commit', '-m', message]);
+    git(['commit', '-m', message, '--', relPath]);
     git(['push']);
     console.log('[git-log-push] ' + relPath + ' wypchnięty do repo.');
   } catch (err) {

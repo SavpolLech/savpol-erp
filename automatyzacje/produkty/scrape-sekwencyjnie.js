@@ -29,6 +29,7 @@ dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, 
 
 const { login, CATALOG_URL, HEADLESS, decodeJsonResult, extractCardRecord, scrapeOneProduct } = require('./scrape');
 const { loadState, saveState, appendRunLog } = require('./lib/state');
+const { pushLogs } = require('../lib-wspolne/git-log-push');
 
 // Punkt startowy od Michała (2026-09-14): "Ostatni SKU produktu w bazie
 // danych to 0033222 [...] startując od 0033223".
@@ -145,6 +146,7 @@ async function uruchom(startNumer, ileZescrapowac) {
     // Dopisz podsumowanie przebiegu też do stanu (tak jak w WZ — runs[] w
     // pliku stanu obok run-log.jsonl), nawet jeśli nic nowego nie zebrano.
     saveState({ runSummary: Object.assign({ ts: new Date().toISOString() }, podsumowanie) });
+    pushLogs('produkty', 'sekwencyjnie od ' + podsumowanie.startSku);
     await browser.close();
   }
 

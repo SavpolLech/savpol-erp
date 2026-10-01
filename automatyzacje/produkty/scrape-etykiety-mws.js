@@ -28,7 +28,7 @@
 //
 // Uruchomienie:
 //   node scrape-etykiety-mws.js [ile=10] [--suplementarny="C:\...\plik.csv"]
-//   node scrape-etykiety-mws.js 10 --suplementarny="C:\Users\l.dudkiewicz\Downloads\suplementarny feed GMC - Arkusz1.csv"
+//   node scrape-etykiety-mws.js 10 --suplementarny="%USERPROFILE%\Downloads\suplementarny feed GMC - Arkusz1.csv"
 
 const path = require('path');
 const fs = require('fs');
@@ -44,10 +44,11 @@ dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, 
 const { login, CATALOG_URL, HEADLESS, decodeJsonResult, extractCardRecord, closeProductCardInPage } = require('./scrape');
 const { pobierzListeGmc } = require('./lib/gmc-feed');
 const { loadState, saveState, appendRunLog, nastepnyNumerRunu, OUT_DIR } = require('./lib/state-etykiety');
+const { pushLogs } = require('../lib-wspolne/git-log-push');
 
 const CARD_MIN_FIELDS = 150; // patrz scrape.js — odróżnia rekord karty od rekordu siatki
 
-const DOMYSLNY_SUPLEMENTARNY = 'C:\\Users\\l.dudkiewicz\\Downloads\\suplementarny feed GMC - Arkusz1.csv';
+const DOMYSLNY_SUPLEMENTARNY = path.join(require('os').homedir(), 'Downloads', 'suplementarny feed GMC - Arkusz1.csv');
 
 // ---------- Suplementarny feed: id-y do pominięcia ----------
 
@@ -400,13 +401,16 @@ async function main() {
       nieznalezioneWTymPrzebiegu: liczbaNieznalezionych,
       czasCalyMs,
       sredniCzasNaProduktMs: doZrobienia.length ? Math.round(czasCalyMs / doZrobienia.length) : null,
-      plikCsv: sciezkaCsv,
+      // Ścieżka względna (wynik\etykiety-mws\...) — log i stan idą do repo,
+      // które jest de facto publiczne, a pełna ścieżka zawiera login Windows.
+      plikCsv: path.relative(__dirname, sciezkaCsv),
       blad: bladKoncowy
     };
     // Stan produktów jest już zapisany na bieżąco (patrz saveState w pętli
     // wyżej) — tu dopisujemy tylko podsumowanie przebiegu do dziennika.
     appendRunLog(podsumowanie);
     saveState({ runSummary: Object.assign({ ts: new Date().toISOString() }, podsumowanie) });
+    pushLogs('produkty', 'etykiety MWS, run ' + numerRunu);
     await browser.close();
 
     console.log('\n[koniec] Zebrano ' + zebrane.length + '/' + doZrobienia.length +
