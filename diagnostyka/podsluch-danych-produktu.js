@@ -2,7 +2,7 @@
 // automatycznie w tle rozpoznaje OperationName każdej odpowiedzi (definicja
 // formularza czy dane rekordu) i pozwala pobrać/zdekodować pełną treść
 // wybranego wpisu.
-// WERSJA: 2026-10-02.1
+// WERSJA: 2026-10-02.2
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
@@ -41,7 +41,7 @@
 (function () {
   'use strict';
 
-  const WERSJA = '2026-10-02.1';
+  const WERSJA = '2026-10-02.2';
   const MAX_PODGLAD = 300;
 
   const zarejestrowane = [];
@@ -127,7 +127,24 @@
     const nazwaLen = dv.getUint16(26, true);
     const dodatkoweLen = dv.getUint16(28, true);
     const startDanych = 30 + nazwaLen + dodatkoweLen;
-    const skompresowane = bajty.slice(startDanych);
+    // Nagłówek to ZIP64 (wersja 45): 32-bitowe rozmiary są 0xFFFFFFFF, a
+    // prawdziwy rozmiar skompresowany siedzi w polu dodatkowym 0x0001
+    // (8 B nieskompresowany, 8 B skompresowany). Gdy go znamy, podajemy
+    // dokładnie tyle bajtów — przy dużych odpowiedziach (karta kontrahenta,
+    // ~100 KB) błąd "junk after end" ucinał ostatni kawałek danych i JSON
+    // wychodził niepełny.
+    let koniecDanych = bajty.length;
+    for (let p = 30 + nazwaLen; p + 4 <= startDanych;) {
+      const id = dv.getUint16(p, true);
+      const len = dv.getUint16(p + 2, true);
+      if (id === 0x0001 && len >= 16) {
+        const rozmiar = Number(dv.getBigUint64(p + 12, true));
+        if (rozmiar > 0 && startDanych + rozmiar <= bajty.length) koniecDanych = startDanych + rozmiar;
+        break;
+      }
+      p += 4 + len;
+    }
+    const skompresowane = bajty.slice(startDanych, koniecDanych);
     let tekst;
     try {
       const rozkompresowane = await dekompresujDeflateRaw(skompresowane);
@@ -264,7 +281,13 @@
       const w = zarejestrowane[i];
       const wynik = w.odpowiedz ? await zdekodujOdpowiedz(w.odpowiedz) : null;
       linie.push('=== ' + (i + 1) + '. DictIdent: ' + (w.dictIdent || '-') + '   ' + w.url.replace(/^https?:\/\/[^/]+/, ''));
-      if (!wynik || !wynik.obiekt) { linie.push('   (nie JSON / nie zdekodowano)'); linie.push(''); continue; }
+      if (!wynik || !wynik.obiekt) {
+        linie.push('   (nie JSON / nie zdekodowano)' + (wynik && wynik.ladny
+          ? ' — rozpakowano ' + wynik.ladny.length + ' znaków, koniec: ' + JSON.stringify(wynik.ladny.slice(-80))
+          : (w.odpowiedz ? ' — odpowiedź ' + w.odpowiedz.length + ' znaków, początek: ' + w.odpowiedz.slice(0, 60) : '')));
+        linie.push('');
+        continue;
+      }
       const ob = wynik.obiekt;
       linie.push('   klucze główne: ' + Object.keys(ob).join(', ')
         + (ob.Result && typeof ob.Result === 'object' ? '   | Result: ' + Object.keys(ob.Result).join(', ') : ''));
