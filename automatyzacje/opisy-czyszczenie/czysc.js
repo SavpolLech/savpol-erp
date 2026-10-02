@@ -46,8 +46,10 @@ const SKUS_JSONL = path.join(os.homedir(), 'Documents', 'claude_code', 'design_s
 
 const STATE_DIR = path.join(__dirname, 'state');
 const DONE_FILE = path.join(STATE_DIR, 'done.txt');
+const LUSTRO_DONE_FILE = path.join(STATE_DIR, 'lustro-done.txt');
 const KOPIE_DIR = path.join(STATE_DIR, 'kopie'); // lokalne kopie opisu sprzed zmiany
 const LOG_FILE = path.join(__dirname, 'czysc.log');
+const APP_ORIGIN = process.env.GENERATOR_ORIGIN || 'https://esavpol-pdp.vercel.app';
 
 const LOGIN_SELECTORS = { username: 'input[name="username"]', password: 'input[name="password"]' };
 
@@ -80,15 +82,21 @@ async function login(page) {
 function zbudujInitScript() {
   let src = fs.readFileSync(USERSCRIPT, 'utf8');
   src = src.replace(/\/\/ ==UserScript==[\s\S]*?\/\/ ==\/UserScript==/, '');
+  // Token lustra bierzemy z .env i wstrzykujemy do strony (ephemerycznie, nie do
+  // repo). Headless nie ma ciasteczka apki, więc mirror uwierzytelnia się
+  // nagłówkiem Authorization: Bearer (uzgodnione z apką, v0.46.3). Userscript
+  // sam tokenu NIE zna i znać nie może (repo publiczne) — dokładamy go tu.
+  const token = process.env.OPIS_LUSTRO_TOKEN || '';
+  if (!token) logLine('UWAGA: brak OPIS_LUSTRO_TOKEN w .env — mirror do apki poleci bez tokenu (401).');
   const shims = [
     'var unsafeWindow = window;',
+    'window.__OPIS_TOKEN = ' + JSON.stringify(token) + ';',
     'function GM_setValue(k,v){try{localStorage.setItem("gm_"+k,JSON.stringify(v))}catch(e){}}',
     'function GM_getValue(k,d){try{var v=localStorage.getItem("gm_"+k);return v==null?d:JSON.parse(v)}catch(e){return d}}',
     'function GM_openInTab(){} function GM_download(){}',
-    // Mirror do apki (vercel) poleci cross-origin fetchem i zwykle padnie na
-    // CORS → apkaZadanie dostanie status 0 (lustro:false, niekrytyczne). ERP
-    // (same-origin) działa normalnie.
-    'function GM_xmlhttpRequest(o){try{fetch(o.url,{method:o.method,headers:o.headers||{},body:o.data}).then(async r=>{var t="";try{t=await r.text()}catch(e){}o.onload&&o.onload({status:r.status,responseText:t})}).catch(e=>{o.onerror&&o.onerror(e)})}catch(e){o.onerror&&o.onerror(e)}}'
+    // Do żądań do apki (vercel) dokładamy Authorization: Bearer <token>.
+    // CORS po stronie apki przepuszcza ten nagłówek (v0.46.1+).
+    'function GM_xmlhttpRequest(o){try{var h=Object.assign({},o.headers||{});if(window.__OPIS_TOKEN)h["Authorization"]="Bearer "+window.__OPIS_TOKEN;fetch(o.url,{method:o.method,headers:h,body:o.data}).then(async r=>{var t="";try{t=await r.text()}catch(e){}o.onload&&o.onload({status:r.status,responseText:t})}).catch(e=>{o.onerror&&o.onerror(e)})}catch(e){o.onerror&&o.onerror(e)}}'
   ].join('\n');
   return shims + '\n' + src;
 }
@@ -120,6 +128,31 @@ async function zapiszWStronie(arg) {
   const w = window;
   const zap = await w.savpolZapiszOpisy(arg.sku, { opis: arg.nowa }, { zapisz: true, tolerujNormalizacje: true, pomijajStrazZmian: true });
   return { ok: !!zap.ok, blad: zap.blad, lustro: !!zap.lustro };
+}
+
+// TRYB TYLKO-LUSTRO (w stronie): odczyt opisu z ERP + POST aktualnego stanu do
+// apki z nagłówkiem Authorization. NIE zapisuje do ERP — tylko odświeża lustro
+// (dla SKU już wyczyszczonych, którym mirror padł na CORS/401). Kształt tresc
+// jak w userscripcie (zbudujTrescOpisow): klucz = nazwa rodzaju.
+async function lustroWStronie(arg) {
+  const w = window;
+  if (!w.savpolOpisy) return { ok: false, blad: 'userscript nie wstrzyknięty' };
+  const lista = await w.savpolOpisy(arg.sku);
+  if (!lista || !lista.ok) return { ok: false, blad: (lista && lista.blad) || 'brak odczytu' };
+  const tresc = {};
+  (lista.wiersze || []).forEach(r => {
+    const rodzaj = r.B2BDescriptionTypeTranslatedDesc || ('typ ' + r.csB2BDescriptionTypesG);
+    tresc[rodzaj] = { typG: r.csB2BDescriptionTypesG || '', wierszId: r.csItemsDesc4B2BPortalsId, tekst: String(r.ItemDesc1_PL || r.ItemTranslatedDesc1 || '') };
+  });
+  try {
+    const res = await fetch(arg.origin + '/api/opis-aktualny', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (window.__OPIS_TOKEN || '') },
+      body: JSON.stringify({ sku: arg.sku, kto: 'automat-resync', tresc })
+    });
+    let body = ''; try { body = await res.text(); } catch (e) {}
+    return { ok: res.ok, status: res.status, body: body.slice(0, 150), rodzaje: Object.keys(tresc).length };
+  } catch (e) { return { ok: false, blad: 'fetch: ' + (e && e.message || e) }; }
 }
 
 // ---------- Weryfikacja na froncie (żywy opis ze sklepu) ----------
@@ -181,12 +214,66 @@ function dopiszDone(sku) {
 
 function czyPadlaSesja(b) { return /hasło nie jest prawidłow/i.test(String(b || '')); }
 
+// Tryb --lustro-only: tylko odświeżenie lustra w apce (bez zapisu do ERP).
+// Dla SKU już wyczyszczonych, którym mirror padł (CORS/401). Wznawialny przez
+// state/lustro-done.txt.
+async function mainLustro(plik, limit, chunk) {
+  const wszystkie = fs.readFileSync(plik, 'utf8').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  let done; try { done = new Set(fs.readFileSync(LUSTRO_DONE_FILE, 'utf8').split(/\r?\n/).filter(Boolean)); } catch (e) { done = new Set(); }
+  let lista = wszystkie.filter(s => !done.has(s));
+  if (lista.length > limit) lista = lista.slice(0, limit);
+  logLine('LUSTRO START: ' + wszystkie.length + ' w pliku, ' + done.size + ' już odbitych, teraz: ' + lista.length
+    + (HEADLESS ? ' (headless)' : ' (okno)'));
+  if (!lista.length) { logLine('Lustro: nic do zrobienia.'); return { zrobione: 0, bledy: 0, przerwano: false }; }
+
+  const browser = await chromium.launch({ headless: HEADLESS });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  page.on('pageerror', err => logLine('[błąd strony] ' + err.message));
+  await page.addInitScript({ content: zbudujInitScript() });
+
+  let ok = 0, bledy = 0, przerwano = false, powodStop = '';
+  const problemy = [];
+  try {
+    await login(page);
+    await page.goto(CATALOG_URL, { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('td[data-datafield="Item"]', { timeout: 30000 });
+    await page.waitForFunction(() => typeof window.savpolOpisy === 'function', { timeout: 15000 });
+    logLine('LUSTRO: katalog + userscript gotowe (origin apki: ' + APP_ORIGIN + ').');
+
+    for (let start = 0; start < lista.length && !przerwano; start += chunk) {
+      const paczka = lista.slice(start, start + chunk);
+      logLine('--- LUSTRO CHUNK ' + (Math.floor(start / chunk) + 1) + '/' + Math.ceil(lista.length / chunk) + ' (' + paczka.length + ') ---');
+      for (const sku of paczka) {
+        let r;
+        try { r = await page.evaluate(lustroWStronie, { sku, origin: APP_ORIGIN }); }
+        catch (e) { r = { ok: false, blad: 'evaluate: ' + e.message }; }
+        if (r.ok) { logLine('  ✓ ' + sku + ' — lustro HTTP ' + r.status + ' (' + r.rodzaje + ' rodz.)'); ok++; try { if (!fs.existsSync(STATE_DIR)) fs.mkdirSync(STATE_DIR, { recursive: true }); fs.appendFileSync(LUSTRO_DONE_FILE, sku + '\n'); } catch (e) {} }
+        else {
+          logLine('  ✗ ' + sku + ' — ' + (r.blad || ('HTTP ' + r.status + ' ' + r.body)));
+          bledy++; problemy.push(sku + ': ' + (r.blad || ('HTTP ' + r.status)));
+          // 401 = problem z tokenem/auth → nie ma sensu mielić dalej.
+          if (r.status === 401) { przerwano = true; powodStop = '401 unauthorized (token?) przy ' + sku; break; }
+          if (czyPadlaSesja(r.blad)) { przerwano = true; powodStop = 'sesja ERP wygasła przy ' + sku; break; }
+        }
+        await page.waitForTimeout(150);
+      }
+    }
+  } catch (err) { logLine('[BŁĄD LUSTRO] ' + err.message); przerwano = true; powodStop = 'wyjątek: ' + err.message; }
+  finally { await browser.close(); }
+
+  logLine('LUSTRO KONIEC: odbite=' + ok + ', błędy=' + bledy + (przerwano ? ', PRZERWANO: ' + powodStop : ''));
+  if (problemy.length) logLine('Problemy:\n  ' + problemy.slice(0, 20).join('\n  '));
+  return { zrobione: ok, bledy, przerwano, powodStop, problemy };
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const plik = args.find(a => !a.startsWith('--'));
-  if (!plik) { console.error('Podaj plik z listą SKU: node czysc.js <plik> [--limit N] [--chunk N]'); process.exit(1); }
+  if (!plik) { console.error('Podaj plik z listą SKU: node czysc.js <plik> [--limit N] [--chunk N] [--lustro-only]'); process.exit(1); }
   const limit = args.includes('--limit') ? parseInt(args[args.indexOf('--limit') + 1], 10) : Infinity;
   const chunk = args.includes('--chunk') ? parseInt(args[args.indexOf('--chunk') + 1], 10) : 50;
+  if (args.includes('--lustro-only')) return await mainLustro(plik, limit, chunk);
 
   const wszystkie = fs.readFileSync(plik, 'utf8').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
   const done = wczytajDone();
