@@ -10,6 +10,12 @@ nigdy równolegle — i zapisuje do bazy. Dobiera też zaległe dni z okna wstec
 więc poniedziałkowy bieg uzupełnia piątek/sobotę/niedzielę. Dokumenty już
 obecne w bazie są pomijane (nie ma duplikatów). Nic nie trzeba robić ręcznie.
 
+**MM wchodzą z opóźnieniem 3 dni.** MM bywają cofane i poprawiane (daty,
+wartości), zanim zostaną zaksięgowane — zwykle 2–3 dni po utworzeniu. Dlatego
+automat bierze dzień MM dopiero, gdy ma on co najmniej 3 dni (np. MM z
+poniedziałku wchodzą w czwartek). Brak MM za ostatnie 2–3 dni to norma, nie
+błąd. Opóźnienie zmienia `MM_MIN_AGE_DAYS` w `.env`.
+
 ## Jak sprawdzić, czy działa
 
 Automat sam zapisuje log każdego przebiegu z powrotem do repozytorium
@@ -29,6 +35,10 @@ Gdy ERP pokazuje dla jakiegoś dnia więcej dokumentów niż jest w bazie (np. E
 4. Tryb: naciśnij **Enter** (szybki — dobiera brakujące). Jeśli szybki nie
    pomógł (w bazie dalej jest mniej niż w ERP), odpal jeszcze raz i wybierz
    **`p`** (pełny — przeklikuje dzień od zera).
+
+**MM: nie dobijaj ręcznie dnia młodszego niż 3 dni.** Ręczne dobicie omija
+opóźnienie — wciągnęłoby MM jeszcze niezaksięgowane, a poprawek z ERP baza już
+nie przyjmie (do bazy tylko dopisujemy).
 
 Bezpieczne o każdej porze: bierze tę samą blokadę co codzienny automat, więc
 nigdy nie wejdzie na ERP równolegle (gdyby akurat trwał inny bieg, wypisze
