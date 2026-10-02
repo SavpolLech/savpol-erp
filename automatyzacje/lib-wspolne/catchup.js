@@ -49,6 +49,18 @@ module.exports = function runCatchup(opts) {
   const SESSION_TIMEOUT_MS = parseInt(process.env.SESSION_TIMEOUT_MS || String(75 * 60 * 1000), 10);
   const WINDOW = parseInt(process.env.CATCHUP_WINDOW || '5', 10);
 
+  // Per-typ MINIMALNY WIEK dnia (w dniach). Dzień młodszy NIE jest scrapowany w
+  // biegu automatycznym (oknie) — wejdzie, gdy się zestarzeje. Dla MM = 3
+  // (MM_MIN_AGE_DAYS): dokumenty MM bywają wycofywane ze statusu "Do realizacji"
+  // do "W rejestracji" i modyfikowane (daty/wartości) zanim zostaną zaksięgowane
+  // (~2-3 dni), więc scrapujemy je dopiero po ustabilizowaniu. Domyślnie 0
+  // (WZ/PZ bez opóźnienia). Ręczny dobij-dzien (opts.days) IGNORUJE to opóźnienie.
+  const MIN_AGE = parseInt(process.env[prefix.toUpperCase() + '_MIN_AGE_DAYS'] || '0', 10);
+  if (MIN_AGE > 0 && WINDOW < MIN_AGE + 2) {
+    console.warn(`[catchup ${label}] UWAGA: CATCHUP_WINDOW=${WINDOW} za małe dla ${prefix.toUpperCase()}_MIN_AGE_DAYS=${MIN_AGE} ` +
+      `(potrzeba >= ${MIN_AGE + 2}). Dni ${label} mogą wypaść z okna zanim staną się eligible — podnieś CATCHUP_WINDOW.`);
+  }
+
   const isComplete = (day) => { try { return !!loadState(day, day).complete; } catch { return false; } };
   const docCount = (day) => { try { return loadState(day, day).processedDocNumbers.length; } catch { return 0; } };
   const clearLock = () => { try { fs.unlinkSync(LOCK); } catch { /* nie ma */ } };
@@ -61,14 +73,28 @@ module.exports = function runCatchup(opts) {
   const targets = [];
   const explicit = Array.isArray(opts.days) && opts.days.length;
   if (explicit) {
-    for (const day of opts.days) if (!isComplete(day)) targets.push(day);
+    const today = new Date();
+    for (const day of opts.days) {
+      if (!isComplete(day)) targets.push(day);
+      // Ręczny bieg świadomie wymusza dzień — min. wiek go NIE blokuje, ale logujemy.
+      if (MIN_AGE > 0) {
+        const ageDays = Math.round((today - new Date(day + 'T00:00:00Z')) / 86400000);
+        if (ageDays < MIN_AGE) console.log(`[catchup ${label}] Ręczny bieg: wymuszono dzień ${day} młodszy niż MIN_AGE=${MIN_AGE} (wiek ${ageDays} dni).`);
+      }
+    }
   } else {
     const today = new Date();
+    const tooYoung = [];
     for (let back = WINDOW; back >= 1; back--) {
       const d = new Date(today);
       d.setDate(d.getDate() - back);
       const day = ymd(d);
+      if (back < MIN_AGE) { tooYoung.push(day); continue; } // za świeży — wejdzie, gdy się zestarzeje
       if (!isComplete(day)) targets.push(day);
+    }
+    if (tooYoung.length) {
+      console.log(`[catchup ${label}] Pomijam ${tooYoung.length} dni młodszych niż MIN_AGE=${MIN_AGE} ` +
+        `(wejdą w kolejnych biegach): ${tooYoung.join(', ')}`);
     }
   }
 

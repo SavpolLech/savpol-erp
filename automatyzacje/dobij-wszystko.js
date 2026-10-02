@@ -49,6 +49,17 @@ const { acquire: acquireLock, release: releaseLock } = require('./lib-wspolne/lo
 const ALL = ['wz', 'mm', 'pz'];
 const SCRAPERS = (process.env.SCRAPERS || ALL.join(','))
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+// Domyślne OPÓŹNIENIE scrapingu per typ (min. wiek dnia w dniach). catchup.js
+// czyta <PREFIX>_MIN_AGE_DAYS z env; tu ustawiamy bezpieczne domyślne, żeby
+// działały bez edycji .env na serwerze (env nadal nadpisuje). MM=3: dokumenty
+// MM bywają modyfikowane (data/wartości) zanim zostaną zaksięgowane (~2-3 dni),
+// więc scrapujemy je dopiero po ustabilizowaniu — patrz lib-wspolne/catchup.js.
+const DEFAULT_MIN_AGE = { mm: '3' };
+for (const [typ, val] of Object.entries(DEFAULT_MIN_AGE)) {
+  const key = typ.toUpperCase() + '_MIN_AGE_DAYS';
+  if (process.env[key] === undefined) process.env[key] = val;
+}
 // Cel zapisu. DOMYŚLNIE prod (codzienny bieg). TARGET=test -> tabele *_test
 // (np. jednorazowy backfill do weryfikacji, bez ruszania produkcji).
 const TARGET = process.env.TARGET || 'prod';
