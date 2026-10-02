@@ -54,3 +54,10 @@ automatyzacje/cross-sell/*.log
 
 # Logi z ręcznych/backfillowych biegów scrapera produktów — czysto lokalne
 automatyzacje/produkty/*.log
+
+# Czyszczenie opisów PDP — lokalne logi/stan/lista (nie do repo)
+automatyzacje/opisy-czyszczenie/*.log
+automatyzacje/opisy-czyszczenie/state/
+automatyzacje/opisy-czyszczenie/sku.txt
+automatyzacje/opisy-czyszczenie/debug-*.png
+automatyzacje/opisy-czyszczenie/*.out
