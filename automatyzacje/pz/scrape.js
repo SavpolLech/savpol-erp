@@ -329,6 +329,17 @@ async function scanCurrentPageForDocs(opts) {
 
   const docsOnPage = targetRows().map(rowDocNumber).filter(doc => doc && !processedDocs.has(doc));
 
+  // BŁĄD naprawiony 2026-10-02: po paczce zatrzymanej limitem (batch_limit /
+  // session_time_limit / kolejne porażki) main() przewijał na następną stronę
+  // mimo że na bieżącej zostały nieotwarte PZ — gubiło ok. 30% dokumentów
+  // (bloki ~6 numerów), a dzień i tak wychodził jako complete. Strona jest
+  // "skończona" dopiero gdy wszystkie jej PZ są ZEBRANE (nie tylko "tknięte").
+  const alreadyDone = new Set(alreadyProcessed || []);
+  function pageHasNoRemainingDocs() {
+    return targetRows().map(rowDocNumber)
+      .filter(doc => doc && !alreadyDone.has(doc) && !completedDocNumbers.includes(doc)).length === 0;
+  }
+
   for (const targetDoc of docsOnPage) {
     if (processed >= maxDocs) break;
     if (sessionTimeUp()) {
@@ -395,6 +406,7 @@ async function scanCurrentPageForDocs(opts) {
     headers, positions, completedDocNumbers, docs: processed,
     partial: processed >= maxDocs,
     stoppedReason: processed >= maxDocs ? 'batch_limit' : null,
+    pageDone: pageHasNoRemainingDocs(),
     hasNextPage: await pagerHasNextPage()
   };
 }
@@ -981,7 +993,7 @@ async function main() {
     if (expectedTotal === null) {
       console.warn('[pz] UWAGA: nie udało się odczytać liczby dokumentów z pagera (dostałem "' + expectedRaw + '") — kontrola na koniec przebiegu będzie pominięta.');
     }
-    console.log('[pz] ERP zgłasza ' + (expectedTotal ?? '?') + ' dokumentów dla tego filtra (WSZYSTKIE podtypy PZ*, bez zapisanego filtra typu).' +
+    console.log('[pz] ERP zgłasza ' + (expectedTotal ?? '?') + ' dokumentów dla tego filtra (' + (USE_DOC_TYPE_FILTER ? 'filtr typu "' + PZ_DOC_TYPE_FILTER_LABEL + '" zastosowany' : 'BEZ filtra typu — WSZYSTKIE podtypy PZ*') + ').' +
       (priorState ? ' Mamy już ' + priorState.processedDocNumbers.length + ' z poprzednich sesji.' : ''));
 
     console.log('[pz] Lista załadowana. Startuję zbieranie w paczkach po ' + BATCH_SIZE + ' dok. ' +
@@ -1010,6 +1022,7 @@ async function main() {
     }
 
     let collectedThisSession = 0;
+    let stalledBatches = 0;
     while (!allPagesExhausted && collectedThisSession < MAX_DOCS) {
       const remainingMs = sessionDeadline - Date.now();
       if (remainingMs <= 0) {
@@ -1042,13 +1055,19 @@ async function main() {
       // "Wyczerpane" dopiero gdy bieżąca (ostatnia zeskanowana) strona nie ma
       // kolejnej — samo `docs===0` na TEJ stronie nic nie mówi o reszcie listy
       // (lista miesza podtypy, strona bez "PZ" jest normalna, patrz wyżej).
-      allPagesExhausted = !batch.hasNextPage;
+      // Lista wyczerpana = ostatnia strona I wszystkie jej PZ zebrane. Przy
+      // zastosowanym filtrze typu licznik ERP to dokładna liczba PZ — zebrane
+      // mniej => dzień NIE jest kompletny (stan nie dostaje complete=true).
+      allPagesExhausted = !batch.hasNextPage && !!batch.pageDone;
       lastStoppedReason = batch.stoppedReason || null;
+      const countsMatch = !(USE_DOC_TYPE_FILTER && expectedTotal)
+        || (processedThisRun.size >= expectedTotal);
+      const markComplete = allPagesExhausted && countsMatch;
 
       if (dateFrom || dateTo) {
         const saved = saveState(dateFrom, dateTo, {
           newDocNumbers: batch.completedDocNumbers,
-          complete: allPagesExhausted,
+          complete: markComplete,
           runSummary: {
             ts: new Date().toISOString(),
             paczkaDok: batch.headers.length,
@@ -1063,6 +1082,15 @@ async function main() {
       if (collectedThisSession >= MAX_DOCS) { lastStoppedReason = 'batch_limit'; break; }
       if (lastStoppedReason === 'session_time_limit') break;
       if (allPagesExhausted) break;
+
+      // Przewijamy TYLKO gdy bieżąca strona jest skończona. Inaczej kolejna
+      // paczka dobiera resztę tej samej strony (alreadyProcessed pomija zebrane).
+      if (!batch.pageDone) {
+        stalledBatches = batch.headers.length === 0 ? stalledBatches + 1 : 0;
+        if (stalledBatches >= 3) { lastStoppedReason = 'page_stuck'; break; }
+        continue;
+      }
+      stalledBatches = 0;
 
       const advanced = await page.evaluate(advanceToNextPage);
       if (!advanced) { lastStoppedReason = 'pagination_stuck'; break; }
@@ -1084,10 +1112,17 @@ async function main() {
       if (haveTotal >= expectedTotal) {
         console.log('[kontrola] ZGADZA SIĘ: mamy ' + haveTotal + ' dok., ERP zgłaszał ' + expectedTotal + '.');
       } else {
-        console.warn('[kontrola] NIEKOMPLETNE wg licznika ERP (uwzględnia WSZYSTKIE podtypy PZ*): mamy ' + haveTotal + ' z ' + expectedTotal +
-          '. Jeśli lista zawiera dokumenty innych podtypów (PZW/PZI/PZK/...), różnica jest OCZEKIWANA — ' +
-          'to nie musi być błąd. ' +
-          (allPagesExhausted ? 'Lista była wyczerpana mimo to.' : 'Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.'));
+        if (USE_DOC_TYPE_FILTER) {
+          // Filtr "PZ" zastosowany => licznik ERP to dokładna liczba PZ. Różnica
+          // to BRAKI, nie podtypy; dzień NIE dostał complete (patrz markComplete).
+          console.error('[kontrola] BŁĄD KOMPLETNOŚCI: mamy ' + haveTotal + ' z ' + expectedTotal +
+            ' PZ (licznik ERP przy zastosowanym filtrze "' + PZ_DOC_TYPE_FILTER_LABEL + '"). Dzień NIE jest kompletny — ' +
+            'uruchom ponownie (dobij-dzien), brakujące zostaną dociągnięte.');
+        } else {
+          console.warn('[kontrola] NIEKOMPLETNE wg licznika ERP (BEZ filtra typu licznik obejmuje WSZYSTKIE podtypy PZ*): mamy ' +
+            haveTotal + ' z ' + expectedTotal + '. Bez filtra różnica bywa oczekiwana (PZW/PZI/PZK/...). ' +
+            (allPagesExhausted ? 'Lista była wyczerpana mimo to.' : 'Uruchom ponownie z tym samym filtrem, żeby dociągnąć resztę.'));
+        }
       }
     }
   } catch (err) {
