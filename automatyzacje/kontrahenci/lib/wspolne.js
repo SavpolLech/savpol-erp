@@ -70,4 +70,35 @@ function mssqlType(col) {
   return schema.mssqlType(col);
 }
 
-module.exports = { req, sql, schema, polacz, wartosc, mssqlType, OUT_DIR, PROD_TABLE, COMPANY_ID };
+const ERP_BASE_URL = process.env.ERP_BASE_URL || 'https://erp.savpol.pl/';
+
+async function login(page) {
+  await page.goto(ERP_BASE_URL, { waitUntil: 'domcontentloaded' });
+  const user = process.env.ERP_LOGIN, pass = process.env.ERP_PASSWORD;
+  if (!user || !pass) throw new Error('Brak ERP_LOGIN / ERP_PASSWORD w automatyzacje/.env');
+  // Pola logowania mają zduplikowane id="Input" — idziemy po name; submit Enterem (jak wz/).
+  await page.waitForSelector('input[name="username"]', { timeout: 20000 });
+  await page.fill('input[name="username"]', user);
+  await page.fill('input[name="password"]', pass);
+  await page.press('input[name="password"]', 'Enter');
+  // Nie 'networkidle' — ERP stale odbudowuje WebSocket.
+  await page.waitForFunction(() => !location.href.includes('/logowanie/'), { timeout: 30000 });
+  // Od razu po logowaniu aplikacja jeszcze startuje i przekierowuje na pulpit;
+  // goto w tym oknie ląduje na pulpicie zamiast na docelowym widoku.
+  await page.waitForTimeout(4000);
+  console.log('[login] Zalogowano.');
+}
+
+// Globalny lock wszystkich scraperów ERP (ten sam co dobij-wszystko.js /
+// dobij-dzien.js): ręczny bieg nie wejdzie na ERP, gdy trwa inny scraper.
+// Wołany z orkiestratora (który sam trzyma lock) — SCRAPERY_LOCK_RODZIC=1.
+function zajmijErp() {
+  if (process.env.SCRAPERY_LOCK_RODZIC === '1') return;
+  const { acquire, release } = require(path.join(__dirname, '..', '..', 'lib-wspolne', 'lock'))(
+    path.join(__dirname, '..', '..', '.scrapery.lock'));
+  if (!acquire()) process.exit(3);
+  process.on('exit', release);
+  process.on('SIGINT', () => process.exit(130));
+}
+
+module.exports = { req, sql, schema, polacz, wartosc, mssqlType, login, zajmijErp, ERP_BASE_URL, OUT_DIR, PROD_TABLE, COMPANY_ID };

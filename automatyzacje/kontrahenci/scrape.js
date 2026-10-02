@@ -24,7 +24,7 @@ const { chromium } = W.req('playwright');
 const { decodeJsonResult, extractCardRecord } = require(path.join(__dirname, '..', 'produkty', 'lib', 'decode'));
 
 const HEADLESS = process.env.HEADLESS !== 'false'; // domyślnie bez okna, jak automaty
-const ERP_BASE_URL = process.env.ERP_BASE_URL || 'https://erp.savpol.pl/';
+const ERP_BASE_URL = W.ERP_BASE_URL;
 const ODSWIEZ = process.argv.includes('--odswiez');
 // Przerwa między kartami — losowa, żeby ruch nie wyglądał jak maszyna.
 const PRZERWA_MS = [1200, 3000];
@@ -54,24 +54,8 @@ async function listaIdZArgumentow() {
   return Array.from(new Set(ids));
 }
 
-async function login(page) {
-  await page.goto(ERP_BASE_URL, { waitUntil: 'domcontentloaded' });
-  const user = process.env.ERP_LOGIN, pass = process.env.ERP_PASSWORD;
-  if (!user || !pass) throw new Error('Brak ERP_LOGIN / ERP_PASSWORD w automatyzacje/.env');
-  // Pola logowania mają zduplikowane id="Input" — idziemy po name; submit Enterem (jak wz/).
-  await page.waitForSelector('input[name="username"]', { timeout: 20000 });
-  await page.fill('input[name="username"]', user);
-  await page.fill('input[name="password"]', pass);
-  await page.press('input[name="password"]', 'Enter');
-  // Nie 'networkidle' — ERP stale odbudowuje WebSocket.
-  await page.waitForFunction(() => !location.href.includes('/logowanie/'), { timeout: 30000 });
-  // Od razu po logowaniu aplikacja jeszcze startuje i przekierowuje na pulpit;
-  // goto w tym oknie ląduje na pulpicie zamiast na karcie.
-  await page.waitForTimeout(4000);
-  console.log('[login] Zalogowano.');
-}
-
 async function main() {
+  W.zajmijErp();
   const ids = await listaIdZArgumentow();
   if (!ids.length) throw new Error('Podaj id kontrahentów, --plik=... albo --brakujace.');
   fs.mkdirSync(W.OUT_DIR, { recursive: true });
@@ -105,7 +89,7 @@ async function main() {
   let ok = 0;
   const bledy = [];
   try {
-    await login(page);
+    await W.login(page);
     for (const [n, id] of doPobrania.entries()) {
       zlapane.delete(id);
       let rek = null;
