@@ -2,7 +2,7 @@
 // automatycznie w tle rozpoznaje OperationName każdej odpowiedzi (definicja
 // formularza czy dane rekordu) i pozwala pobrać/zdekodować pełną treść
 // wybranego wpisu.
-// WERSJA: 2026-09-11.9
+// WERSJA: 2026-10-02.1
 //            Konsola wypisuje ją po wklejeniu — jeśli tam widzisz inny numer,
 //            w przeglądarce siedzi starsza kopia.
 //
@@ -33,13 +33,15 @@
 //   4. savpolPodsluchDekoduj(N)   → PEŁNA, zdekodowana treść wpisu N do
 //      schowka (i krótkie podsumowanie w konsoli) — użyj, gdy już wiesz,
 //      który numer Cię interesuje.
+//   4b. savpolPodsluchStruktura() → wszystkie tabele danych ze wszystkich
+//      odpowiedzi (pola, liczba wierszy, wiersz 1) jednym zrzutem.
 //   5. savpolPodsluchPelna(N)     → PEŁNA, ale NIEZDEKODOWANA treść
 //      odpowiedzi wpisu nr N — tylko do wyjątkowych przypadków.
 
 (function () {
   'use strict';
 
-  const WERSJA = '2026-09-11.9';
+  const WERSJA = '2026-10-02.1';
   const MAX_PODGLAD = 300;
 
   const zarejestrowane = [];
@@ -224,6 +226,73 @@
     kopiuj(txt);
     console.log('[podsluch ' + WERSJA + '] skopiowano ' + zarejestrowane.length + ' requestów do schowka (' + txt.length + ' znaków). '
       + 'Jeśli widzisz "(jeszcze dekoduję w tle...)", poczekaj chwilę i wywołaj ponownie.');
+    return txt;
+  };
+
+  // Struktura WSZYSTKICH odpowiedzi naraz: w każdej szuka rekurencyjnie
+  // obiektów z FieldDefs (tabele danych), gdziekolwiek leżą — karta
+  // kontrahenta (csCustomersOneBroFull) pakuje kilka zbiorów w inny kształt
+  // niż karta produktu i główne tagowanie ich nie rozpoznaje. Wypisuje pełną
+  // listę pól, liczbę wierszy i wartości pierwszego wiersza; zamiast kilku
+  // zrzutów po ~1 MB jeden zwięzły do schowka.
+  function odpakujKomorke(v) {
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const k = Object.keys(v);
+      if (k.length === 1) return v[k[0]];
+    }
+    return v;
+  }
+
+  function znajdzTabele(obiekt, sciezka, wynik, glebokosc) {
+    if (!obiekt || typeof obiekt !== 'object' || glebokosc > 12) return;
+    if (Array.isArray(obiekt.FieldDefs)) {
+      wynik.push({ sciezka: sciezka, dt: obiekt });
+      return;
+    }
+    for (const k of Object.keys(obiekt)) {
+      znajdzTabele(obiekt[k], sciezka + '.' + k, wynik, glebokosc + 1);
+    }
+  }
+
+  window.savpolPodsluchStruktura = async function () {
+    const linie = [];
+    linie.push('Savpol ERP — struktura odpowiedzi, wersja ' + WERSJA);
+    linie.push('URL: ' + location.href);
+    linie.push('Data: ' + new Date().toISOString());
+    linie.push('');
+    for (let i = 0; i < zarejestrowane.length; i++) {
+      const w = zarejestrowane[i];
+      const wynik = w.odpowiedz ? await zdekodujOdpowiedz(w.odpowiedz) : null;
+      linie.push('=== ' + (i + 1) + '. DictIdent: ' + (w.dictIdent || '-') + '   ' + w.url.replace(/^https?:\/\/[^/]+/, ''));
+      if (!wynik || !wynik.obiekt) { linie.push('   (nie JSON / nie zdekodowano)'); linie.push(''); continue; }
+      const ob = wynik.obiekt;
+      linie.push('   klucze główne: ' + Object.keys(ob).join(', ')
+        + (ob.Result && typeof ob.Result === 'object' ? '   | Result: ' + Object.keys(ob.Result).join(', ') : ''));
+      linie.push('   OperationName: ' + (wynik.opName || '(brak)'));
+      if (wynik.opName === 'DictDefinition') { linie.push('   (definicja formularza — pomijam)'); linie.push(''); continue; }
+      const tabele = [];
+      znajdzTabele(ob, '', tabele, 0);
+      if (!tabele.length) linie.push('   brak tabel z FieldDefs');
+      tabele.forEach((t, j) => {
+        const dt = t.dt;
+        const nazwy = dt.FieldDefs.map(f => f.FieldName + (f.DataType !== undefined ? ':' + f.DataType : ''));
+        const wiersze = dt.Records || dt.Rows || dt.Data || dt.records || dt.rows || dt.data || [];
+        linie.push('   --- tabela ' + (j + 1) + ' @ ' + t.sciezka + '   pól: ' + nazwy.length + '   wierszy: ' + wiersze.length);
+        linie.push('   pola: ' + nazwy.join(', '));
+        if (wiersze[0]) {
+          const w0 = wiersze[0];
+          const rek = Array.isArray(w0)
+            ? dt.FieldDefs.reduce((a, f, x) => { a[f.FieldName] = odpakujKomorke(w0[x]); return a; }, {})
+            : Object.keys(w0).reduce((a, k) => { a[k] = odpakujKomorke(w0[k]); return a; }, {});
+          linie.push('   wiersz 1: ' + Object.keys(rek).filter(k => rek[k] !== null && rek[k] !== '')
+            .map(k => k + '=' + String(JSON.stringify(rek[k])).slice(0, 80)).join(' | '));
+        }
+      });
+      linie.push('');
+    }
+    const txt = linie.join('\n');
+    kopiuj(txt);
+    console.log('[podsluch ' + WERSJA + '] struktura ' + zarejestrowane.length + ' odpowiedzi skopiowana (' + txt.length + ' znaków)');
     return txt;
   };
 
