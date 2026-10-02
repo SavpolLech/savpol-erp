@@ -54,3 +54,26 @@ sprawdzone skryptem: 168/168 i 34/34, **0 pól niedostępnych**.
 - Tylko INSERT nowych `csCustomersId` (patrz `ROZBIEZNOSCI.md`) — zmiany
   istniejących kontrahentów w ERP logujemy, nie nadpisujemy.
 - Próbka: 5 kontrahentów do `csCustomers_test`, weryfikacja Michała, potem reszta.
+
+## Kalibracja 2026-10-02 (próbka 1:1 z produkcją)
+
+Skrypty: `scrape.js` (karta → `wynik/kontrahent_<id>.json`, poza repo),
+`wgraj-do-worek.js` (→ `csCustomers_test`, 168 kolumn jak produkcja; `--realne`
+dopiero po akceptacji Michała), `porownaj-z-prod.js` (test vs produkcja).
+
+5 kontrahentów już obecnych w `csCustomers`, różnych typów: firma (417109229
+MEGIW), dostawca (218468494), osoba fizyczna (29457278739), z logo
+(28424966772), ostatnio zmieniany przed kopią (28930288827). Wynik:
+
+- **165–167 z 168 kolumn zgodnych 1:1**, w tym Logo (bajt w bajt).
+- `LastChangeDate`, `lastActivity`: API podaje czas do sekundy, produkcja ma
+  milisekundy (`08:08:21.463` vs `08:08:21`). Nie do odzyskania z karty.
+- 28930288827: inny `csCustomersStatusesValuesId` i `LastChangeDate`
+  2026-08-04 — kontrahent zmieniony w ERP po kopii bazy, czyli prawdziwa
+  zmiana, nie błąd.
+- Poprawione w trakcie: API oddaje pusty tekst jako null — w kolumnach
+  tekstowych NOT NULL (`CustomerIdent`) zapisujemy `''` jak produkcja.
+
+Do zrobienia przed automatem: lista WSZYSTKICH nowych kontrahentów z ERP
+(nie tylko tych z dokumentów), `run-log.jsonl` + `pushLogs`, wpięcie do
+orkiestratora `dobij-wszystko.js`.
