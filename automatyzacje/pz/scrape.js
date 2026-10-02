@@ -520,6 +520,36 @@ async function insertRows(pool, tableName, columnsMeta, rows) {
   return inserted;
 }
 
+// Ile z podanych numerów dokumentów (DocNumber) JEST w tabeli docelowej. Tylko
+// odczyt. null = nie dało się ustalić (brak DB / błąd) — wtedy nie wychodzimy
+// wcześniej, tylko scrapujemy normalnie.
+async function countDocsInDb(docNumbers) {
+  const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = process.env;
+  if (!DB_NAME || !docNumbers.length) return null;
+  let pool;
+  try {
+    pool = await sql.connect({
+      server: DB_HOST, port: parseInt(DB_PORT || '1433', 10),
+      user: DB_USER, password: DB_PASSWORD, database: DB_NAME,
+      options: { encrypt: true, trustServerCertificate: true }, connectionTimeout: 15000
+    });
+    let total = 0;
+    for (let i = 0; i < docNumbers.length; i += 500) {
+      const chunk = docNumbers.slice(i, i + 500);
+      const request = pool.request();
+      const ph = chunk.map((d, j) => { request.input('d' + j, sql.NVarChar(100), d); return '@d' + j; });
+      const rs = await request.query('SELECT COUNT(*) AS n FROM dbo.' + TARGET_HEADERS + ' WHERE [DocNumber] IN (' + ph.join(', ') + ')');
+      total += rs.recordset[0].n;
+    }
+    return total;
+  } catch (err) {
+    console.warn('[pz] Nie udało się policzyć dokumentów w bazie (' + err.message + ') — scrapuję bez wczesnego wyjścia.');
+    return null;
+  } finally {
+    if (pool) await pool.close();
+  }
+}
+
 // ---------- Wykrywanie rozbieżności (dokument zmieniony w ERP po scrapie) ----------
 // Decyzja Lecha 2026-09-30 (zmieniona tego samego dnia): NIE modyfikujemy
 // istniejących rekordów w bazie — dedup po csDocsHeadersId nadal TYLKO
@@ -1018,6 +1048,25 @@ async function main() {
           complete: true,
           runSummary: { ts: new Date().toISOString(), paczkaDok: 0, partial: false, stoppedReason: null }
         });
+      }
+    }
+
+    // Wczesne wyjście (bez przechodzenia po liście): przy zastosowanym filtrze
+    // typu licznik ERP to dokładna liczba PZ dnia. Jeśli ze stanu mamy tyle
+    // numerów I wszystkie te dokumenty FAKTYCZNIE są w bazie (stan sam nie
+    // dowodzi udanego INSERT-u), dzień jest kompletny — nic do scrapowania.
+    if (!allPagesExhausted && USE_DOC_TYPE_FILTER && expectedTotal > 0 && (dateFrom || dateTo)
+        && priorState && priorState.processedDocNumbers.length >= expectedTotal) {
+      const inDb = await countDocsInDb(priorState.processedDocNumbers);
+      if (inDb !== null && inDb >= expectedTotal) {
+        allPagesExhausted = true;
+        console.log('[pz] Licznik ERP (' + expectedTotal + ') zgadza się z bazą (' + inDb + ') — dzień kompletny, pomijam scrapowanie.');
+        saveState(dateFrom, dateTo, {
+          complete: true,
+          runSummary: { ts: new Date().toISOString(), paczkaDok: 0, partial: false, stoppedReason: null }
+        });
+      } else {
+        console.log('[pz] Stan ma ' + priorState.processedDocNumbers.length + ' numerów, ale w bazie jest ' + inDb + ' (ERP: ' + expectedTotal + ') — scrapuję.');
       }
     }
 
