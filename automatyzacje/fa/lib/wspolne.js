@@ -1,4 +1,4 @@
-// Wspólne dla skryptów faktur (FA): połączenie z bazą i konwersja wartości
+// Wspólne dla skryptów dokumentów sprzedaży (FA, PAR): połączenie z bazą i konwersja wartości
 // bierzemy z kontrahentów (ta sama karta API, te same typy), tu tylko stałe FA
 // i logowanie do ERP.
 
@@ -7,9 +7,19 @@ const K = require(path.join(__dirname, '..', '..', 'kontrahenci', 'lib', 'wspoln
 
 const OUT_DIR = path.join(__dirname, '..', 'wynik');
 const ERP_BASE_URL = process.env.ERP_BASE_URL || 'https://erp.savpol.pl/';
-// Faktura sprzedaży (FA) — wartość z karty i wzorcowego wiersza Michała.
-// Lista „Dokumenty sprzedaży” miesza FA z paragonami (PAR), korektami (FAK) itd.
-const FA_DOC_TYPE_ID = '267302594';
+// Typy z okna „Dokumenty sprzedaży” — wartości z kart i wzorcowych wierszy
+// Michała (FA_pola_wymagane.xlsx, PAR_pola_wymagane.xlsx). Oba typy mają tę
+// samą kartę csDocsHeaders_Sales i te same tabele. Lista miesza je jeszcze
+// z korektami (FAK, PARK) — tych nie bierzemy.
+const TYPY = { FA: '267302594', PAR: '218693742' };
+const FA_DOC_TYPE_ID = TYPY.FA;
+
+// --typ=FA|PAR z linii poleceń (domyślnie FA).
+function typZArgumentow(argv) {
+  const a = (argv.find(x => x.startsWith('--typ=')) || '--typ=FA').slice(6).toUpperCase();
+  if (!TYPY[a]) throw new Error('Nieznany typ ' + a + ' (dostępne: ' + Object.keys(TYPY).join(', ') + ')');
+  return { kod: a, id: TYPY[a], prefiks: a.toLowerCase() };
+}
 const TAB_NAGLOWKI = 'csDocsHeaders';
 const TAB_POZYCJE = 'csDocsItemsPositions';
 
@@ -33,4 +43,4 @@ async function login(page) {
   console.log('[login] Zalogowano.');
 }
 
-module.exports = Object.assign({}, K, { OUT_DIR, ERP_BASE_URL, FA_DOC_TYPE_ID, TAB_NAGLOWKI, TAB_POZYCJE, cardUrl, login });
+module.exports = Object.assign({}, K, { OUT_DIR, ERP_BASE_URL, TYPY, FA_DOC_TYPE_ID, typZArgumentow, TAB_NAGLOWKI, TAB_POZYCJE, cardUrl, login });

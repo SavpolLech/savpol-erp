@@ -1,5 +1,5 @@
-// Playwright: loguje się do ERP i dla każdego csDocsHeadersId faktury otwiera
-// kartę FA WPROST z URL, podsłuchując odpowiedź API karty (jak kontrahenci/).
+// Playwright: loguje się do ERP i dla każdego csDocsHeadersId dokumentu sprzedaży
+// (faktura FA albo paragon PAR — ta sama karta) otwiera ją WPROST z URL, podsłuchując odpowiedź API karty (jak kontrahenci/).
 //
 // Karta zwraca w jednym zapytaniu dwie tabele: nagłówek (DataSetSQLIdent
 // csdocsheaders, 371 pól) i pozycje (csdocsitemspositions, 168 pól). To pokrywa
@@ -8,7 +8,8 @@
 // ERP i nie wpisujemy stałych. Do wynik/ zapisujemy CAŁE rekordy.
 //
 // Uruchomienie:
-//   node scrape.js 29471374725 29458418811 ...   (konkretne id)
+//   node scrape.js 29471374725 29458418811 ...   (konkretne id faktur)
+//   node scrape.js --typ=PAR 29458272753 ...     (paragony; zapis do wynik/par_<id>.json)
 //   node scrape.js --plik=lista-id.txt           (id rozdzielone białymi znakami/przecinkami)
 // Id, które mają już plik w wynik/, są pomijane (--odswiez wymusza ponowne pobranie).
 
@@ -21,8 +22,9 @@ const { decodeJsonResult, extractCardRecord } = require(path.join(__dirname, '..
 const HEADLESS = process.env.HEADLESS !== 'false';
 const ODSWIEZ = process.argv.includes('--odswiez');
 const PRZERWA_MS = [1200, 3000];
+const TYP = W.typZArgumentow(process.argv);
 
-const plikWyniku = id => path.join(W.OUT_DIR, 'fa_' + id + '.json');
+const plikWyniku = id => path.join(W.OUT_DIR, TYP.prefiks + '_' + id + '.json');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 function listaIdZArgumentow() {
@@ -35,7 +37,7 @@ function listaIdZArgumentow() {
 
 async function main() {
   const ids = listaIdZArgumentow();
-  if (!ids.length) throw new Error('Podaj id faktur (csDocsHeadersId) albo --plik=...');
+  if (!ids.length) throw new Error('Podaj id dokumentów (csDocsHeadersId) albo --plik=...');
   fs.mkdirSync(W.OUT_DIR, { recursive: true });
   const doPobrania = ODSWIEZ ? ids : ids.filter(id => !fs.existsSync(plikWyniku(id)));
   console.log('[start] Id: ' + ids.length + ', do pobrania: ' + doPobrania.length +
@@ -93,7 +95,12 @@ async function main() {
         continue;
       }
       const typ = String(w.naglowek.csDocsTypesId);
-      if (typ !== W.FA_DOC_TYPE_ID) console.warn(tag + ': UWAGA typ ' + typ + ' (to nie FA ' + W.FA_DOC_TYPE_ID + ') — zapisuję mimo to');
+      if (typ !== TYP.id) {
+        // Nie zapisujemy pod złym prefiksem — wgraj/porownaj filtrują po typie.
+        bledy.push(id);
+        console.warn(tag + ': typ ' + typ + ' to nie ' + TYP.kod + ' ' + TYP.id + ' — pomijam (sprawdź --typ)');
+        continue;
+      }
       fs.writeFileSync(plikWyniku(id), JSON.stringify({
         csDocsHeadersId: id, pobrano: new Date().toISOString(), zrodlo: 'csDocsHeaders_Sales',
         naglowek: w.naglowek, pozycje: w.pozycje
@@ -105,7 +112,7 @@ async function main() {
   } finally {
     await browser.close();
   }
-  console.log('[koniec] Pobrano ' + ok + '/' + doPobrania.length + ' faktur.' + (bledy.length ? ' Bez karty: ' + bledy.join(', ') : ''));
+  console.log('[koniec] Pobrano ' + ok + '/' + doPobrania.length + ' dokumentów ' + TYP.kod + '.' + (bledy.length ? ' Bez karty / zły typ: ' + bledy.join(', ') : ''));
   if (bledy.length) process.exitCode = 2;
 }
 

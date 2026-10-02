@@ -2,12 +2,13 @@
 // (ze scrapera) z produkcyjnymi csDocsHeaders / csDocsItemsPositions kolumna po
 // kolumnie — ta sama metoda co próbka kontrahentów.
 //
-// Uruchomienie: node porownaj-z-prod.js [id...]
-// Bez id: wszystkie FA z dbo.csDocsHeaders_test. Różnica w lastModifiedDate /
+// Uruchomienie: node porownaj-z-prod.js [--typ=FA|PAR] [id...]
+// Bez id: wszystkie dokumenty danego typu (domyślnie FA) z dbo.csDocsHeaders_test. Różnica w lastModifiedDate /
 // updCount z ERP późniejszym niż w produkcji = faktura zmieniona w ERP po kopii
 // bazy (np. zaksięgowana, zapłacona), nie błąd scrapera.
 
 const W = require('./lib/wspolne');
+const TYP = W.typZArgumentow(process.argv);
 
 function norm(v) {
   if (v === null || v === undefined) return null;
@@ -32,9 +33,9 @@ async function main() {
   const pool = await W.polacz();
   try {
     const q = async s => (await pool.request().query(s)).recordset;
-    const where = filtr.length ? 'csDocsHeadersId IN (' + filtr.map(Number).join(',') + ')' : 'csDocsTypesId = ' + W.FA_DOC_TYPE_ID;
+    const where = filtr.length ? 'csDocsHeadersId IN (' + filtr.map(Number).join(',') + ')' : 'csDocsTypesId = ' + TYP.id;
     const test = await q('SELECT * FROM dbo.csDocsHeaders_test WHERE ' + where);
-    if (!test.length) throw new Error('Brak faktur w dbo.csDocsHeaders_test (dla podanych id).');
+    if (!test.length) throw new Error('Brak dokumentów ' + TYP.kod + ' w dbo.csDocsHeaders_test (dla podanych id).');
     const lista = test.map(r => Number(r.csDocsHeadersId)).join(',');
     const prod = new Map((await q('SELECT * FROM dbo.csDocsHeaders WHERE csDocsHeadersId IN (' + lista + ')')).map(r => [String(r.csDocsHeadersId), r]));
     const grupuj = rows => rows.reduce((m, r) => { const k = String(r.csDocsHeadersId); (m.get(k) || m.set(k, []).get(k)).push(r); return m; }, new Map());
@@ -64,7 +65,7 @@ async function main() {
       for (const pid of pp.keys()) if (!pt.has(pid)) { console.log('    pozycja ' + pid + ': brak w ERP'); rP++; }
       console.log('    → nagłówek: zgodnych ' + (kolN.length - rN) + '/' + kolN.length + '; pozycje: ' + pt.size + ' ERP / ' + pp.size + ' prod, różnic ' + rP);
     }
-    console.log('\n[podsumowanie] Porównano ' + porownane + ' faktur (' + kolN.length + ' kolumn) i ' + pozycji + ' pozycji (' + kolP + ' kolumn).');
+    console.log('\n[podsumowanie] Porównano ' + porownane + ' dokumentów ' + TYP.kod + ' (' + kolN.length + ' kolumn) i ' + pozycji + ' pozycji (' + kolP + ' kolumn).');
     if (perKolumna.size) console.log('[podsumowanie] Kolumny z różnicami: ' +
       Array.from(perKolumna).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + '×' + n).join(', '));
     else console.log('[podsumowanie] Wszystkie kolumny zgodne 1:1.');

@@ -1,4 +1,4 @@
-# Faktury sprzedaży (FA) — mapowanie pól (ustalenia z 2026-10-02)
+# Dokumenty sprzedaży: faktury (FA) i paragony (PAR) — mapowanie pól (ustalenia z 2026-10-02)
 
 Zlecenie Michała (2026-10-02): faktury FA z okna **Dokumenty sprzedaży**
 (`https://erp.savpol.pl/pl/dokumenty-sprzedazy/csdocsheaders4sales`), ładowane
@@ -50,12 +50,43 @@ Wniosek: pola płatności zmieniają się po wystawieniu faktury. Przy insert-on
 (`ROZBIEZNOSCI.md`) w bazie zostaje stan z dnia scrapowania — do ustalenia
 z Michałem, czy to wystarcza.
 
+## Paragony (PAR) — ten sam scraper, `--typ=PAR`
+
+Zlecenie Michała (2026-10-02, „bliźniaczo jak z fakturami”): paragony z tego
+samego okna Dokumenty sprzedaży (filtr zaawansowany: Typ dok. równe PAR).
+Wzorcowy wiersz: `PAR_pola_wymagane.xlsx` — te same 273 kolumny nagłówka,
+te same arkusze DH (50) i DIP (5) co przy FA.
+
+`csDocsTypesId` PAR = **218693742**. Karta otwiera się tym samym URL co faktura
+(`csdocsheaders_sales-...`) i daje komplet pól nagłówka i pozycji, więc
+**mapowanie jest identyczne jak dla FA: 0 pól „do ustalenia”, 0 stałych.**
+Jedyne pole „paragonowe”, które ma wartość, to `FiscDate` (czas fiskalizacji).
+
+```
+node scrape.js --typ=PAR <id...>        → wynik/par_<id>.json
+node wgraj-do-worek.js --typ=PAR        → csDocsHeaders_test / csDocsItemsPositions_test
+node porownaj-z-prod.js --typ=PAR
+```
+
+Kalibracja 2026-10-02 (5 z 23 PAR z 1 lipca — liczba 23 = licznik ERP na
+zrzucie Michała): GLS1/001170 (wzorcowy, 6 poz.), RAS1/000916 (9, największy
+z dnia), RZS1/000932 (6), WLS1/000690 i WLS1/000691 (po 1, ze zrzutu Michała).
+
+- Pozycje 23/23, wszystkie `csDocsItemsPositionsId` się pokrywają.
+- Nagłówek 271/273, pozycje 119/120. Różnice wyłącznie w milisekundach:
+  `lastModifiedDate`, `FiscDate` (nagłówek) i `createdDate` (pozycje) —
+  to samo ograniczenie API co przy FA. Brak różnic w płatnościach (paragony
+  są opłacane od razu).
+
+Korekty paragonów (`/PARK/`) to osobny typ — nie wchodzą.
+
 ## Następny krok
 
-1. Weryfikacja próbki przez Michała (5 FA w `csDocsHeaders_test` /
+1. Weryfikacja próbek przez Michała (5 FA i 5 PAR w `csDocsHeaders_test` /
    `csDocsItemsPositions_test`).
 2. Lista id faktur z dnia: podsłuch listy `csdocsheaders4sales` z filtrem
    daty i paginacją (21/stronę, ~590 FA/dzień → ~30 stron), filtr
-   `csDocsTypesId = 267302594`. Kontrola: liczba FA z dnia = licznik ERP.
+   `csDocsTypesId` FA i PAR (jeden przebieg listy daje id obu typów).
+   Kontrola: liczba FA i PAR z dnia = licznik ERP.
 3. Czas: karta ~3–5 s → ~40 min na dzień. Wpięcie do orkiestratora
    (`dobij-wszystko.js`) jako kolejny typ + `pushLogs(...)` na koniec przebiegu.
