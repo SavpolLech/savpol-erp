@@ -1,0 +1,47 @@
+{
+ "ts": "2026-10-02T13:39:48.576Z",
+ "tabela": "csCustomers",
+ "prog": "0062971",
+ "listaZ": "2026-10-02T12:19:34.035Z",
+ "lista": 820,
+ "erpWszyscy": 58075,
+ "wWorku": 58077,
+ "roznicaBilansu": -2,
+ "lukiBrakWErp": [
+  "0063102",
+  "0063394",
+  "0063427",
+  "0063435",
+  "0063564"
+ ],
+ "bezKarty": [],
+ "brakWTabeli": [],
+ "docNieobslugiwane": [],
+ "ok": false,
+ "sprawdzenia": [
+  {
+   "nazwa": "1. lista z ERP pełna (wszystkie strony wyszukiwań)",
+   "ok": true
+  },
+  {
+   "nazwa": "1b. luki w numeracji sprawdzone pełnym symbolem",
+   "ok": true
+  },
+  {
+   "nazwa": "2. każdy z listy ma kartę (to samo id i symbol)",
+   "ok": true
+  },
+  {
+   "nazwa": "3. każdy z listy jest w dbo.csCustomers",
+   "ok": true
+  },
+  {
+   "nazwa": "4. kontrahenci z dokumentów WZ/MM/PZ obecni",
+   "ok": true
+  },
+  {
+   "nazwa": "5. bilans: worek = licznik ERP \"Wszyscy\"",
+   "ok": false
+  }
+ ]
+}
