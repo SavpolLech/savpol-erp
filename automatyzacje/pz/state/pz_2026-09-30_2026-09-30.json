@@ -106,10 +106,47 @@
     "2026/PZ/GDS1/003378",
     "2026/PZ/GDS1/003377",
     "2026/PZ/GDS1/003376",
-    "2026/PZ/GDS1/003375"
+    "2026/PZ/GDS1/003375",
+    "2026/PZ/WLS1/004911",
+    "2026/PZ/WLS1/004910",
+    "2026/PZ/WLS1/004909",
+    "2026/PZ/WLS1/004908",
+    "2026/PZ/WLS1/004907",
+    "2026/PZ/WLS1/004906",
+    "2026/PZ/WAS1/003660",
+    "2026/PZ/WAS1/003659",
+    "2026/PZ/WAS1/003658",
+    "2026/PZ/WAS1/003657",
+    "2026/PZ/WAS1/003656",
+    "2026/PZ/WAS1/003655",
+    "2026/PZ/RZS1/002408",
+    "2026/PZ/RAS1/003560",
+    "2026/PZ/RAS1/003559",
+    "2026/PZ/RAS1/003558",
+    "2026/PZ/RAS1/003557",
+    "2026/PZ/RAS1/003556",
+    "2026/PZ/KRS1/006019",
+    "2026/PZ/KRS1/006018",
+    "2026/PZ/KRS1/006017",
+    "2026/PZ/KRS1/006016",
+    "2026/PZ/KRS1/006015",
+    "2026/PZ/KRS1/006014",
+    "2026/PZ/GUS1/001894",
+    "2026/PZ/GUS1/001893",
+    "2026/PZ/GUS1/001892",
+    "2026/PZ/GUS1/001891",
+    "2026/PZ/GUS1/001890",
+    "2026/PZ/GUS1/001889",
+    "2026/PZ/GLS1/008067",
+    "2026/PZ/GLS1/008066",
+    "2026/PZ/GLS1/008065",
+    "2026/PZ/GLS1/008064",
+    "2026/PZ/GLS1/008063",
+    "2026/PZ/GLS1/008062",
+    "2026/PZ/GDS1/003374"
   ],
-  "complete": false,
-  "lastUpdated": "2026-10-01T09:06:09.654Z",
+  "complete": true,
+  "lastUpdated": "2026-10-05T08:37:13.764Z",
   "runs": [
     {
       "ts": "2026-10-01T08:53:38.060Z",
@@ -152,6 +189,48 @@
       "paczkaDok": 15,
       "partial": true,
       "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-10-05T08:32:42.676Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-05T08:33:27.775Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-05T08:34:19.084Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-05T08:35:07.979Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-05T08:35:56.006Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-05T08:36:41.895Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-05T08:37:13.763Z",
+      "paczkaDok": 1,
+      "partial": false,
+      "stoppedReason": null
     }
   ]
 }

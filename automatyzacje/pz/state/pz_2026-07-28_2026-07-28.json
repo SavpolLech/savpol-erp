@@ -87,10 +87,34 @@
     "2026/PZ/GDS1/002693",
     "2026/PZ/GDS1/002692",
     "2026/PZ/GDS1/002691",
-    "2026/PZ/GDS1/002690"
+    "2026/PZ/GDS1/002690",
+    "2026/PZ/WLS1/003898",
+    "2026/PZ/WLS1/003897",
+    "2026/PZ/WLS1/003896",
+    "2026/PZ/WLS1/003894",
+    "2026/PZ/WAS1/002908",
+    "2026/PZ/WAS1/002907",
+    "2026/PZ/RZS1/001964",
+    "2026/PZ/RAS1/002952",
+    "2026/PZ/RAS1/002951",
+    "2026/PZ/RAS1/002950",
+    "2026/PZ/RAS1/002949",
+    "2026/PZ/RAS1/002948",
+    "2026/PZ/KRS1/004989",
+    "2026/PZ/KRS1/004988",
+    "2026/PZ/KRS1/004987",
+    "2026/PZ/KRS1/004986",
+    "2026/PZ/KRS1/004984",
+    "2026/PZ/GUS1/001545",
+    "2026/PZ/GLS1/006569",
+    "2026/PZ/GLS1/006568",
+    "2026/PZ/GLS1/006567",
+    "2026/PZ/GLS1/006566",
+    "2026/PZ/GLS1/006565",
+    "2026/PZ/GLS1/006564"
   ],
   "complete": false,
-  "lastUpdated": "2026-09-29T11:42:06.999Z",
+  "lastUpdated": "2026-10-02T11:42:39.370Z",
   "runs": [
     {
       "ts": "2026-09-29T11:31:01.354Z",
@@ -125,6 +149,30 @@
     {
       "ts": "2026-09-29T11:42:06.998Z",
       "paczkaDok": 11,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-02T11:39:48.511Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-02T11:40:40.216Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-02T11:41:46.653Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-02T11:42:39.369Z",
+      "paczkaDok": 6,
       "partial": false,
       "stoppedReason": null
     }
