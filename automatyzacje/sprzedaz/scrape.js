@@ -39,6 +39,8 @@ const PRZERWA_MS = [1200, 3000];
 const DZIEN = process.env.FILTER_DATE || null;
 const REALNE = process.env.SCRAPE_TARGET === 'prod';
 const SESJA_MS = parseInt(process.env.SESJA_MIN || '60', 10) * 60000;
+// Godzina końca z orkiestratora (DO_GODZINY → KONIEC_TS); zapas na zapis stanu i push.
+const KONIEC_TS = parseInt(process.env.KONIEC_TS || '0', 10);
 const TYPY_DNIA = new Set([W.TYPY.FA, W.TYPY.PAR]);
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -82,6 +84,7 @@ async function trybDzien() {
     let przerwanoLimitem = false;
     for (const [n, w] of brakujace.entries()) {
       if (Date.now() - start > SESJA_MS) { przerwanoLimitem = true; console.log('[sprzedaz] Limit sesji ' + (SESJA_MS / 60000) + ' min — reszta w kolejnej próbie.'); break; }
+      if (KONIEC_TS && Date.now() > KONIEC_TS - 3 * 60000) { przerwanoLimitem = true; console.log('[sprzedaz] Godzina końca — reszta w następnym biegu.'); break; }
       const tag = '[' + (n + 1) + '/' + brakujace.length + '] ' + w.DocNumber;
       const k = await pobierz(w.csDocsHeadersId);
       if (!k) { log.bezKarty.push(w.csDocsHeadersId); console.warn(tag + ': BRAK karty'); continue; }

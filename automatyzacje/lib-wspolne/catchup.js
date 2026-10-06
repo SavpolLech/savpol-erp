@@ -110,7 +110,16 @@ module.exports = function runCatchup(opts) {
 
   const done = [];
   const failed = [];
+  // KONIEC_TS (ms, ustawia orkiestrator z DO_GODZINY): po tej chwili nie
+  // zaczynamy nowej próby ani nowego dnia — bieg kończy się sam, a reszta
+  // zostaje na następny raz (stan per dzień jest zachowany).
+  const KONIEC = parseInt(process.env.KONIEC_TS || '0', 10);
+  const poCzasie = () => KONIEC > 0 && Date.now() >= KONIEC;
   for (const day of targets) {
+    if (poCzasie()) {
+      console.log(`[catchup ${label}] Minęła godzina końca — ${day} i dalsze dni zostają na następny bieg.`);
+      break;
+    }
     const env = {
       ...process.env,
       FILTER_DATE: day,
@@ -122,7 +131,7 @@ module.exports = function runCatchup(opts) {
       // które same go biorą (kontrahenci/, sprzedaz/), nie mogą go drugi raz zająć.
       SCRAPERY_LOCK_RODZIC: '1'
     };
-    for (let a = 1; a <= MAX_ATTEMPTS && !isComplete(day); a++) {
+    for (let a = 1; a <= MAX_ATTEMPTS && !isComplete(day) && !poCzasie(); a++) {
       clearLock();
       console.log(`[catchup ${label}] ${day} próba ${a}/${MAX_ATTEMPTS} @ ${new Date().toLocaleTimeString()}`);
       const r = spawnSync('node', ['scrape.js'], {
@@ -141,6 +150,9 @@ module.exports = function runCatchup(opts) {
       console.log(`[catchup ${label}] ${day} KOMPLET.`);
       done.push(day);
       emit('day-ok', `${label} — dzień gotowy`, `${day}: ${docCount(day)} dok. -> ${targetLabel}.`);
+    } else if (poCzasie()) {
+      console.log(`[catchup ${label}] ${day} przerwany godziną końca (${docCount(day)} dok.) — dokończy następny bieg.`);
+      failed.push(day);
     } else {
       console.warn(`[catchup ${label}] UWAGA: ${day} nie domknięty po ${MAX_ATTEMPTS} próbach — kolejny bieg dokończy ze stanu.`);
       failed.push(day);

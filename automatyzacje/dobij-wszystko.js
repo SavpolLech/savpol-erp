@@ -22,6 +22,7 @@
 // Uruchomienie ręczne (test):  node dobij-wszystko.js
 //   SCRAPERS=wz node dobij-wszystko.js       # tylko wybrane typy
 //   CATCHUP_WINDOW=8 node dobij-wszystko.js  # szersze okno nadganiania
+//   DO_GODZINY=19:00 node dobij-wszystko.js  # sam kończy przed 19:00
 
 const { spawnSync } = require('child_process');
 const fs = require('fs');
@@ -96,6 +97,19 @@ function buildDays(from, to) {
   for (let d = start; d <= end; d.setUTCDate(d.getUTCDate() + 1)) days.push(ymd(d));
   return days; // zawsze >=1 dzień, gdy FROM/TO poprawne — brak cichego spadku do okna
 }
+// DO_GODZINY=GG:MM — godzina końca (np. backfill 17:00–19:00 albo nocny do
+// 08:00). Najbliższe wystąpienie tej godziny po starcie; catchup nie zaczyna po
+// niej nowego dnia, a scraper sprzedaży kończy karty kilka minut wcześniej.
+if (process.env.DO_GODZINY) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(process.env.DO_GODZINY);
+  if (!m) { console.error(`BŁĄD: DO_GODZINY='${process.env.DO_GODZINY}' musi być GG:MM.`); process.exit(2); }
+  const k = new Date();
+  k.setHours(parseInt(m[1], 10), parseInt(m[2], 10), 0, 0);
+  if (k <= new Date()) k.setDate(k.getDate() + 1);
+  process.env.KONIEC_TS = String(k.getTime());
+  console.log(`[dobij-wszystko] Godzina końca: ${k.toLocaleString('pl-PL')}`);
+}
+
 let DAYS = null;
 if (process.env.FROM) {
   const to = process.env.TO || ymd(new Date(Date.now() - 86400000)); // domyślnie wczoraj
