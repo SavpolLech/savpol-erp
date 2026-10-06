@@ -4,7 +4,7 @@
 //
 // Użycie:
 //   node dobij-dzien.js <typ> <data> [--pelny]
-//     <typ>   wz | mm | pz
+//     <typ>   wz | mm | pz | sprzedaz (faktury FA + paragony PAR)
 //     <data>  RRRR-MM-DD (np. 2026-09-15)
 //     --pelny  przescrapuj dzień OD ZERA (patrz niżej)
 //
@@ -30,11 +30,11 @@ const path = require('path');
 const runCatchup = require('./lib-wspolne/catchup');
 
 const AUTO_DIR = __dirname;
-const ALLOWED = ['wz', 'mm', 'pz'];
+const ALLOWED = ['wz', 'mm', 'pz', 'sprzedaz'];
 
 function usage(msg) {
   if (msg) console.error('BŁĄD: ' + msg);
-  console.error('Użycie: node dobij-dzien.js <wz|mm|pz> <RRRR-MM-DD> [--pelny]');
+  console.error('Użycie: node dobij-dzien.js <wz|mm|pz|sprzedaz> <RRRR-MM-DD> [--pelny]');
   process.exit(2);
 }
 

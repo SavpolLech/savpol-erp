@@ -36,6 +36,7 @@ function ymd(d) { return d.toISOString().slice(0, 10); }
 // onEvent:   opcjonalny (kind, title, message) => void — best-effort, nie blokuje
 // Zmienne środowiskowe (z domyślnymi jak w dawnym wz/dobij-wczoraj.js):
 //   CATCHUP_WINDOW=5  MAX_ATTEMPTS=6  SESSION_TIMEOUT_MS=4500000 (75 min)
+//   <PREFIX>_CATCHUP_WINDOW — okno tylko dla jednego typu (np. SPRZEDAZ_CATCHUP_WINDOW)
 module.exports = function runCatchup(opts) {
   const { dir, prefix, label = prefix.toUpperCase(), onEvent } = opts;
   // Cel zapisu. DOMYŚLNIE 'prod' — codzienny orkiestrator ma pisać do produkcji.
@@ -47,7 +48,7 @@ module.exports = function runCatchup(opts) {
   const LOCK = path.join(dir, '.scrape.lock');
   const MAX_ATTEMPTS = parseInt(process.env.MAX_ATTEMPTS || '6', 10);
   const SESSION_TIMEOUT_MS = parseInt(process.env.SESSION_TIMEOUT_MS || String(75 * 60 * 1000), 10);
-  const WINDOW = parseInt(process.env.CATCHUP_WINDOW || '5', 10);
+  const WINDOW = parseInt(process.env[prefix.toUpperCase() + '_CATCHUP_WINDOW'] || process.env.CATCHUP_WINDOW || '5', 10);
 
   // Per-typ MINIMALNY WIEK dnia (w dniach). Dzień młodszy NIE jest scrapowany w
   // biegu automatycznym (oknie) — wejdzie, gdy się zestarzeje. Dla MM = 3
@@ -116,7 +117,10 @@ module.exports = function runCatchup(opts) {
       SCRAPE_TARGET: target,
       HEADLESS: 'true',
       ALLOW_WEEKEND: 'true',         // dzień z weekendu bywa niepusty
-      IGNORE_BUSINESS_HOURS: 'true'  // job "musi domknąć" niezależnie od pory
+      IGNORE_BUSINESS_HOURS: 'true', // job "musi domknąć" niezależnie od pory
+      // Wołający (orkiestrator, dobij-dzien) trzyma globalny lock ERP — scrapery,
+      // które same go biorą (kontrahenci/, sprzedaz/), nie mogą go drugi raz zająć.
+      SCRAPERY_LOCK_RODZIC: '1'
     };
     for (let a = 1; a <= MAX_ATTEMPTS && !isComplete(day); a++) {
       clearLock();

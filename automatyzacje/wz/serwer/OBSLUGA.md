@@ -31,7 +31,8 @@ Gdy ERP pokazuje dla jakiegoś dnia więcej dokumentów niż jest w bazie (np. E
 
 1. Wejdź do folderu `C:\savpol-automatyzacje\automatyzacje\wz\serwer\`.
 2. Dwuklik na **`dobij-dzien.bat`**.
-3. Wpisz typ (`wz`, `mm` albo `pz`) i datę (`RRRR-MM-DD`).
+3. Wpisz typ (`wz`, `mm`, `pz` albo `sprzedaz` — faktury FA i paragony PAR)
+   i datę (`RRRR-MM-DD`).
 4. Tryb: naciśnij **Enter** (szybki — dobiera brakujące). Jeśli szybki nie
    pomógł (w bazie dalej jest mniej niż w ERP), odpal jeszcze raz i wybierz
    **`p`** (pełny — przeklikuje dzień od zera).
@@ -39,6 +40,10 @@ Gdy ERP pokazuje dla jakiegoś dnia więcej dokumentów niż jest w bazie (np. E
 **MM: nie dobijaj ręcznie dnia młodszego niż 3 dni.** Ręczne dobicie omija
 opóźnienie — wciągnęłoby MM jeszcze niezaksięgowane, a poprawek z ERP baza już
 nie przyjmie (do bazy tylko dopisujemy).
+
+**Sprzedaż (FA, PAR): nie dobijaj ręcznie dnia młodszego niż 14 dni** — z tego
+samego powodu: faktury dochodzą z datą wstecz, a płatności dopisują się po
+wystawieniu. Automat sam bierze dzień, gdy skończy 14 dni.
 
 Bezpieczne o każdej porze: bierze tę samą blokadę co codzienny automat, więc
 nigdy nie wejdzie na ERP równolegle (gdyby akurat trwał inny bieg, wypisze

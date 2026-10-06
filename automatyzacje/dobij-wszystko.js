@@ -1,5 +1,5 @@
 // ORKIESTRATOR — jedno wejście, które nadgania WSZYSTKIE scrapery ERP po kolei:
-// [wz, mm, pz]. Uruchamiane na serwerze przez wz/serwer/uruchom.bat
+// [wz, mm, pz, sprzedaz]. Uruchamiane na serwerze przez wz/serwer/uruchom.bat
 // (git pull + node dobij-wszystko.js), raz dziennie w dni robocze.
 //
 // DLACZEGO SEKWENCYJNIE: ERP znosi tylko JEDNĄ sesję logowania naraz. Dwa
@@ -11,8 +11,9 @@
 // Nie pozwala wejść równolegle na ERP. Lock przeterminowany (starszy niż
 // LOCK_STALE_MS) jest przejmowany — padnięty proces nie blokuje na zawsze.
 //
-// Wszystkie trzy piszą do tabel PRODUKCYJNYCH (catchup wymusza SCRAPE_TARGET=prod).
-// Michał zatwierdził MM i PZ do produkcji 2026-09-29; WZ już tam pisało.
+// Wszystkie piszą do tabel PRODUKCYJNYCH (catchup wymusza SCRAPE_TARGET=prod).
+// Michał zatwierdził MM i PZ do produkcji 2026-09-29; WZ już tam pisało;
+// sprzedaż (FA + PAR) 2026-10-06.
 //
 // Kolejność scrape.js NIE jest tu modyfikowana — orkiestrator tylko WOŁA
 // scrape.js każdego typu (przez lib-wspolne/catchup). Logika DOM każdego typu
@@ -46,7 +47,7 @@ const LOCK_STALE_MS = parseInt(process.env.LOCK_STALE_MS || String(12 * 60 * 60 
 const { acquire: acquireLock, release: releaseLock } = require('./lib-wspolne/lock')(LOCK_PATH, { staleMs: LOCK_STALE_MS });
 
 // Domyślna kolejność. ERP jeden na raz — nie zmieniaj na równoległe.
-const ALL = ['wz', 'mm', 'pz'];
+const ALL = ['wz', 'mm', 'pz', 'sprzedaz'];
 const SCRAPERS = (process.env.SCRAPERS || ALL.join(','))
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 
@@ -55,10 +56,21 @@ const SCRAPERS = (process.env.SCRAPERS || ALL.join(','))
 // działały bez edycji .env na serwerze (env nadal nadpisuje). MM=3: dokumenty
 // MM bywają modyfikowane (data/wartości) zanim zostaną zaksięgowane (~2-3 dni),
 // więc scrapujemy je dopiero po ustabilizowaniu — patrz lib-wspolne/catchup.js.
-const DEFAULT_MIN_AGE = { mm: '3' };
+// SPRZEDAZ=14 (Michał 2026-10-06, „bufor 14 dni”): faktury dochodzą z datą
+// wstecz (1.07: 591 FA w ERP, 590 w kopii bazy z 27.07), a płatności
+// dopisują się po wystawieniu.
+const DEFAULT_MIN_AGE = { mm: '3', sprzedaz: '14' };
 for (const [typ, val] of Object.entries(DEFAULT_MIN_AGE)) {
   const key = typ.toUpperCase() + '_MIN_AGE_DAYS';
   if (process.env[key] === undefined) process.env[key] = val;
+}
+// Okno wsteczne per typ (<TYP>_CATCHUP_WINDOW) — musi objąć opóźnienie i mieć
+// zapas na przegapione biegi. Dni kompletne wg state/ i tak są pomijane.
+// Jawne CATCHUP_WINDOW (np. backfill) ma pierwszeństwo przed tym domyślnym.
+const DEFAULT_WINDOW = { sprzedaz: '21' };
+for (const [typ, val] of Object.entries(DEFAULT_WINDOW)) {
+  const key = typ.toUpperCase() + '_CATCHUP_WINDOW';
+  if (process.env[key] === undefined && process.env.CATCHUP_WINDOW === undefined) process.env[key] = val;
 }
 // Cel zapisu. DOMYŚLNIE prod (codzienny bieg). TARGET=test -> tabele *_test
 // (np. jednorazowy backfill do weryfikacji, bez ruszania produkcji).

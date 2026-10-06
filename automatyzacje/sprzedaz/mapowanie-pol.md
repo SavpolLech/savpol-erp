@@ -80,13 +80,28 @@ z dnia), RZS1/000932 (6), WLS1/000690 i WLS1/000691 (po 1, ze zrzutu Michała).
 
 Korekty paragonów (`/PARK/`) to osobny typ — nie wchodzą.
 
-## Następny krok
+## Produkcja (Michał 2026-10-06)
 
-1. Weryfikacja próbek przez Michała (5 FA i 5 PAR w `csDocsHeaders_test` /
-   `csDocsItemsPositions_test`).
-2. Lista id faktur z dnia: podsłuch listy `csdocsheaders4sales` z filtrem
-   daty i paginacją (21/stronę, ~590 FA/dzień → ~30 stron), filtr
-   `csDocsTypesId` FA i PAR (jeden przebieg listy daje id obu typów).
-   Kontrola: liczba FA i PAR z dnia = licznik ERP.
-3. Czas: karta ~3–5 s → ~40 min na dzień. Wpięcie do orkiestratora
-   (`dobij-wszystko.js`) jako kolejny typ + `pushLogs(...)` na koniec przebiegu.
+Michał zatwierdził obie próbki: FA i PAR ładujemy razem do prawdziwych
+`csDocsHeaders` / `csDocsItemsPositions`, z buforem 14 dni.
+
+Katalog to `automatyzacje/sprzedaz/` (do 2026-10-06 `fa/`). Orkiestrator
+(`dobij-wszystko.js`) woła `scrape.js` z `FILTER_DATE`:
+
+1. `lib/lista-dnia.js` — lista Dokumenty sprzedaży z **Data księg. = dzień**
+   (= `DocDate`), wszystkie strony z API (21/stronę, ~35 stron, ~3 min).
+   Kontrola: zebrane = licznik ERP. Lista ma też FAK, FAKR, FAUEK itd. —
+   bierzemy tylko FA i PAR.
+2. Id już obecne w bazie pomijamy, brakujące: karta (`lib/karta.js`) →
+   INSERT w transakcji (`lib/zapis.js`).
+3. Dzień kompletny, gdy lista pełna i każdy FA/PAR z dnia jest w bazie.
+   `state/sprzedaz_<dzień>.json`, `run-log.jsonl`, `pushLogs`.
+
+Opóźnienie: `SPRZEDAZ_MIN_AGE_DAYS=14`, okno `SPRZEDAZ_CATCHUP_WINDOW=21`
+(ustawiane w orkiestratorze). Ręcznie: `node dobij-dzien.js sprzedaz <dzień>`.
+
+Pierwszy dzień w produkcji: 1.07 — w kopii bazy było 613 z 614 FA/PAR,
+dociągnięta 2026/FA/WAS1/014375 (wystawiona z datą wstecz po kopii bazy).
+Tempo: ~4–5 s na kartę, ~650 dokumentów dziennie → ~50 min na dzień.
+
+Kopia bazy kończy się na 27.07 (137 FA zamiast ~620 — kopia w trakcie dnia).

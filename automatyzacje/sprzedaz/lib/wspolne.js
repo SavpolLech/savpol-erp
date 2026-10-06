@@ -1,6 +1,6 @@
 // Wspólne dla skryptów dokumentów sprzedaży (FA, PAR): połączenie z bazą i konwersja wartości
-// bierzemy z kontrahentów (ta sama karta API, te same typy), tu tylko stałe FA
-// i logowanie do ERP.
+// bierzemy z kontrahentów (ta sama karta API, te same typy), tu tylko stałe
+// dokumentów sprzedaży i logowanie do ERP.
 
 const path = require('path');
 const K = require(path.join(__dirname, '..', '..', 'kontrahenci', 'lib', 'wspolne'));
@@ -13,6 +13,9 @@ const ERP_BASE_URL = process.env.ERP_BASE_URL || 'https://erp.savpol.pl/';
 // z korektami (FAK, PARK) — tych nie bierzemy.
 const TYPY = { FA: '267302594', PAR: '218693742' };
 const FA_DOC_TYPE_ID = TYPY.FA;
+// Typ dokumentu po id (do logów i nazw plików), np. '218693742' → 'PAR'.
+const kodTypu = id => Object.keys(TYPY).find(k => TYPY[k] === String(id)) || null;
+const plikWyniku = (kod, id) => path.join(OUT_DIR, kod.toLowerCase() + '_' + id + '.json');
 
 // --typ=FA|PAR z linii poleceń (domyślnie FA).
 function typZArgumentow(argv) {
@@ -43,4 +46,4 @@ async function login(page) {
   console.log('[login] Zalogowano.');
 }
 
-module.exports = Object.assign({}, K, { OUT_DIR, ERP_BASE_URL, TYPY, FA_DOC_TYPE_ID, typZArgumentow, TAB_NAGLOWKI, TAB_POZYCJE, cardUrl, login });
+module.exports = Object.assign({}, K, { OUT_DIR, ERP_BASE_URL, TYPY, FA_DOC_TYPE_ID, kodTypu, plikWyniku, typZArgumentow, TAB_NAGLOWKI, TAB_POZYCJE, cardUrl, login });

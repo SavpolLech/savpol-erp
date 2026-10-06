@@ -19,7 +19,7 @@ git pull --no-edit
 cd automatyzacje
 
 echo.
-set /p TYP=Jaki dokument? wpisz wz, mm albo pz:
+set /p TYP=Jaki dokument? wpisz wz, mm, pz albo sprzedaz (faktury i paragony):
 set /p DATA=Ktora data? format RRRR-MM-DD (np. 2026-09-15):
 echo.
 echo Tryb:
