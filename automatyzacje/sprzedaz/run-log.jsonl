@@ -4,3 +4,4 @@
 {"ts":"2026-10-06T10:59:30.638Z","tryb":"dzien","dzien":"2026-09-16","cel":"prod","erpRekordow":735,"fa":567,"par":13,"juzWBazie":0,"wstawiono":579,"pozycji":4304,"bezKarty":["30563974266"],"bledyZapisu":[],"complete":false,"sekundy":3192}
 {"ts":"2026-10-06T11:01:47.760Z","tryb":"dzien","dzien":"2026-09-16","cel":"prod","erpRekordow":735,"fa":567,"par":13,"juzWBazie":579,"wstawiono":1,"pozycji":15,"bezKarty":[],"bledyZapisu":[],"complete":true,"sekundy":127}
 {"ts":"2026-10-06T12:01:05.477Z","tryb":"dzien","dzien":"2026-09-17","cel":"prod","erpRekordow":722,"fa":590,"par":23,"juzWBazie":0,"wstawiono":613,"pozycji":4449,"bezKarty":[],"bledyZapisu":[],"complete":true,"sekundy":3545}
+{"ts":"2026-10-06T13:01:18.981Z","tryb":"dzien","dzien":"2026-09-18","cel":"prod","erpRekordow":764,"fa":611,"par":22,"juzWBazie":0,"wstawiono":596,"pozycji":4617,"bezKarty":["30594989313","30594984252"],"bledyZapisu":[],"complete":false,"sekundy":3604}
