@@ -166,8 +166,8 @@
     "2027/PZ/GDS1/000023",
     "2027/PZ/GDS1/000022"
   ],
-  "complete": false,
-  "lastUpdated": "2026-10-06T08:58:51.511Z",
+  "complete": true,
+  "lastUpdated": "2026-10-06T09:01:28.600Z",
   "runs": [
     {
       "ts": "2026-10-06T08:39:46.837Z",
@@ -262,6 +262,12 @@
     {
       "ts": "2026-10-06T08:58:51.511Z",
       "paczkaDok": 1,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-06T09:01:28.599Z",
+      "paczkaDok": 0,
       "partial": false,
       "stoppedReason": null
     }
