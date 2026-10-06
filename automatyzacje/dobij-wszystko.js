@@ -185,6 +185,35 @@ if (SCRAPERS.includes('sprzedaz') && !DAYS) {
   }
 }
 
+// ZALEGŁOŚCI SPRZEDAŻY (Tomek 2026-10-06: pon–pt, maks. do 18:00). Po zwykłym
+// biegu ten sam proces nadgania jawny zakres dni, aż minie godzina końca.
+// Dni kompletne są pomijane, więc po nadrobieniu krok sam nic nie robi —
+// wtedy usuń ZALEGLOSCI z launchera.
+//   ZALEGLOSCI=2026-07-01..2026-09-14  ZALEGLOSCI_DO_GODZINY=18:00
+if (process.env.ZALEGLOSCI && !DAYS) {
+  const m = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(process.env.ZALEGLOSCI);
+  const g = /^(\d{1,2}):(\d{2})$/.exec(process.env.ZALEGLOSCI_DO_GODZINY || '18:00');
+  if (!m || !g) {
+    console.error(`[dobij-wszystko] BŁĄD: ZALEGLOSCI='${process.env.ZALEGLOSCI}' (RRRR-MM-DD..RRRR-MM-DD) albo ZALEGLOSCI_DO_GODZINY (GG:MM) w złym formacie — pomijam zaległości.`);
+  } else {
+    const koniec = new Date();
+    koniec.setHours(parseInt(g[1], 10), parseInt(g[2], 10), 0, 0);
+    if (Date.now() >= koniec.getTime()) {
+      console.log(`\n[dobij-wszystko] Zaległości: już po ${process.env.ZALEGLOSCI_DO_GODZINY || '18:00'} — dziś pomijam.`);
+    } else {
+      process.env.KONIEC_TS = String(koniec.getTime());
+      console.log(`\n[dobij-wszystko] ===== SPRZEDAŻ — zaległości ${m[1]}..${m[2]}, do ${koniec.toLocaleTimeString('pl-PL')} =====`);
+      const wynik = runCatchup({
+        dir: path.join(AUTO_DIR, 'sprzedaz'), prefix: 'sprzedaz', label: 'SPRZEDAŻ-zaległości', target: TARGET,
+        days: buildDays(m[1], m[2]),
+        onEvent: (kind, title, message) => { if (kind === 'end') toast(title, message); }
+      });
+      // Dzień przerwany godziną końca to nie błąd — dokończy jutro.
+      summary.push({ type: 'sprzedaz-zaleglosci', ...wynik, failed: [] , przerwane: wynik.failed });
+    }
+  }
+}
+
 console.log(`\n[dobij-wszystko] PODSUMOWANIE:`);
 let anyFailed = false;
 for (const s of summary) {
