@@ -73,7 +73,12 @@ module.exports = function runCatchup(opts) {
   // (ręczny reset stanu sprawia, że dzień znów jest "niekompletny" i wejdzie).
   const targets = [];
   const explicit = Array.isArray(opts.days) && opts.days.length;
-  if (explicit) {
+  // PRZEGLĄD (opts.przeglad): każdy podany dzień raz, także kompletny — scraper
+  // ponownie czyta listę i dopisuje dokumenty wystawione później z datą wstecz
+  // (sprzedaż: przegląd 45 dni, Michał 2026-10-06). Wynik = kod wyjścia.
+  if (opts.przeglad) {
+    targets.push(...(opts.days || []));
+  } else if (explicit) {
     const today = new Date();
     for (const day of opts.days) {
       if (!isComplete(day)) targets.push(day);
@@ -131,6 +136,17 @@ module.exports = function runCatchup(opts) {
       // które same go biorą (kontrahenci/, sprzedaz/), nie mogą go drugi raz zająć.
       SCRAPERY_LOCK_RODZIC: '1'
     };
+    if (opts.przeglad) {
+      if (poCzasie()) { failed.push(day); continue; }
+      clearLock();
+      console.log(`[catchup ${label}] przegląd ${day} @ ${new Date().toLocaleTimeString()}`);
+      const r = spawnSync('node', ['scrape.js'], {
+        cwd: dir, env: { ...env, PRZEGLAD: '1' }, stdio: 'inherit', timeout: SESSION_TIMEOUT_MS, killSignal: 'SIGKILL'
+      });
+      clearLock();
+      (r.status === 0 ? done : failed).push(day);
+      continue;
+    }
     for (let a = 1; a <= MAX_ATTEMPTS && !isComplete(day) && !poCzasie(); a++) {
       clearLock();
       console.log(`[catchup ${label}] ${day} próba ${a}/${MAX_ATTEMPTS} @ ${new Date().toLocaleTimeString()}`);

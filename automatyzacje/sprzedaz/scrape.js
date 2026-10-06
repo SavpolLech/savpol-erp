@@ -59,7 +59,7 @@ async function trybDzien() {
   const start = Date.now();
   const cel = REALNE ? 'prod' : 'test';
   console.log('[sprzedaz] Dzień ' + DZIEN + ' → ' + (REALNE ? 'PRODUKCJA' : 'tabele _test'));
-  const log = { tryb: 'dzien', dzien: DZIEN, cel, erpRekordow: null, fa: 0, par: 0, juzWBazie: 0, wstawiono: 0, pozycji: 0, bezKarty: [], bledyZapisu: [], complete: false };
+  const log = { tryb: process.env.PRZEGLAD === '1' ? 'przeglad' : 'dzien', dzien: DZIEN, cel, erpRekordow: null, fa: 0, par: 0, juzWBazie: 0, wstawiono: 0, pozycji: 0, bezKarty: [], bledyZapisu: [], complete: false };
 
   const pool = await W.polacz();
   const { browser, page } = await otworzPrzegladarke();

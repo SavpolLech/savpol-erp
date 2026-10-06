@@ -105,3 +105,13 @@ dociągnięta 2026/FA/WAS1/014375 (wystawiona z datą wstecz po kopii bazy).
 Tempo: ~4–5 s na kartę, ~650 dokumentów dziennie → ~50 min na dzień.
 
 Kopia bazy kończy się na 27.07 (137 FA zamiast ~620 — kopia w trakcie dnia).
+
+### Przegląd 45 dni (Michał 2026-10-06)
+
+2026/FA/WAS1/014375 wystawiono 31.07 z datą 1.07 — 30 dni wstecz, więcej niż
+bufor 14 dni. Dlatego raz w tygodniu (piątek, w zwykłym biegu orkiestratora)
+każdy **już skompletowany** dzień z zakresu dziś-45..dziś-15 przechodzi
+jeszcze raz: lista ~3 min/dzień, karty tylko dla brakujących, ~1,5 h.
+Dni jeszcze niepobrane (zaległości) przegląd pomija — to robota backfillu.
+Znacznik `state/przeglad-ostatni.txt` (raz dziennie), w run-log `tryb: przeglad`.
+Zmienne: `PRZEGLAD=1` (wymuś dziś), `PRZEGLAD_DZIEN=1..7`, `PRZEGLAD_ZAKRES=45`.

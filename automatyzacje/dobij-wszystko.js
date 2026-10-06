@@ -142,6 +142,49 @@ for (const type of SCRAPERS) {
   summary.push({ type, ...wynik });
 }
 
+// PRZEGLĄD SPRZEDAŻY 45 DNI (Michał 2026-10-06): faktury bywają wystawiane
+// z datą wstecz dłuższą niż bufor 14 dni (2026/FA/WAS1/014375: wystawiona
+// 31.07 z datą 1.07). Raz w tygodniu (domyślnie w piątek) każdy dzień z
+// zakresu dziś-45..dziś-15 przechodzi jeszcze raz: lista ~3 min, karty tylko
+// dla brakujących. Tylko w zwykłym biegu (bez FROM/TO), raz na dzień
+// (znacznik w sprzedaz/state/, commitowany przez pushLogs).
+//   PRZEGLAD=1 — wymuś dziś;  PRZEGLAD_DZIEN=1..7 (pn..nd);  PRZEGLAD_ZAKRES=45
+if (SCRAPERS.includes('sprzedaz') && !DAYS) {
+  const dzisiaj = new Date();
+  const dzienTyg = dzisiaj.getDay() || 7;
+  const znacznik = path.join(AUTO_DIR, 'sprzedaz', 'state', 'przeglad-ostatni.txt');
+  let ostatni = '';
+  try { ostatni = fs.readFileSync(znacznik, 'utf8').trim(); } catch { /* pierwszy raz */ }
+  const dzisYmd = ymd(new Date(dzisiaj.getTime() - dzisiaj.getTimezoneOffset() * 60000));
+  const pora = process.env.PRZEGLAD === '1' || dzienTyg === parseInt(process.env.PRZEGLAD_DZIEN || '5', 10);
+  if (pora && ostatni !== dzisYmd) {
+    const zakres = parseInt(process.env.PRZEGLAD_ZAKRES || '45', 10);
+    const minWiek = parseInt(process.env.SPRZEDAZ_MIN_AGE_DAYS || '14', 10) + 1;
+    // Tylko dni już raz skompletowane — niepobrane (zaległości) to robota
+    // zwykłego biegu / backfillu, nie tygodniowego przeglądu (inaczej piątek
+    // zamieniłby się w wielogodzinne pobieranie).
+    const { loadState } = require('./lib-wspolne/state')(path.join(AUTO_DIR, 'sprzedaz'), 'sprzedaz');
+    const dni = [];
+    for (let back = zakres; back >= minWiek; back--) {
+      const d = new Date(dzisiaj); d.setDate(d.getDate() - back);
+      const dzien = ymd(new Date(d.getTime() - d.getTimezoneOffset() * 60000));
+      if (loadState(dzien, dzien).complete) dni.push(dzien);
+    }
+    if (dni.length) {
+      console.log(`\n[dobij-wszystko] ===== SPRZEDAŻ — przegląd ${dni[0]}..${dni[dni.length - 1]} (${dni.length} dni) =====`);
+      const wynik = runCatchup({
+        dir: path.join(AUTO_DIR, 'sprzedaz'), prefix: 'sprzedaz', label: 'SPRZEDAŻ-przegląd', target: TARGET,
+        days: dni, przeglad: true
+      });
+      summary.push({ type: 'sprzedaz-przeglad', ...wynik });
+      try { fs.mkdirSync(path.dirname(znacznik), { recursive: true }); fs.writeFileSync(znacznik, dzisYmd + '\n'); } catch { /* znacznik to dodatek */ }
+      require('./lib-wspolne/git-log-push').pushLogs('sprzedaz', 'przegląd ' + dni[0] + '..' + dni[dni.length - 1]);
+    } else {
+      console.log('\n[dobij-wszystko] Przegląd sprzedaży: brak skompletowanych dni w zakresie (zaległości jeszcze nienadrobione).');
+    }
+  }
+}
+
 console.log(`\n[dobij-wszystko] PODSUMOWANIE:`);
 let anyFailed = false;
 for (const s of summary) {
