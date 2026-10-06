@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.4.0
+// @version      4.4.1
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -1509,7 +1509,18 @@
   function erpRozpakujZadanie(b64) {
     let sur;
     try { sur = atob(b64); } catch (e) { return null; }
-    const bajty = Uint8Array.from(sur, c => c.charCodeAt(0));
+    let bajty = Uint8Array.from(sur, c => c.charCodeAt(0));
+    // Żądanie to ZIP bez kompresji. Treść tniemy po ROZMIARZE z nagłówka, nie
+    // po ostatnim „}": stopka ZIP-a niesie binarny offset, który przy pewnych
+    // długościach żądania zawiera bajt 0x7D. Wtedy wycinek łapał śmieci ze
+    // stopki, JSON.parse padał i podsłuch nie widział zapytania o opisy
+    // (0011022, 0021204 — „kliknąłem w Opisy w B2B, ale nie zobaczyłem…").
+    if (bajty.length > 30 && bajty[0] === 0x50 && bajty[1] === 0x4b
+        && (bajty[8] | (bajty[9] << 8)) === 0) {
+      const rozmiar = (bajty[18] | (bajty[19] << 8) | (bajty[20] << 16) | (bajty[21] << 24)) >>> 0;
+      const start = 30 + (bajty[26] | (bajty[27] << 8)) + (bajty[28] | (bajty[29] << 8));
+      if (rozmiar > 0 && start + rozmiar <= bajty.length) bajty = bajty.slice(start, start + rozmiar);
+    }
     const s = new TextDecoder('utf-8').decode(bajty);
     const a = s.indexOf('{'), b = s.lastIndexOf('}');
     return (a < 0 || b <= a) ? null : s.slice(a, b + 1);
