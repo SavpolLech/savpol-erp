@@ -6545,7 +6545,17 @@
     "218529476",
     "218529482",
     "218529620",
-    "22570047606"
+    "22570047606",
+    "271887093",
+    "1176342555",
+    "218526815",
+    "22062774594",
+    "30787424091",
+    "29270952093",
+    "30768610140",
+    "30768610344",
+    "299565581",
+    "20881937145"
   ],
   "notFoundIds": [
     "24363529761",
@@ -6567,7 +6577,7 @@
     "218529454",
     "266196090"
   ],
-  "lastUpdated": "2026-10-06T11:01:27.400Z",
+  "lastUpdated": "2026-10-07T11:00:43.313Z",
   "runs": [
     {
       "ts": "2026-09-15T12:16:33.904Z",
@@ -7096,7 +7106,19 @@
       "sredniCzasNaProduktMs": 3923,
       "plikCsv": "wynik\\etykiety-mws\\etykiety-run-045.csv",
       "blad": null
+    },
+    {
+      "ts": "2026-10-07T11:00:43.311Z",
+      "numerRunu": 46,
+      "celIlosc": 5000,
+      "doZrobieniaWTymPrzebiegu": 10,
+      "zebraneWTymPrzebiegu": 10,
+      "nieznalezioneWTymPrzebiegu": 0,
+      "czasCalyMs": 35122,
+      "sredniCzasNaProduktMs": 3512,
+      "plikCsv": "wynik\\etykiety-mws\\etykiety-run-046.csv",
+      "blad": null
     }
   ],
-  "lastRunNumber": 45
+  "lastRunNumber": 46
 }
