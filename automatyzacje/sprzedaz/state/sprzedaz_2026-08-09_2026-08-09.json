@@ -1,0 +1,17 @@
+{
+  "dateFrom": "2026-08-09",
+  "dateTo": "2026-08-09",
+  "processedDocNumbers": [],
+  "complete": true,
+  "lastUpdated": "2026-10-08T13:18:19.381Z",
+  "runs": [
+    {
+      "ts": "2026-10-08T13:18:19.379Z",
+      "erp": 0,
+      "fa": 0,
+      "par": 0,
+      "wstawiono": 0,
+      "complete": true
+    }
+  ]
+}
