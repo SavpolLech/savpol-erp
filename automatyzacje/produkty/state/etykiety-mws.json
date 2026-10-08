@@ -6577,7 +6577,7 @@
     "218529454",
     "266196090"
   ],
-  "lastUpdated": "2026-10-07T11:00:43.313Z",
+  "lastUpdated": "2026-10-08T11:01:05.728Z",
   "runs": [
     {
       "ts": "2026-09-15T12:16:33.904Z",
@@ -7118,7 +7118,19 @@
       "sredniCzasNaProduktMs": 3512,
       "plikCsv": "wynik\\etykiety-mws\\etykiety-run-046.csv",
       "blad": null
+    },
+    {
+      "ts": "2026-10-08T11:01:05.719Z",
+      "numerRunu": 47,
+      "celIlosc": 5000,
+      "doZrobieniaWTymPrzebiegu": 10,
+      "zebraneWTymPrzebiegu": 0,
+      "nieznalezioneWTymPrzebiegu": 0,
+      "czasCalyMs": 39539,
+      "sredniCzasNaProduktMs": 3954,
+      "plikCsv": "wynik\\etykiety-mws\\etykiety-run-047.csv",
+      "blad": "page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('td[data-datafield=\"Item\"]') to be visible\u001b[22m\n"
     }
   ],
-  "lastRunNumber": 46
+  "lastRunNumber": 47
 }
