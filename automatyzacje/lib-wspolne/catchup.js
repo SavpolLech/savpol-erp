@@ -119,7 +119,10 @@ module.exports = function runCatchup(opts) {
   // zaczynamy nowej próby ani nowego dnia — bieg kończy się sam, a reszta
   // zostaje na następny raz (stan per dzień jest zachowany).
   const KONIEC = parseInt(process.env.KONIEC_TS || '0', 10);
-  const poCzasie = () => KONIEC > 0 && Date.now() >= KONIEC;
+  // Zapas 5 min: scraper sam kończy karty 3 min przed końcem, a sama lista
+  // dnia trwa ~2 min — nowa próba tuż przed końcem tylko czytałaby listę
+  // na próżno (7.10: 2 puste próby 17:58–17:59).
+  const poCzasie = () => KONIEC > 0 && Date.now() >= KONIEC - 5 * 60000;
   for (const day of targets) {
     if (poCzasie()) {
       console.log(`[catchup ${label}] Minęła godzina końca — ${day} i dalsze dni zostają na następny bieg.`);
