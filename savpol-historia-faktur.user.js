@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.4.1
+// @version      4.5.0
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -3415,11 +3415,69 @@
   // Wybór specyfikacji — dwa kroki, tak jak robi to człowiek:
   //   1. który załącznik: typ „specyfikacja", a przy kilku najnowsza data;
   //   2. która wersja: zawsze najnowsza, czym zajmuje się akcja w ERP.
-  function erpWybierzSpecyfikacje(wiersze) {
-    return wiersze
-      .filter(w => String(w.csAttachmentsTypesG || '').toLowerCase() === SPEC_PDF.TYP_GUID)
-      .sort((a, b) => String(b.AddDate || '').localeCompare(String(a.AddDate || '')))[0] || null;
+  // Czy ten wiersz zalacznika jest specyfikacja.
+  //
+  // Dwa kryteria, bo jedno nie wystarcza. GUID typu poznalismy z nagrania
+  // („Specyfikacja i wartosc energetyczna produktu”), ale rodzajow
+  // zaczynajacych sie od „Specyfikacja” jest w ERP wiecej — produkt 0000848
+  // ma zalacznik „Specyfikacja produktu” i na sztywnym GUID-zie wypadal jako
+  // „produkt bez specyfikacji”, choc plik byl na miejscu.
+  //
+  // Nazwy typu szukamy po WARTOSCIACH wiersza, a nie po konkretnym polu:
+  // nie wiemy, jak ta kolumna nazywa sie w danych, a „Specyfikacja...” na
+  // poczatku wartosci jest sygnalem jednoznacznym. „Atest” ani „Wydruk
+  // etykiety” tego nie zlapia.
+  function poGuidzie(w) {
+    return String(w.csAttachmentsTypesG || '').toLowerCase() === SPEC_PDF.TYP_GUID;
   }
+
+  // Nazwy typu szukamy po WARTOSCIACH wiersza, bo nie wiemy, jak ta kolumna
+  // nazywa sie w danych. "Atest" ani "Wydruk etykiety" tego nie zlapia.
+  function poNazwie(w) {
+    return Object.keys(w).some(k => {
+      const v = w[k];
+      return typeof v === 'string' && /^\s*specyfikacj/i.test(v);
+    });
+  }
+
+  function opiszRodzaj(w) {
+    return w.csAttachmentsTypesTranslatedDesc || w.AttachmentTypeDesc
+      || w.csAttachmentsTypesDesc || ('typ ' + w.csAttachmentsTypesG);
+  }
+
+  // Wybor specyfikacji: najpierw znany GUID, dopiero potem nazwa.
+  //
+  // Kolejnosc ma znaczenie. GUID "Specyfikacja i wartosc energetyczna produktu"
+  // poznalismy z nagrania i jest pewny. Ale rodzajow zaczynajacych sie od
+  // "Specyfikacja" jest w ERP wiecej: produkt 0000848 ma "Specyfikacja
+  // produktu" i na samym GUID-zie wypadal jako "produkt bez specyfikacji",
+  // choc plik byl na miejscu.
+  //
+  // Dopasowanie po nazwie jest wiec ZAPASEM, nie rownorzednym kryterium, i
+  // melduje sie w konsoli — bo teoretycznie moze trafic w zalacznik innego
+  // rodzaju, ktory ma slowo "specyfikacja" w nazwie pliku.
+  function erpWybierzSpecyfikacje(wiersze) {
+    const najnowszy = lista => lista
+      .sort((a, b) => String(b.AddDate || '').localeCompare(String(a.AddDate || '')))[0] || null;
+
+    const pewne = wiersze.filter(poGuidzie);
+    if (pewne.length) return najnowszy(pewne);
+
+    const zapasowe = wiersze.filter(poNazwie);
+    if (zapasowe.length) {
+      const wybrany = najnowszy(zapasowe);
+      console.warn('[Specyfikacja] Rodzaj nie ma znanego GUID-u — biore po nazwie: „'
+        + opiszRodzaj(wybrany) + '” (dodany ' + (wybrany.AddDate || '?') + ').');
+      return wybrany;
+    }
+
+    if (wiersze.length) {
+      console.warn('[Specyfikacja] Zaden z ' + wiersze.length + ' zalacznikow nie wyglada '
+        + 'na specyfikacje. Rodzaje: ' + wiersze.map(opiszRodzaj).join(' | '));
+    }
+    return null;
+  }
+
 
   async function erpInfoOPliku(wiersz) {
     const odp = await erpWywolaj({
