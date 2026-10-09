@@ -41,5 +41,9 @@ set RC=%ERRORLEVEL%
 echo [%date% %time%] Orkiestrator zakonczony, kod wyjscia: %RC%.
 REM  RC=0 wszystko domkniete | RC=1 jakis dzien niedomkniety (dokonczy
 REM  nastepny bieg) | RC=3 lock zajety (inny bieg trwal - to OK).
+
+echo [%date% %time%] Przeliczam strone statusu i wypycham do repo...
+node status\generuj-status.js
+
 endlocal
 exit /b %RC%

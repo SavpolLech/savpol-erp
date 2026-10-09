@@ -12,3 +12,5 @@ REM Gdy wszystkie dni sa kompletne, krok nic nie robi - wtedy usun te 2 linie.
 set ZALEGLOSCI=2026-07-01..2026-09-14
 set ZALEGLOSCI_DO_GODZINY=18:00
 "C:\Program Files\nodejs\node.exe" dobij-wszystko.js >> dobij-wszystko.log 2>&1
+REM Po biegu: przelicz strone statusu i wypchnij ja do repo (commit+push).
+"C:\Program Files\nodejs\node.exe" status\generuj-status.js >> dobij-wszystko.log 2>&1
