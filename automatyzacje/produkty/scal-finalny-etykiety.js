@@ -1,3 +1,8 @@
+// UWAGA (2026-10-09): temperatura stąd NIE jest już źródłem prawdy. Sklep stosuje odwrotną kolejność
+// (produkt > podkategoria > kategoria), a reguła niżej dawała np. albuminie 0032972 „chłodnię”. Job
+// esavpol_seo (mc_sync_supplement.py + mc_temperatura_kart.py) bierze chłodnię/mroźnię z karty sklepu
+// (storageMethodFlag), a z tego pliku tylko „kruche” (isGentle) i zapas dla produktów bez odczytu karty.
+//
 // Finalne złożenie custom_label_3 według reguły Lecha (2026-09-17):
 //   - kategoria (po dziedziczeniu w górę drzewa, jeśli liść ma puste pole)
 //     ma storage = chłodnia/mroźnia  → WSZYSTKIE produkty w niej dziedziczą,
