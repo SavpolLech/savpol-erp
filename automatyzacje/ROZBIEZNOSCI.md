@@ -323,6 +323,8 @@ Dokumenty, których dane w ERP różnią się od tego, co JUŻ jest w bazie (wor
 
 ## 2026-10-05T08:28:46.647Z · MM · 2026-10-01_2026-10-01 · 15 dok.
 
+> **Diagnoza 2026-10-09 (E-01):** szkice MM „Do realizacji” (213217726) wgrane do worka 29–30.09, przed poprawką a83d2ce (1.10 11:51: MM w tym statusie nie wchodzą do worka). ERP je potem zaksięgował → nowa DocDate, status 724, FStock. Od 3.10 nowych rozbieżności MM brak. W worku łącznie 37 MM w statusie 726 (DocDate 24.03–30.09). Czeka na decyzję Lecha: jednorazowa korekta jak 2.10 (UPDATE z guardem, wartości ze świeżego odczytu ERP).
+
 - [ ] 2026/MM/KRS1/005993 (id=30806663751): DocDate: 2026-09-30 -> 2026-10-01
 - [ ] 2026/MM/KRS1/005993 (id=30806663751): FStock: NULL -> 25680
 - [ ] 2026/MM/KRS1/005993 (id=30806663751): csDocsHeadersStatusId: 213217726 -> 213217724
@@ -376,6 +378,8 @@ Dokumenty, których dane w ERP różnią się od tego, co JUŻ jest w bazie (wor
 - [ ] 2026/MM/KRS1/005986 (id=30806662932): csDocsHeadersStatusId: 213217726 -> 213217724
 
 ## 2026-10-05T08:30:49.605Z · MM · 2026-10-02_2026-10-02 · 2 dok.
+
+> **Diagnoza 2026-10-09 (E-01):** szkice MM „Do realizacji” (213217726) wgrane do worka 29–30.09, przed poprawką a83d2ce (1.10 11:51: MM w tym statusie nie wchodzą do worka). ERP je potem zaksięgował → nowa DocDate, status 724, FStock. Od 3.10 nowych rozbieżności MM brak. W worku łącznie 37 MM w statusie 726 (DocDate 24.03–30.09). Czeka na decyzję Lecha: jednorazowa korekta jak 2.10 (UPDATE z guardem, wartości ze świeżego odczytu ERP).
 
 - [ ] 2026/MM/GUS1/000746 (id=30769347237): DocDate: 2026-09-28 -> 2026-10-02
 - [ ] 2026/MM/GUS1/000746 (id=30769347237): DocSaleDate: 2026-09-29 -> 2026-10-02
