@@ -19,15 +19,14 @@ okresowej kontroli).
 | Kontrahenci: zmiany (np. status) | 6.10 (w wątku „kontrahenci”) | 6.10 | plan 6.10 | zlecone: przegląd tygodniowy gotowy w podglądzie, przed pierwszym biegiem | `csCustomers` + historia w `csCustomersZmiany` | `automatyzacje/kontrahenci/` |
 | Faktury sprzedaży FA | 30.09 | 2.10 | 6.10 (bufor 14 dni, przegląd 45 dni w piątki) | działa od 6.10; nadganianie 1.07–14.09 w toku | `csDocsHeaders`, `csDocsItemsPositions` | `automatyzacje/sprzedaz/` |
 | Paragony PAR | 30.09 | 2.10 | 6.10 | działa od 6.10, razem z FA | `csDocsHeaders`, `csDocsItemsPositions` | `automatyzacje/sprzedaz/` |
-| Faktury zakupu FZ + FZ_KSEF (E-09) | 5.10, pola 8.10 (`FZ_pola_wymagane.xlsx`) | 9.10 | — | próbka 9.10: 5 szt. z wpływem 1.07; odpowiedź Michała 9.10 14:00 do przeczytania | `csDocsHeaders_test`, `csDocsItemsPositions_test` | `automatyzacje/zakup/` |
+| Faktury zakupu FZ + FZ_KSEF (E-09) | 5.10, pola 8.10 (`FZ_pola_wymagane.xlsx`) | 9.10 | — | próbka 9.10: 5 szt. z wpływem 1.07; Michał odpowiedział 9.10 (status i bufor), wdrażane w sesji scrapera FZ | `csDocsHeaders_test`, `csDocsItemsPositions_test` | `automatyzacje/zakup/` |
 
 ## Do decyzji Michała
 
-1. FZ: od jakiego statusu brać faktury i po ilu dniach (odpowiedź z 9.10 14:00 do przeczytania).
-2. Produkty: aktualizować zmienione karty jak kontrahentów (UPDATE + historia), czy wystarczy raport? ok. 196 rozbieżności w `automatyzacje/ROZBIEZNOSCI.md` (E-10).
-3. Produkty: od 10.10 nowe karty dochodzą same, gdy towar pojawi się na dokumencie (zamiast ręcznej listy ID). Czy potrzebne są też karty, które nie były jeszcze na żadnym dokumencie?
-4. MM: jednorazowa korekta 37 dokumentów w statusie „Do realizacji” (03–09.2026).
-5. Kontrahenci: próbka kontrolna po pierwszym przeglądzie zmian.
+1. Produkty: aktualizować zmienione karty jak kontrahentów (UPDATE + historia), czy wystarczy raport? ok. 196 rozbieżności w `automatyzacje/ROZBIEZNOSCI.md` (E-10).
+2. Produkty: od 10.10 nowe karty dochodzą same, gdy towar pojawi się na dokumencie (zamiast ręcznej listy ID). Czy potrzebne są też karty, które nie były jeszcze na żadnym dokumencie?
+3. MM: jednorazowa korekta 37 dokumentów w statusie „Do realizacji” (03–09.2026).
+4. Kontrahenci: próbka kontrolna po pierwszym przeglądzie zmian.
 
 ## W kolejce
 
