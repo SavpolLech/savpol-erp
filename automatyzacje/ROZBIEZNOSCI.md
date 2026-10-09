@@ -323,72 +323,72 @@ Dokumenty, których dane w ERP różnią się od tego, co JUŻ jest w bazie (wor
 
 ## 2026-10-05T08:28:46.647Z · MM · 2026-10-01_2026-10-01 · 15 dok.
 
-> **Diagnoza 2026-10-09 (E-01):** szkice MM „Do realizacji” (213217726) wgrane do worka 29–30.09, przed poprawką a83d2ce (1.10 11:51: MM w tym statusie nie wchodzą do worka). ERP je potem zaksięgował → nowa DocDate, status 724, FStock. Od 3.10 nowych rozbieżności MM brak. W worku łącznie 37 MM w statusie 726 (DocDate 24.03–30.09). Czeka na decyzję Lecha: jednorazowa korekta jak 2.10 (UPDATE z guardem, wartości ze świeżego odczytu ERP).
+> **Diagnoza 2026-10-09 (E-01):** szkice MM „Do realizacji” (213217726) wgrane do worka 29–30.09, przed poprawką a83d2ce (1.10 11:51: MM w tym statusie nie wchodzą do worka). ERP je potem zaksięgował → nowa DocDate, status 724, FStock. Od 3.10 nowych rozbieżności MM brak. W worku łącznie 37 MM w statusie 726 (DocDate 24.03–30.09). **Decyzja Lecha 2026-10-09: jednorazowa korekta** 17 zaksięgowanych (wartości z odczytu ERP 5.10, UPDATE w transakcji z guardem, + createdDate 112 pozycji). Pozostałe 23 MM w statusie 726 bez rozbieżności (22 z kopii bazy sprzed 24.07, RAS1/000246 z 29.09) — w ERP nadal szkice, bez zmian.
 
-- [ ] 2026/MM/KRS1/005993 (id=30806663751): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005993 (id=30806663751): FStock: NULL -> 25680
-- [ ] 2026/MM/KRS1/005993 (id=30806663751): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005994 (id=30806663769): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005994 (id=30806663769): FStock: NULL -> 3347.88
-- [ ] 2026/MM/KRS1/005994 (id=30806663769): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005995 (id=30806663895): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005995 (id=30806663895): FStock: NULL -> 17625
-- [ ] 2026/MM/KRS1/005995 (id=30806663895): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005996 (id=30806663937): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005996 (id=30806663937): FStock: NULL -> 57648.52
-- [ ] 2026/MM/KRS1/005996 (id=30806663937): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/006000 (id=30807704718): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/006000 (id=30807704718): FStock: NULL -> 62253.52
-- [ ] 2026/MM/KRS1/006000 (id=30807704718): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/GUS1/000744 (id=30769280160): DocDate: 2026-09-28 -> 2026-10-01
-- [ ] 2026/MM/GUS1/000744 (id=30769280160): DocSaleDate: 2026-09-29 -> 2026-10-01
-- [ ] 2026/MM/GUS1/000744 (id=30769280160): DocVATDate: 2026-09-29 -> 2026-10-01
-- [ ] 2026/MM/GUS1/000744 (id=30769280160): FStock: NULL -> 583.2
-- [ ] 2026/MM/GUS1/000744 (id=30769280160): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/GUS1/000744 (id=30769280160): csVATPeriodsId: 24935767263 -> 24935767266
-- [ ] 2026/MM/KRS1/005976 (id=30787317357): DocDate: 2026-09-29 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005976 (id=30787317357): DocSaleDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005976 (id=30787317357): DocVATDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005976 (id=30787317357): FStock: NULL -> 10981.16
-- [ ] 2026/MM/KRS1/005976 (id=30787317357): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005976 (id=30787317357): csVATPeriodsId: 24935767263 -> 24935767266
-- [ ] 2026/MM/KRS1/005985 (id=30806662914): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005985 (id=30806662914): FStock: NULL -> 5017.6
-- [ ] 2026/MM/KRS1/005985 (id=30806662914): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005987 (id=30806663328): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005987 (id=30806663328): FStock: NULL -> 276.68
-- [ ] 2026/MM/KRS1/005987 (id=30806663328): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005988 (id=30806663346): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005988 (id=30806663346): FStock: NULL -> 7399.78
-- [ ] 2026/MM/KRS1/005988 (id=30806663346): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005989 (id=30806663376): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005989 (id=30806663376): FStock: NULL -> 33366.96
-- [ ] 2026/MM/KRS1/005989 (id=30806663376): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005990 (id=30806663394): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005990 (id=30806663394): FStock: NULL -> 1679.58
-- [ ] 2026/MM/KRS1/005990 (id=30806663394): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005991 (id=30806663424): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005991 (id=30806663424): FStock: NULL -> 7393.04
-- [ ] 2026/MM/KRS1/005991 (id=30806663424): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005992 (id=30806663442): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005992 (id=30806663442): FStock: NULL -> 30942.62
-- [ ] 2026/MM/KRS1/005992 (id=30806663442): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/KRS1/005986 (id=30806662932): DocDate: 2026-09-30 -> 2026-10-01
-- [ ] 2026/MM/KRS1/005986 (id=30806662932): FStock: NULL -> 288480.84
-- [ ] 2026/MM/KRS1/005986 (id=30806662932): csDocsHeadersStatusId: 213217726 -> 213217724
+- [x] 2026/MM/KRS1/005993 (id=30806663751): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005993 (id=30806663751): FStock: NULL -> 25680 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005993 (id=30806663751): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005994 (id=30806663769): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005994 (id=30806663769): FStock: NULL -> 3347.88 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005994 (id=30806663769): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005995 (id=30806663895): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005995 (id=30806663895): FStock: NULL -> 17625 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005995 (id=30806663895): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005996 (id=30806663937): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005996 (id=30806663937): FStock: NULL -> 57648.52 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005996 (id=30806663937): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/006000 (id=30807704718): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/006000 (id=30807704718): FStock: NULL -> 62253.52 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/006000 (id=30807704718): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000744 (id=30769280160): DocDate: 2026-09-28 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000744 (id=30769280160): DocSaleDate: 2026-09-29 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000744 (id=30769280160): DocVATDate: 2026-09-29 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000744 (id=30769280160): FStock: NULL -> 583.2 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000744 (id=30769280160): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000744 (id=30769280160): csVATPeriodsId: 24935767263 -> 24935767266 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005976 (id=30787317357): DocDate: 2026-09-29 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005976 (id=30787317357): DocSaleDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005976 (id=30787317357): DocVATDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005976 (id=30787317357): FStock: NULL -> 10981.16 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005976 (id=30787317357): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005976 (id=30787317357): csVATPeriodsId: 24935767263 -> 24935767266 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005985 (id=30806662914): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005985 (id=30806662914): FStock: NULL -> 5017.6 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005985 (id=30806662914): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005987 (id=30806663328): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005987 (id=30806663328): FStock: NULL -> 276.68 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005987 (id=30806663328): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005988 (id=30806663346): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005988 (id=30806663346): FStock: NULL -> 7399.78 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005988 (id=30806663346): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005989 (id=30806663376): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005989 (id=30806663376): FStock: NULL -> 33366.96 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005989 (id=30806663376): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005990 (id=30806663394): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005990 (id=30806663394): FStock: NULL -> 1679.58 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005990 (id=30806663394): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005991 (id=30806663424): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005991 (id=30806663424): FStock: NULL -> 7393.04 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005991 (id=30806663424): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005992 (id=30806663442): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005992 (id=30806663442): FStock: NULL -> 30942.62 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005992 (id=30806663442): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005986 (id=30806662932): DocDate: 2026-09-30 -> 2026-10-01 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005986 (id=30806662932): FStock: NULL -> 288480.84 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005986 (id=30806662932): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
 
 ## 2026-10-05T08:30:49.605Z · MM · 2026-10-02_2026-10-02 · 2 dok.
 
-> **Diagnoza 2026-10-09 (E-01):** szkice MM „Do realizacji” (213217726) wgrane do worka 29–30.09, przed poprawką a83d2ce (1.10 11:51: MM w tym statusie nie wchodzą do worka). ERP je potem zaksięgował → nowa DocDate, status 724, FStock. Od 3.10 nowych rozbieżności MM brak. W worku łącznie 37 MM w statusie 726 (DocDate 24.03–30.09). Czeka na decyzję Lecha: jednorazowa korekta jak 2.10 (UPDATE z guardem, wartości ze świeżego odczytu ERP).
+> **Diagnoza 2026-10-09 (E-01):** szkice MM „Do realizacji” (213217726) wgrane do worka 29–30.09, przed poprawką a83d2ce (1.10 11:51: MM w tym statusie nie wchodzą do worka). ERP je potem zaksięgował → nowa DocDate, status 724, FStock. Od 3.10 nowych rozbieżności MM brak. W worku łącznie 37 MM w statusie 726 (DocDate 24.03–30.09). **Decyzja Lecha 2026-10-09: jednorazowa korekta** 17 zaksięgowanych (wartości z odczytu ERP 5.10, UPDATE w transakcji z guardem, + createdDate 112 pozycji). Pozostałe 23 MM w statusie 726 bez rozbieżności (22 z kopii bazy sprzed 24.07, RAS1/000246 z 29.09) — w ERP nadal szkice, bez zmian.
 
-- [ ] 2026/MM/GUS1/000746 (id=30769347237): DocDate: 2026-09-28 -> 2026-10-02
-- [ ] 2026/MM/GUS1/000746 (id=30769347237): DocSaleDate: 2026-09-29 -> 2026-10-02
-- [ ] 2026/MM/GUS1/000746 (id=30769347237): DocVATDate: 2026-09-29 -> 2026-10-02
-- [ ] 2026/MM/GUS1/000746 (id=30769347237): FStock: NULL -> 3680.12
-- [ ] 2026/MM/GUS1/000746 (id=30769347237): csDocsHeadersStatusId: 213217726 -> 213217724
-- [ ] 2026/MM/GUS1/000746 (id=30769347237): csVATPeriodsId: 24935767263 -> 24935767266
-- [ ] 2026/MM/KRS1/005999 (id=30807704634): DocDate: 2026-09-30 -> 2026-10-02
-- [ ] 2026/MM/KRS1/005999 (id=30807704634): DocSaleDate: 2026-10-01 -> 2026-10-02
-- [ ] 2026/MM/KRS1/005999 (id=30807704634): DocVATDate: 2026-10-01 -> 2026-10-02
-- [ ] 2026/MM/KRS1/005999 (id=30807704634): FStock: NULL -> 113917.82
-- [ ] 2026/MM/KRS1/005999 (id=30807704634): csDocsHeadersStatusId: 213217726 -> 213217724
+- [x] 2026/MM/GUS1/000746 (id=30769347237): DocDate: 2026-09-28 -> 2026-10-02 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000746 (id=30769347237): DocSaleDate: 2026-09-29 -> 2026-10-02 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000746 (id=30769347237): DocVATDate: 2026-09-29 -> 2026-10-02 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000746 (id=30769347237): FStock: NULL -> 3680.12 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000746 (id=30769347237): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/GUS1/000746 (id=30769347237): csVATPeriodsId: 24935767263 -> 24935767266 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005999 (id=30807704634): DocDate: 2026-09-30 -> 2026-10-02 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005999 (id=30807704634): DocSaleDate: 2026-10-01 -> 2026-10-02 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005999 (id=30807704634): DocVATDate: 2026-10-01 -> 2026-10-02 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005999 (id=30807704634): FStock: NULL -> 113917.82 — poprawione 2026-10-09 (decyzja Lecha)
+- [x] 2026/MM/KRS1/005999 (id=30807704634): csDocsHeadersStatusId: 213217726 -> 213217724 — poprawione 2026-10-09 (decyzja Lecha)
