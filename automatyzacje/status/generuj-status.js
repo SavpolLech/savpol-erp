@@ -45,9 +45,14 @@ for (const t of Object.keys(scope)) {
 
 // --- karty: produkty, kontrahenci ---
 const cards = [];
+// Produkty: od 2026-10-09 krok PRODUKTY w orkiestratorze (brakujace-produkty.js)
+// dociąga karty towarów z pozycji dokumentów, których nie ma w csItems.
+// Stary sekwencyjny scraper SKU (sekwencja.json) porzucony.
 try {
-  const s = JSON.parse(fs.readFileSync(path.join(AUTO, 'produkty/state/sekwencja.json'), 'utf8'));
-  cards.push({ nm: 'Produkty', pill: 'na żądanie', rows: [['Zescrapowane SKU', fmt((s.processedSkus || []).length)], ['Nieznalezione', fmt((s.notFoundSkus || []).length)], ['Ostatni bieg', s.lastUpdated ? short(s.lastUpdated.slice(0, 10)) : '—']] });
+  const s = JSON.parse(fs.readFileSync(path.join(AUTO, 'produkty/state/brakujace-ostatnie.json'), 'utf8'));
+  cards.push({ nm: 'Produkty', pill: s.ok === false ? 'błąd biegu' : 'codziennie', rows: [
+    ['Brakujące karty', fmt(s.brakowalo)], ['Wzięte do biegu', fmt(s.wBiegu)],
+    ['Ostatni bieg', s.ts ? short(s.ts.slice(0, 10)) : '—']] });
 } catch {}
 try {
   const s = JSON.parse(fs.readFileSync(path.join(AUTO, 'kontrahenci/state/kontrola-ostatnia.json'), 'utf8'));

@@ -213,6 +213,16 @@ if (process.env.PRODUKTY !== '0' && !DAYS && TARGET === 'prod') {
       summary.push({ type: 'produkty', targets: idy, done: wynik.ok ? [`${idy.length} kart`] : [],
         failed: wynik.ok ? [] : [wynik.krok] });
     }
+    // Wynik biegu do stanu (strona statusu) + commit stanu jak u innych typów.
+    const stanPlik = path.join(AUTO_DIR, 'produkty', 'state', 'brakujace-ostatnie.json');
+    try {
+      const stan = JSON.parse(fs.readFileSync(stanPlik, 'utf8'));
+      const ostatni = summary[summary.length - 1];
+      stan.ok = !ostatni.failed.length;
+      if (ostatni.failed.length) stan.blad = ostatni.failed.join(', ');
+      fs.writeFileSync(stanPlik, JSON.stringify(stan, null, 2) + '\n', 'utf8');
+    } catch { /* brak stanu = zapytanie padło przed zapisem; podsumowanie i tak to pokaże */ }
+    require('./lib-wspolne/git-log-push').pushLogs('produkty', 'brakujące kartoteki');
   }
 }
 

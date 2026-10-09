@@ -26,7 +26,8 @@ const localEnv = path.join(PROD_DIR, '.env');
 dotenv.config({ path: fs.existsSync(localEnv) ? localEnv : path.join(__dirname, '.env') });
 
 const MAPA_CSV = path.join(PROD_DIR, 'wynik', 'id-sku-mapa.csv');
-const DNI_PRZERWY = parseInt(process.env.PRODUKTY_DNI_PRZERWY || '7', 10);
+const STAN = path.join(PROD_DIR, 'state', 'brakujace-ostatnie.json');
+const DNI_PRZERWY =parseInt(process.env.PRODUKTY_DNI_PRZERWY || '7', 10);
 
 // id → true, jeśli ostatnio (DNI_PRZERWY) była nieudana próba i nie było sukcesu.
 function niedawnoNieudane() {
@@ -72,7 +73,7 @@ async function listaBrakujacych() {
   }
 }
 
-module.exports = { listaBrakujacych };
+module.exports = { listaBrakujacych, STAN };
 
 if (require.main === module) {
   // --zapisz=<plik> [--limit=N]: id do pobrania (najświeższe dokumenty najpierw)
@@ -85,6 +86,9 @@ if (require.main === module) {
       const idy = doZrobienia.slice(0, limit).map(w => w.id);
       fs.mkdirSync(path.dirname(zapisz.slice('--zapisz='.length)), { recursive: true });
       fs.writeFileSync(zapisz.slice('--zapisz='.length), idy.join('\n') + (idy.length ? '\n' : ''), 'utf8');
+      // Stan dla strony statusu (status/generuj-status.js); wynik biegu dopisuje orkiestrator.
+      fs.writeFileSync(STAN, JSON.stringify({ ts: new Date().toISOString(), brakowalo: wszystkie.length,
+        pominiete: pominiete.length, wBiegu: idy.length }, null, 2) + '\n', 'utf8');
       console.log(`[brakujące produkty] w worek: ${wszystkie.length}, pominięte (nieudane < ${DNI_PRZERWY} dni): ${pominiete.length}, w tym biegu: ${idy.length}`);
       return;
     }
