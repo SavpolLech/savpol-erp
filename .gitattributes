@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Pliki wsadowe Windows zawsze z CRLF (goto/etykiety w cmd psuja sie na LF)
+*.bat text eol=crlf
+*.cmd text eol=crlf
