@@ -106,10 +106,48 @@
     "2026/PZ/GDS1/002757",
     "2026/PZ/GDS1/002756",
     "2026/PZ/GDS1/002755",
-    "2026/PZ/GDS1/002754"
+    "2026/PZ/GDS1/002754",
+    "2026/PZ/WLS1/003992",
+    "2026/PZ/WLS1/003991",
+    "2026/PZ/WLS1/003990",
+    "2026/PZ/WLS1/003989",
+    "2026/PZ/WLS1/003988",
+    "2026/PZ/WLS1/003987",
+    "2026/PZ/WAS1/002994",
+    "2026/PZ/WAS1/002993",
+    "2026/PZ/WAS1/002992",
+    "2026/PZ/WAS1/002991",
+    "2026/PZ/WAS1/002990",
+    "2026/PZ/WAS1/002989",
+    "2026/PZ/RAS1/003002",
+    "2026/PZ/RAS1/003001",
+    "2026/PZ/RAS1/003000",
+    "2026/PZ/RAS1/002998",
+    "2026/PZ/RAS1/002997",
+    "2026/PZ/KRS1/005123",
+    "2026/PZ/KRS1/005106",
+    "2026/PZ/KRS1/005105",
+    "2026/PZ/KRS1/005104",
+    "2026/PZ/KRS1/005103",
+    "2026/PZ/KRS1/005102",
+    "2026/PZ/KRS1/005101",
+    "2026/PZ/GLS1/006722",
+    "2026/PZ/GLS1/006721",
+    "2026/PZ/GLS1/006720",
+    "2026/PZ/GLS1/006719",
+    "2026/PZ/GLS1/006718",
+    "2026/PZ/GLS1/006717",
+    "2026/PZ/GLS1/006701",
+    "2026/PZ/GLS1/006700",
+    "2026/PZ/GLS1/006699",
+    "2026/PZ/GLS1/006698",
+    "2026/PZ/GLS1/006697",
+    "2026/PZ/GLS1/006696",
+    "2026/PZ/GDS1/002753",
+    "2026/PZ//000060"
   ],
-  "complete": false,
-  "lastUpdated": "2026-09-29T12:53:57.796Z",
+  "complete": true,
+  "lastUpdated": "2026-10-09T07:55:35.148Z",
   "runs": [
     {
       "ts": "2026-09-29T12:44:11.139Z",
@@ -152,6 +190,48 @@
       "paczkaDok": 15,
       "partial": true,
       "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-10-09T07:50:46.040Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T07:51:38.131Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T07:52:31.528Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T07:53:14.863Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T07:54:12.089Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T07:55:06.898Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T07:55:35.147Z",
+      "paczkaDok": 2,
+      "partial": false,
+      "stoppedReason": null
     }
   ]
 }
