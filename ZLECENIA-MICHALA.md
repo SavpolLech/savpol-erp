@@ -19,7 +19,7 @@ okresowej kontroli).
 | Kontrahenci: zmiany (np. status) | 6.10 (w wątku „kontrahenci”) | 6.10 | plan 6.10 | zlecone: przegląd tygodniowy gotowy w podglądzie, przed pierwszym biegiem | `csCustomers` + historia w `csCustomersZmiany` | `automatyzacje/kontrahenci/` |
 | Faktury sprzedaży FA | 30.09 | 2.10 | 6.10 (bufor 14 dni, przegląd 45 dni w piątki) | działa od 6.10; nadganianie 1.07–14.09 w toku | `csDocsHeaders`, `csDocsItemsPositions` | `automatyzacje/sprzedaz/` |
 | Paragony PAR | 30.09 | 2.10 | 6.10 | działa od 6.10, razem z FA | `csDocsHeaders`, `csDocsItemsPositions` | `automatyzacje/sprzedaz/` |
-| Faktury zakupu FZ + FZ_KSEF (E-09) | 5.10, pola 8.10 (`FZ_pola_wymagane.xlsx`) | 9.10 | — | próbka 9.10: 5 szt. z wpływem 1.07; Michał odpowiedział 9.10 (status i bufor), wdrażane w sesji scrapera FZ | `csDocsHeaders_test`, `csDocsItemsPositions_test` | `automatyzacje/zakup/` |
+| Faktury zakupu FZ + FZ_KSEF (E-09) | 5.10, pola 8.10 (`FZ_pola_wymagane.xlsx`) | 9.10 | — | próbka 9.10: 5 szt. z wpływem 1.07; Michał odpowiedział 9.10; zaproponowany wariant: zaksięgowane z zamkniętego okresu, czeka na jego OK | `csDocsHeaders_test`, `csDocsItemsPositions_test` | `automatyzacje/zakup/` |
 
 ## Do decyzji Michała
 
