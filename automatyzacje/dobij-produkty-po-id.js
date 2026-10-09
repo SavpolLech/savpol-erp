@@ -18,36 +18,21 @@
 //      Michał zatwierdził zapis produktów do tabel produkcyjnych.
 //
 // Skryptów w produkty/ NIE modyfikujemy — tylko je wołamy (są utrzymywane
-// przez osobną sesję "Scraper Produkty").
+// przez osobną sesję "Scraper Produkty"). Kroki: lib-wspolne/produkty-po-id.js.
+//
+// Od 2026-10-09 to samo robi codziennie orkiestrator (dobij-wszystko.js,
+// krok „brakujące produkty”) — listę id bierze sam z worek
+// (brakujace-produkty.js). Ręcznie tylko, gdy trzeba coś dobić od razu.
 
-const { spawnSync } = require('child_process');
-const fs = require('fs');
 const path = require('path');
 
 const AUTO_DIR = __dirname;
-const PROD_DIR = path.join(AUTO_DIR, 'produkty');
 
 const passthrough = process.argv.slice(2);
 if (!passthrough.length) {
   console.error('BŁĄD: podaj listę ID albo --plik=<ścieżka>.');
   console.error('Użycie: node dobij-produkty-po-id.js <id> <id> ...   |   --plik=produkty/lista-id.txt');
   process.exit(2);
-}
-
-// Kroki zapisu do produkcji — kolejność wg sesji Produkty.
-const WGRAJ = [
-  'wgraj-do-worek.js',
-  'wgraj-jednostki-do-worek.js',
-  'wgraj-zdjecia-do-worek.js',
-  'wgraj-grupy-do-worek.js'
-];
-
-// Sanity: skrypty muszą istnieć (są w repo, utrzymuje je sesja Produkty).
-for (const f of ['scrape-po-id.js', ...WGRAJ]) {
-  if (!fs.existsSync(path.join(PROD_DIR, f))) {
-    console.error(`BŁĄD: brak produkty/${f} — zrób git pull albo sprawdź sesję Produkty.`);
-    process.exit(2);
-  }
 }
 
 const LOCK_PATH = path.join(AUTO_DIR, '.scrapery.lock');
@@ -63,27 +48,9 @@ process.on('exit', release);
 process.on('SIGINT', () => { release(); process.exit(130); });
 process.on('SIGTERM', () => { release(); process.exit(143); });
 
-function run(script, args) {
-  console.log(`\n[dobij-produkty] === ${script} ${args.join(' ')} ===`);
-  const r = spawnSync('node', [script, ...args], { cwd: PROD_DIR, stdio: 'inherit' });
-  return !r.error && r.status === 0;
-}
-
-// 1+2. Scrape po ID.
-if (!run('scrape-po-id.js', passthrough)) {
-  console.error('\n[dobij-produkty] scrape-po-id.js nie powiódł się — PRZERYWAM przed zapisem do produkcji.');
-  process.exit(1);
-}
-
-// 3. Zapis do produkcji, po kolei. Pierwszy błąd przerywa (żeby nie było
-// połowicznego zapisu bez sygnału).
-for (const w of WGRAJ) {
-  if (!run(w, ['--realne'])) {
-    console.error(`\n[dobij-produkty] ${w} --realne nie powiódł się — PRZERYWAM. ` +
-      `Scrape jest w wynik/, część zapisu mogła nie wejść — sprawdź i dokończ ręcznie.`);
-    process.exit(1);
-  }
-}
+// Scrape + zapis do produkcji — wspólne z orkiestratorem (krok „brakujące produkty”).
+const wynik = require('./lib-wspolne/produkty-po-id')(passthrough, 'dobij-produkty');
+if (!wynik.ok) process.exit(wynik.krok === 'brak skryptów' ? 2 : 1);
 
 console.log('\n[dobij-produkty] GOTOWE: scrape po ID + zapis do produkcji zakończone.');
 process.exit(0);

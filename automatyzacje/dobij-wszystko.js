@@ -1,5 +1,6 @@
 // ORKIESTRATOR — jedno wejście, które nadgania WSZYSTKIE scrapery ERP po kolei:
-// [wz, mm, pz, sprzedaz]. Uruchamiane na serwerze przez wz/serwer/uruchom.bat
+// [wz, mm, pz, sprzedaz], potem brakujące kartoteki produktów z tych
+// dokumentów (krok PRODUKTY). Uruchamiane na serwerze przez wz/serwer/uruchom.bat
 // (git pull + node dobij-wszystko.js), raz dziennie w dni robocze.
 //
 // DLACZEGO SEKWENCYJNIE: ERP znosi tylko JEDNĄ sesję logowania naraz. Dwa
@@ -181,6 +182,36 @@ if (SCRAPERS.includes('sprzedaz') && !DAYS) {
       require('./lib-wspolne/git-log-push').pushLogs('sprzedaz', 'przegląd ' + dni[0] + '..' + dni[dni.length - 1]);
     } else {
       console.log('\n[dobij-wszystko] Przegląd sprzedaży: brak skompletowanych dni w zakresie (zaległości jeszcze nienadrobione).');
+    }
+  }
+}
+
+// BRAKUJĄCE PRODUKTY (2026-10-09): kartoteki towarów z pozycji dokumentów,
+// których nie ma w csItems (brakujace-produkty.js) → scrape po csItemsId +
+// zapis do produkcji (lib-wspolne/produkty-po-id). Zastępuje ręczną listę od
+// Michała. Przed zaległościami sprzedaży, bo te zajmują resztę dnia do 18:00.
+// Tylko zwykły bieg na prod (bez FROM/TO, bez TARGET=test).
+//   PRODUKTY=0 — wyłącz;  PRODUKTY_LIMIT=50 — maks. kart w jednym biegu
+if (process.env.PRODUKTY !== '0' && !DAYS && TARGET === 'prod') {
+  const koniecTs = parseInt(process.env.KONIEC_TS || '0', 10);
+  if (koniecTs && Date.now() > koniecTs - 30 * 60000) {
+    console.log('\n[dobij-wszystko] Brakujące produkty: za blisko godziny końca — dziś pomijam.');
+  } else {
+    console.log('\n[dobij-wszystko] ===== PRODUKTY — brakujące kartoteki =====');
+    const lista = path.join(AUTO_DIR, 'produkty', 'wynik', 'lista-id-auto.txt');
+    const limit = process.env.PRODUKTY_LIMIT || '50';
+    const q = spawnSync('node', ['brakujace-produkty.js', '--zapisz=' + lista, '--limit=' + limit],
+      { cwd: AUTO_DIR, stdio: 'inherit' });
+    let idy = [];
+    try { idy = fs.readFileSync(lista, 'utf8').split(/\s+/).filter(Boolean); } catch { /* brak pliku = błąd zapytania */ }
+    if (q.error || q.status !== 0) {
+      summary.push({ type: 'produkty', targets: ['zapytanie'], done: [], failed: ['zapytanie do worek'] });
+    } else if (!idy.length) {
+      summary.push({ type: 'produkty', targets: [], done: [], failed: [] });
+    } else {
+      const wynik = require('./lib-wspolne/produkty-po-id')(['--plik=' + lista], 'dobij-wszystko/produkty');
+      summary.push({ type: 'produkty', targets: idy, done: wynik.ok ? [`${idy.length} kart`] : [],
+        failed: wynik.ok ? [] : [wynik.krok] });
     }
   }
 }
