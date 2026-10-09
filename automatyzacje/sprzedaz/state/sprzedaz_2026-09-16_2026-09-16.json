@@ -584,7 +584,7 @@
     "30563974266"
   ],
   "complete": true,
-  "lastUpdated": "2026-10-06T11:01:47.481Z",
+  "lastUpdated": "2026-10-09T15:27:03.865Z",
   "runs": [
     {
       "ts": "2026-10-06T10:59:29.712Z",
@@ -600,6 +600,14 @@
       "fa": 567,
       "par": 13,
       "wstawiono": 1,
+      "complete": true
+    },
+    {
+      "ts": "2026-10-09T15:27:03.863Z",
+      "erp": 735,
+      "fa": 567,
+      "par": 13,
+      "wstawiono": 0,
       "complete": true
     }
   ]
