@@ -6555,7 +6555,18 @@
     "30768610140",
     "30768610344",
     "299565581",
-    "20881937145"
+    "20881937145",
+    "22203648096",
+    "21334150737",
+    "329515497",
+    "336121785",
+    "218531333",
+    "595827950",
+    "8552609373",
+    "8714199204",
+    "29270951196",
+    "28100105919",
+    "268529718"
   ],
   "notFoundIds": [
     "24363529761",
@@ -6577,7 +6588,7 @@
     "218529454",
     "266196090"
   ],
-  "lastUpdated": "2026-10-08T11:01:05.728Z",
+  "lastUpdated": "2026-10-09T11:01:07.684Z",
   "runs": [
     {
       "ts": "2026-09-15T12:16:33.904Z",
@@ -7130,7 +7141,19 @@
       "sredniCzasNaProduktMs": 3954,
       "plikCsv": "wynik\\etykiety-mws\\etykiety-run-047.csv",
       "blad": "page.waitForSelector: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('td[data-datafield=\"Item\"]') to be visible\u001b[22m\n"
+    },
+    {
+      "ts": "2026-10-09T11:01:07.681Z",
+      "numerRunu": 48,
+      "celIlosc": 5000,
+      "doZrobieniaWTymPrzebiegu": 11,
+      "zebraneWTymPrzebiegu": 11,
+      "nieznalezioneWTymPrzebiegu": 0,
+      "czasCalyMs": 48409,
+      "sredniCzasNaProduktMs": 4401,
+      "plikCsv": "wynik\\etykiety-mws\\etykiety-run-048.csv",
+      "blad": null
     }
   ],
-  "lastRunNumber": 47
+  "lastRunNumber": 48
 }
