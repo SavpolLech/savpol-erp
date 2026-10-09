@@ -13,7 +13,7 @@ okresowej kontroli).
 |---|---|---|---|---|---|---|
 | WZ (wydania zewnętrzne) | 4.09 („Dane do wyciągnięcia z CS”), pola 7.09 („Rozszerzony zestaw pól”) | 7.09 | 14.09 | działa | `csDocsHeaders`, `csDocsItemsPositions` | `automatyzacje/wz/` |
 | Produkty (karta towaru) | 11.09 („produkty (Katalog)”) | 11.09 | 22.09 | działa od 10.10: codziennie w orkiestratorze dochodzą karty z dokumentów, których brak w `csItems` (9.10: 40 brakujących) | `csItems` | `automatyzacje/produkty/` |
-| MM (przesunięcia magazynowe) | 14.09 | 15.09 | 29.09 | działa, backfill od 24.07 | `csDocsHeaders`, `csDocsItemsPositions` | `automatyzacje/mm/` |
+| MM (przesunięcia magazynowe) | 14.09 | 15.09 | 29.09 | działa, backfill od 24.07; 9.10 korekta 17 szkiców zaksięgowanych po wgraniu | `csDocsHeaders`, `csDocsItemsPositions` | `automatyzacje/mm/` |
 | PZ (przyjęcia zewnętrzne) | 14.09 | 17.09 | 29.09 | działa | `csDocsHeaders`, `csDocsItemsPositions` | `automatyzacje/pz/` |
 | Kontrahenci: nowi | 29.09 | 30.09 | 2.10 | wgrani 2.10 (820 nowych), brak automatu | `csCustomers` | `automatyzacje/kontrahenci/` |
 | Kontrahenci: zmiany (np. status) | 6.10 (w wątku „kontrahenci”) | 6.10 | plan 6.10 | zlecone: przegląd tygodniowy gotowy w podglądzie, przed pierwszym biegiem | `csCustomers` + historia w `csCustomersZmiany` | `automatyzacje/kontrahenci/` |
@@ -25,8 +25,7 @@ okresowej kontroli).
 
 1. Produkty: aktualizować zmienione karty jak kontrahentów (UPDATE + historia), czy wystarczy raport? ok. 196 rozbieżności w `automatyzacje/ROZBIEZNOSCI.md` (E-10).
 2. Produkty: od 10.10 nowe karty dochodzą same, gdy towar pojawi się na dokumencie (zamiast ręcznej listy ID). Czy potrzebne są też karty, które nie były jeszcze na żadnym dokumencie?
-3. MM: jednorazowa korekta 37 dokumentów w statusie „Do realizacji” (03–09.2026).
-4. Kontrahenci: próbka kontrolna po pierwszym przeglądzie zmian.
+3. Kontrahenci: próbka kontrolna po pierwszym przeglądzie zmian.
 
 ## W kolejce
 
