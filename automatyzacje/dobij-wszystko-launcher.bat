@@ -26,3 +26,5 @@ goto bieg
 :po_biegu
 REM Po biegu: przelicz strone statusu i wypchnij ja do repo (commit+push).
 "C:\Program Files\nodejs\node.exe" status\generuj-status.js >> dobij-wszystko.log 2>&1
+REM Sprzatanie osieroconych przegladarek Playwright (zeby nie mulilo po dniach).
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sprzataj-przegladarki.ps1" >> dobij-wszystko.log 2>&1

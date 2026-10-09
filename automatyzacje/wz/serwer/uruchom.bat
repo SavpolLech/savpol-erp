@@ -45,5 +45,8 @@ REM  nastepny bieg) | RC=3 lock zajety (inny bieg trwal - to OK).
 echo [%date% %time%] Przeliczam strone statusu i wypycham do repo...
 node status\generuj-status.js
 
+echo [%date% %time%] Sprzatanie osieroconych przegladarek Playwright...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\..\sprzataj-przegladarki.ps1"
+
 endlocal
 exit /b %RC%
