@@ -476,3 +476,10 @@ Dokumenty, których dane w ERP różnią się od tego, co JUŻ jest w bazie (wor
 - [ ] 2027/WZ/RAS1/000335 (id=30959209848): pozycja 30959209902 — nowa w ERP
 - [ ] 2027/WZ/RAS1/000334 (id=30959207235): pozycja 30959207241 — nowa w ERP
 - [ ] 2027/WZ/RAS1/000334 (id=30959207235): pozycja 30959207238 — nowa w ERP
+
+## 2026-10-09T13:50:17.186Z · MM · 2026-10-06_2026-10-06 · 1 dok.
+
+- [ ] 2026/MM/RAS1/000246 (id=30768102831): DocDate: 2026-09-29 -> 2026-10-06
+- [ ] 2026/MM/RAS1/000246 (id=30768102831): DocSaleDate: 2026-09-30 -> 2026-10-06
+- [ ] 2026/MM/RAS1/000246 (id=30768102831): FStock: NULL -> 6139.6
+- [ ] 2026/MM/RAS1/000246 (id=30768102831): csDocsHeadersStatusId: 213217726 -> 213217724
