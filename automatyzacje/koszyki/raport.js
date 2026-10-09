@@ -30,7 +30,7 @@ const tyg = {};
 for (const r of dane.wiersze) {
   if (!(r.netto > 0 && r.netto < 20000)) continue;
   const k = poniedzialek(r.data);
-  const t = tyg[k] || (tyg[k] = { porz: [], zamk: 0, zamkNetto: 0, anul: 0, goscPorz: 0, kontakt: 0, ponad30: 0, ponad150: 0, kurierPorz: 0 });
+  const t = tyg[k] || (tyg[k] = { porz: [], zamk: 0, zamkNetto: 0, anul: 0, goscPorz: 0, kontakt: 0, ponad30: 0, ponad150: 0, kurierPorz: 0, zamk30: 0, paczki30: 0 });
   if (r.status === 'W koszyku') {
     t.porz.push(r.netto);
     if (r.klient === GOSC) t.goscPorz++;
@@ -38,20 +38,24 @@ for (const r of dane.wiersze) {
     if (r.kg > 30) t.ponad30++;
     if (r.kg > 150) t.ponad150++;
     if (/kurier/i.test(r.dostawa || '')) t.kurierPorz++;
-  } else if (r.status === 'Zamknięte') { t.zamk++; t.zamkNetto += r.netto; }
+  } else if (r.status === 'Zamknięte') {
+    t.zamk++; t.zamkNetto += r.netto;
+    // B-10: zamówienia > 30 kg i paczki DPD (po 30 kg) — pomiar do 6.11 przed decyzją o progach dostawy.
+    if (r.kg > 30) { t.zamk30++; if (/kurier/i.test(r.dostawa || '')) t.paczki30 += Math.ceil(r.kg / 30); }
+  }
   else if (/Anulow/.test(r.status)) t.anul++;
 }
 
-const naglowek = '| tydzień od | koszyki | zamówione | anulowane | konwersja | porzucone: wartość netto | mediana | goście | doszli do danych | >30 kg | >150 kg |';
+const naglowek = '| tydzień od | koszyki | zamówione | anulowane | konwersja | porzucone: wartość netto | mediana | goście | doszli do danych | >30 kg | >150 kg | zamówione >30 kg (paczki) |';
 const linie = [naglowek, '|' + naglowek.split('|').slice(1, -1).map(() => '---').join('|') + '|'];
 for (const k of Object.keys(tyg).sort()) {
   const t = tyg[k], n = t.porz.length, wszystkie = n + t.zamk + t.anul;
   linie.push('| ' + [k, wszystkie, t.zamk + ' (' + zl(t.zamkNetto) + ' zł)', t.anul, proc(t.zamk, wszystkie),
     zl(t.porz.reduce((a, b) => a + b, 0)) + ' zł', zl(mediana(t.porz)) + ' zł', proc(t.goscPorz, n), proc(t.kontakt, n),
-    t.ponad30, t.ponad150].join(' | ') + ' |');
+    t.ponad30, t.ponad150, t.zamk30 + (t.paczki30 ? ' (' + t.paczki30 + ')' : '')].join(' | ') + ' |');
 }
 const tekst = '# Koszyki esavpol tygodniowo (ZOID, ' + dane.od + ' – ' + dane.do + ', odczyt ' + dane.pobrano.slice(0, 16).replace('T', ' ') + ')\n\n' +
-  linie.join('\n') + '\n\nKoszyki = porzucone + zamówione + anulowane (niepuste, < 20 tys. zł). Ostatni tydzień może być niepełny.\n';
+  linie.join('\n') + '\n\nKoszyki = porzucone + zamówione + anulowane (niepuste, < 20 tys. zł). Ostatni tydzień może być niepełny. „>30 kg”, „>150 kg” = porzucone; paczki = kurierem, po 30 kg.\n';
 const out = path.join(DIR, 'raport_' + dane.od + '_' + dane.do + '.md');
 fs.writeFileSync(out, tekst);
 console.log(tekst);
