@@ -111,10 +111,52 @@
     "2026/PZ/GDS1/002926",
     "2026/PZ/GDS1/002925",
     "2026/PZ/GDS1/002924",
-    "2026/PZ/GDS1/002922"
+    "2026/PZ/GDS1/002922",
+    "2026/PZ/WLS1/004256",
+    "2026/PZ/WAS1/003186",
+    "2026/PZ/WAS1/003185",
+    "2026/PZ/WAS1/003184",
+    "2026/PZ/WAS1/003183",
+    "2026/PZ/WAS1/003182",
+    "2026/PZ/WAS1/003166",
+    "2026/PZ/WAS1/003165",
+    "2026/PZ/WAS1/003164",
+    "2026/PZ/WAS1/003163",
+    "2026/PZ/WAS1/003162",
+    "2026/PZ/WAS1/003161",
+    "2026/PZ/RAS1/003149",
+    "2026/PZ/RAS1/003148",
+    "2026/PZ/RAS1/003147",
+    "2026/PZ/RAS1/003146",
+    "2026/PZ/RAS1/003145",
+    "2026/PZ/RAS1/003144",
+    "2026/PZ/KRS1/005369",
+    "2026/PZ/KRS1/005368",
+    "2026/PZ/KRS1/005367",
+    "2026/PZ/KRS1/005366",
+    "2026/PZ/KRS1/005365",
+    "2026/PZ/KRS1/005364",
+    "2026/PZ/GUS1/001675",
+    "2026/PZ/GUS1/001674",
+    "2026/PZ/GUS1/001673",
+    "2026/PZ/GLS1/007097",
+    "2026/PZ/GLS1/007096",
+    "2026/PZ/GLS1/007092",
+    "2026/PZ/GLS1/007076",
+    "2026/PZ/GLS1/007074",
+    "2026/PZ/GLS1/007073",
+    "2026/PZ/GLS1/007072",
+    "2026/PZ/GLS1/007071",
+    "2026/PZ/GLS1/007070",
+    "2026/PZ/GDS1/002933",
+    "2026/PZ/GDS1/002932",
+    "2026/PZ/GDS1/002931",
+    "2026/PZ/GDS1/002930",
+    "2026/PZ/GDS1/002929",
+    "2026/PZ/GDS1/002928"
   ],
-  "complete": false,
-  "lastUpdated": "2026-09-30T13:29:28.458Z",
+  "complete": true,
+  "lastUpdated": "2026-10-09T09:39:48.686Z",
   "runs": [
     {
       "ts": "2026-09-30T13:20:20.705Z",
@@ -161,6 +203,54 @@
     {
       "ts": "2026-09-30T13:29:28.457Z",
       "paczkaDok": 5,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T09:33:13.406Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T09:34:24.450Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T09:35:23.774Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T09:36:33.102Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T09:37:32.665Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T09:38:33.303Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T09:39:27.741Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-09T09:39:48.686Z",
+      "paczkaDok": 0,
       "partial": false,
       "stoppedReason": null
     }
