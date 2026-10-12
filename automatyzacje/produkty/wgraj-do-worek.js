@@ -132,13 +132,14 @@ async function main() {
     let existing = new Set();
     if (idCol) {
       const ids = results.map(r => coerceValue(r.dopasowane.csItemsId, idCol)).filter(v => v !== null);
-      if (ids.length) {
+      // Paczki po 2000 — MSSQL dopuszcza max 2100 parametrów na zapytanie.
+      for (let start = 0; start < ids.length; start += 2000) {
         const req2 = pool.request();
-        const placeholders = ids.map((id, i) => { req2.input('id' + i, mssqlType(idCol), id); return '@id' + i; });
+        const placeholders = ids.slice(start, start + 2000).map((id, i) => { req2.input('id' + i, mssqlType(idCol), id); return '@id' + i; });
         const exist = await req2.query(
           'SELECT [csItemsId] AS id FROM dbo.' + TEST_TABLE + ' WHERE [csItemsId] IN (' + placeholders.join(', ') + ')'
         );
-        existing = new Set(exist.recordset.map(r => String(r.id)));
+        exist.recordset.forEach(r => existing.add(String(r.id)));
       }
     }
     const nowe = results.filter(r => !existing.has(String(r.dopasowane.csItemsId)));

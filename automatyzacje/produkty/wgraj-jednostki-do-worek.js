@@ -72,13 +72,14 @@ async function wgrajTabele(pool, database, { realTable, testTable, dopasowaneCol
   let existing = new Set();
   if (idColMeta) {
     const ids = rekordy.map(r => coerceValue(r[idCol] && r[idCol].Item !== undefined ? r[idCol].Item : r[idCol], idColMeta)).filter(v => v !== null);
-    if (ids.length) {
+    // Paczki po 2000 — MSSQL dopuszcza max 2100 parametrów na zapytanie.
+    for (let start = 0; start < ids.length; start += 2000) {
       const req2 = pool.request();
-      const placeholders = ids.map((id, i) => { req2.input('id' + i, mssqlType(idColMeta), id); return '@id' + i; });
+      const placeholders = ids.slice(start, start + 2000).map((id, i) => { req2.input('id' + i, mssqlType(idColMeta), id); return '@id' + i; });
       const exist = await req2.query(
         'SELECT [' + idCol + '] AS id FROM dbo.' + testTable + ' WHERE [' + idCol + '] IN (' + placeholders.join(', ') + ')'
       );
-      existing = new Set(exist.recordset.map(r => String(r.id)));
+      exist.recordset.forEach(r => existing.add(String(r.id)));
     }
   }
 

@@ -109,13 +109,14 @@ async function main() {
     let existing = new Set();
     if (idCol) {
       const ids = wszystkieZdjecia.map(z => coerceValue(z.csPhotosId, idCol)).filter(v => v !== null);
-      if (ids.length) {
+      // Paczki po 2000 — MSSQL dopuszcza max 2100 parametrów na zapytanie.
+      for (let start = 0; start < ids.length; start += 2000) {
         const req2 = pool.request();
-        const placeholders = ids.map((id, i) => { req2.input('id' + i, mssqlType(idCol), id); return '@id' + i; });
+        const placeholders = ids.slice(start, start + 2000).map((id, i) => { req2.input('id' + i, mssqlType(idCol), id); return '@id' + i; });
         const exist = await req2.query(
           'SELECT [csPhotosId] AS id FROM dbo.' + TEST_TABLE + ' WHERE [csPhotosId] IN (' + placeholders.join(', ') + ')'
         );
-        existing = new Set(exist.recordset.map(r => String(r.id)));
+        exist.recordset.forEach(r => existing.add(String(r.id)));
       }
     }
     const nowe = wszystkieZdjecia.filter(z => !existing.has(String(z.csPhotosId)));
