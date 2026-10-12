@@ -85,13 +85,18 @@ async function main() {
     let existing = new Set();
     if (idColMeta) {
       const ids = wszystkieGrupy.map(g => coerceValue(g.csItemsGroupsItemsId, idColMeta)).filter(v => v !== null);
-      if (ids.length) {
+      // MSSQL dopuszcza max 2100 parametrów na zapytanie — przy >2100 grupach
+      // (2280 w biegu 2026-10-09) jeden IN (...) wysypywał dedup. Paczkujemy
+      // SELECT po ~2000 id na zapytanie i sumujemy wynik.
+      const DEDUP_CHUNK = 2000;
+      for (let start = 0; start < ids.length; start += DEDUP_CHUNK) {
+        const paczka = ids.slice(start, start + DEDUP_CHUNK);
         const req2 = pool.request();
-        const placeholders = ids.map((id, i) => { req2.input('id' + i, mssqlType(idColMeta), id); return '@id' + i; });
+        const placeholders = paczka.map((id, i) => { req2.input('id' + i, mssqlType(idColMeta), id); return '@id' + i; });
         const exist = await req2.query(
           'SELECT [csItemsGroupsItemsId] AS id FROM dbo.' + TEST_TABLE + ' WHERE [csItemsGroupsItemsId] IN (' + placeholders.join(', ') + ')'
         );
-        existing = new Set(exist.recordset.map(r => String(r.id)));
+        exist.recordset.forEach(r => existing.add(String(r.id)));
       }
     }
     const nowe = wszystkieGrupy.filter(g => !existing.has(String(g.csItemsGroupsItemsId)));
