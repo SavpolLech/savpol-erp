@@ -99,3 +99,4 @@
 {"ts":"2026-10-12T10:33:51.383Z","tryb":"dzien","dzien":"2026-08-15","cel":"prod","erpRekordow":0,"fa":0,"par":0,"juzWBazie":0,"wstawiono":0,"pozycji":0,"bezKarty":[],"bledyZapisu":[],"complete":true,"sekundy":20}
 {"ts":"2026-10-12T10:34:17.336Z","tryb":"dzien","dzien":"2026-08-16","cel":"prod","erpRekordow":1,"fa":0,"par":0,"juzWBazie":0,"wstawiono":0,"pozycji":0,"bezKarty":[],"bledyZapisu":[],"complete":true,"sekundy":20}
 {"ts":"2026-10-12T11:04:16.644Z","tryb":"dzien","dzien":"2026-08-17","cel":"prod","erpRekordow":0,"fa":279,"par":19,"juzWBazie":0,"wstawiono":298,"pozycji":2072,"bezKarty":[],"bledyZapisu":[],"complete":false,"sekundy":1793}
+{"ts":"2026-10-12T11:26:04.860Z","tryb":"dzien","dzien":"2026-08-17","cel":"prod","erpRekordow":628,"fa":508,"par":19,"juzWBazie":298,"wstawiono":229,"pozycji":1885,"bezKarty":[],"bledyZapisu":[],"complete":true,"sekundy":1302}
