@@ -169,7 +169,8 @@ try {
 try {
   const s = JSON.parse(fs.readFileSync(path.join(AUTO, 'kontrahenci/state/kontrola-ostatnia.json'), 'utf8'));
   const b = s.roznicaBilansu;
-// Od 2026-10-14 krok KONTRAHENCI w orkiestratorze: codziennie tylko NOWI kontrahenci.// Zmiany istniejących (przeglad.js) jeszcze ręcznie — nie obiecuj tu tygodniowego przeglądu.
+  // Od 2026-10-14 krok KONTRAHENCI w orkiestratorze: codziennie tylko NOWI kontrahenci.
+  // Zmiany istniejących (przeglad.js) jeszcze ręcznie — nie obiecuj tu tygodniowego przeglądu.
   cards.push({ nm: 'Kontrahenci', pill: 'codziennie (nowi)', rows: [['W bazie', fmt(s.wWorku)], ['W ERP', fmt(s.erpWszyscy)], ['Bilans', (b > 0 ? '+' : (b < 0 ? '−' : '')) + Math.abs(b || 0)], ['Ostatni bieg', s.ts ? short(s.ts.slice(0, 10)) : '—']] });
 } catch {}
 
