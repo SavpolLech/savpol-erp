@@ -74,6 +74,14 @@ async function trybDzien() {
     const dnia = lista.wiersze.filter(w => TYPY_DNIA.has(w.csDocsTypesId));
     log.fa = dnia.filter(w => w.csDocsTypesId === W.TYPY.FA).length;
     log.par = dnia.filter(w => w.csDocsTypesId === W.TYPY.PAR).length;
+    // Pozostałe typy z listy (korekty FAK, FAKR, FAUEK...) — nie pobieramy, tylko liczymy
+    // do strony statusu. Kod typu z numeru, np. 2026/FAK/WAS1/000123 → FAK.
+    log.pominiete = {};
+    for (const w of lista.wiersze) {
+      if (TYPY_DNIA.has(w.csDocsTypesId)) continue;
+      const kod = String(w.DocNumber || '').split('/')[1] || ('typ ' + w.csDocsTypesId);
+      log.pominiete[kod] = (log.pominiete[kod] || 0) + 1;
+    }
     const obecne = await z.obecneId(dnia.map(w => w.csDocsHeadersId));
     log.juzWBazie = obecne.size;
     const brakujace = dnia.filter(w => !obecne.has(w.csDocsHeadersId));

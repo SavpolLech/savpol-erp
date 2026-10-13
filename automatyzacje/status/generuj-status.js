@@ -92,10 +92,21 @@ for (const t of ['wz', 'mm', 'pz', 'sprzedaz']) {
         ts: o.ts, typ: etykieta[t], dzien: o.filterDateFrom || o.filterDateTo || o.dzien || null,
         docs: o.docsLacznieDlaZakresu ?? o.docsZebraneWTejSesji ?? (o.wstawiono != null ? (o.juzWBazie || 0) + o.wstawiono : null),
         expected: o.expectedTotal ?? (o.fa != null ? o.fa + (o.par || 0) : null),
+        szczeg: o.fa != null ? rozbicieSprzedazy(o) : null,
         done: o.allPagesExhausted === true || o.complete === true, blad: o.blad ? String(o.blad).split('\n')[0].slice(0, 60) : null
       });
     } catch {}
   }
+}
+// Sprzedaż: pobieramy tylko FA i PAR; reszta listy ERP (korekty itd.) jest pomijana.
+// Starsze wpisy logu nie mają rozbicia pominiętych — wtedy sama różnica.
+function rozbicieSprzedazy(o) {
+  const cz = ['FA ' + o.fa, 'PAR ' + (o.par || 0)];
+  const pom = o.pominiete ? Object.entries(o.pominiete).sort((a, b) => b[1] - a[1]).map(([k, n]) => k + ' ' + n).join(', ') : '';
+  const reszta = o.erpRekordow != null ? o.erpRekordow - o.fa - (o.par || 0) : 0;
+  if (pom) cz.push('pominięte: ' + pom);
+  else if (reszta > 0) cz.push('pominięte inne typy: ' + reszta);
+  return cz.join(' · ');
 }
 const grupy = new Map();
 for (const w of wpisy) { const d = localDate(w.ts); if (!grupy.has(d)) grupy.set(d, []); grupy.get(d).push(w); }
@@ -106,6 +117,7 @@ const dni = [...grupy.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([
     runs: arr.map(w => ({
       t: localTime(w.ts), typ: w.typ,
       opis: (w.dzien ? short(w.dzien) : '—') + (w.docs != null ? ' · ' + w.docs + (w.expected != null && w.expected !== w.docs ? '/' + w.expected : (w.done ? '/' + w.docs : '')) : ''),
+      szczeg: w.szczeg,
       stan: w.done ? 'komplet' : (w.blad ? 'ponawianie' : 'w toku'),
       klasa: w.done ? 'st-ok' : (w.blad ? 'st-retry' : 'st-wip')
     }))
@@ -175,6 +187,7 @@ const SZABLON = `<title>Status scraperów ERP</title>
   .le .t{color:var(--ink-3);font-size:12px}
   .le .ty{font-weight:500}
   .le .d{color:var(--ink-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .le .d small{display:block;white-space:normal;font-size:12px;color:var(--ink-3)}
   .st{font-size:12px;padding:1px 9px;border-radius:999px;white-space:nowrap}
   .st-ok{background:var(--bg-ok);color:var(--ok)}
   .st-retry{background:var(--bg-warn);color:var(--warn-ink)}
@@ -223,7 +236,7 @@ document.getElementById("cards").innerHTML = DANE.cards.map(function(c){
 document.getElementById("days").innerHTML = DANE.dni.map(function(g,i){
   var runs = g.runs.map(function(e){
     return '<div class="le"><span class="t tnum">'+esc(e.t)+'</span><span class="ty">'+esc(e.typ)+'</span>'
-     +'<span class="d">'+esc(e.opis)+'</span><span class="st '+e.klasa+'">'+esc(e.stan)+'</span></div>';
+     +'<span class="d">'+esc(e.opis)+(e.szczeg ? '<small class="tnum">'+esc(e.szczeg)+'</small>' : '')+'</span><span class="st '+e.klasa+'">'+esc(e.stan)+'</span></div>';
   }).join("");
   var meta = g.ok+' dni gotowe'+(g.err? ' · '+g.err+' ponowień':'');
   return '<details class="day"'+(i===0?' open':'')+'><summary><span class="dl"><span class="chev">&#9656;</span>'+esc(g.label)+'</span>'
