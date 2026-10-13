@@ -154,8 +154,8 @@ for (const b of bars) {
     data = poDniachRob(Math.max(1, Math.ceil(koniecKolejki[b.t] / godzNaDzien)));
     const przed = kolejka.slice(0, kolejka.findIndex(k => k.t === b.t)).filter(k => zal[k.t] && zal[k.t].dokKolejka > 0).map(k => etykieta[k.t]);
     wyjasnienie = przed.length
-      ? 'Niepełne i brakujące dni ' + dopelniacz(b.typ) + ' czekają w kolejce zaległości — automat zajmie się nimi po nadrobieniu: ' + przed.join(', ') + '.'
-      : 'Niepełne i brakujące dni ' + dopelniacz(b.typ) + ' są teraz nadrabiane (pierwsze w kolejce zaległości, pon–pt do 18:00).';
+      ? 'Niepełne i brakujące dni ' + dopelniacz(b.typ) + ' czekają w kolejce zaległości — automat zajmie się nimi po nadrobieniu: ' + przed.join(', ') + '. Nadrabianie tylko pon–pt do 18:00.'
+      : 'Niepełne i brakujące dni ' + dopelniacz(b.typ) + ' są teraz nadrabiane (pierwsze w kolejce zaległości, tylko pon–pt do 18:00).';
   } else if (z.dniPoza < b.incompl + b.miss) {
     data = poDniachRob(1);
     wyjasnienie = 'Braki z ostatnich dni nadrobi codzienny bieg automatu.';
@@ -163,7 +163,9 @@ for (const b of bars) {
   const uwaga = z.dniPoza
     ? 'Poza automatem, do sprawdzenia: ' + zakresy(z.poza.sort()) + ' — ani codzienny bieg, ani kolejka zaległości tych dni nie obejmują.'
     : null;
-  b.est = { data: data ? short(data) : null, wyjasnienie, uwaga };
+  // Nadrabianie tylko pon–pt — dzień tygodnia przy dacie, żeby było widać, że weekend pominięty.
+  const DT = ['niedz.', 'pon.', 'wt.', 'śr.', 'czw.', 'pt.', 'sob.'];
+  b.est = { data: data ? short(data) + ' (' + DT[new Date(data + 'T00:00:00Z').getUTCDay()] + ')' : null, wyjasnienie, uwaga };
 }
 
 // --- karty: produkty, kontrahenci ---
