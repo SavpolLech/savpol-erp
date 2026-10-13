@@ -50,63 +50,73 @@ function wpisyLogu(t) {
   for (const ln of fs.readFileSync(p, 'utf8').trim().split(String.fromCharCode(10))) {
     try {
       const o = JSON.parse(ln);
-      if (t === 'sprzedaz') out.push({ ts: o.ts, dzien: o.dzien, total: o.fa + (o.par || 0), have: (o.juzWBazie || 0) + (o.wstawiono || 0), got: o.wstawiono || 0, sec: o.sekundy || 0, done: o.complete === true });
-      else out.push({ ts: o.ts, dzien: o.filterDateFrom, total: o.expectedTotal, have: o.docsLacznieDlaZakresu, got: o.docsZebraneWTejSesji || 0, sec: (o.czasTrwaniaMs || 0) / 1000, done: o.allPagesExhausted === true });
+      if (t === 'sprzedaz') out.push({ ts: o.ts, dzien: o.dzien, fa: o.fa, par: o.par || 0, total: o.fa + (o.par || 0), have: (o.juzWBazie || 0) + (o.wstawiono || 0), got: o.wstawiono || 0, sec: o.sekundy || 0, done: o.complete === true });
+      else out.push({ ts: o.ts, dzien: o.filterDateFrom, pomin: (o.pominieteDoRealizacji || []).length, total: o.expectedTotal, have: o.docsLacznieDlaZakresu, got: o.docsZebraneWTejSesji || 0, sec: (o.czasTrwaniaMs || 0) / 1000, done: o.allPagesExhausted === true });
     } catch {}
   }
   return out;
 }
 // Okno codziennego biegu (lib-wspolne/catchup.js: <TYP>_CATCHUP_WINDOW, domyślnie 5;
-// dobij-wszystko.js: minimalny wiek dnia). Starszych dni automat sam nie ponawia,
-// poza zakresem ZALEGLOSCI z launchera (dziś: tylko sprzedaż).
+// dobij-wszystko.js: minimalny wiek dnia). Starsze dni nadrabia tylko kolejka
+// zaległości z launchera: ZALEGLOSCI_KOLEJKA=wz:od..do,sprzedaz:od..do,... —
+// typy po kolei, następny dopiero po skończeniu poprzedniego, pon–pt do 18:00.
+// Stary format ZALEGLOSCI=od..do = sama sprzedaż.
 const OKNO = { wz: 5 + 1, mm: 5 + 3, pz: 5 + 1, sprzedaz: 21 + 14 };
-const zaleglosci = (() => {
-  try {
-    const m = /ZALEGLOSCI=(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})/.exec(fs.readFileSync(path.join(AUTO, 'dobij-wszystko-launcher.bat'), 'utf8'));
-    return m ? [m[1], m[2]] : null;
-  } catch { return null; }
+const kolejka = (() => {
+  let txt = '';
+  try { txt = fs.readFileSync(path.join(AUTO, 'dobij-wszystko-launcher.bat'), 'utf8'); } catch { return []; }
+  // Zmienna środowiskowa ma pierwszeństwo (podgląd: ZALEGLOSCI_KOLEJKA=... node status/generuj-status.js).
+  const k = process.env.ZALEGLOSCI_KOLEJKA ? [null, process.env.ZALEGLOSCI_KOLEJKA] : /^\s*set\s+ZALEGLOSCI_KOLEJKA=(.+)$/mi.exec(txt);
+  if (k) return k[1].trim().split(',').map(x => /^(\w+):(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(x.trim())).filter(Boolean).map(m => ({ t: m[1].toLowerCase(), od: m[2], do: m[3] }));
+  const m = /^\s*set\s+ZALEGLOSCI=(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})/mi.exec(txt);
+  return m ? [{ t: 'sprzedaz', od: m[1], do: m[2] }] : [];
 })();
 const godz = h => h < 1 ? 'poniżej 1 h' : '~' + (h < 10 ? h.toFixed(1).replace('.', ',') : Math.round(h)) + ' h';
-function szacunek(t, niepelne, brak) {
-  if (!niepelne.length && !brak.length) return null;
+const weekend = d => new Date(d + 'T00:00:00Z').getUTCDay() % 6 === 0;
+const dniRob = n => n === 1 ? '1 dzień roboczy' : n + (n < 5 ? ' dni robocze' : ' dni roboczych');
+const poDniachRob = n => { let d = new Date(today), k = 0; while (k < n) { d = addDays(d, 1); if (d.getUTCDay() % 6) k++; } return ymd(d); };
+
+// Ile dokumentów i godzin zostało, w podziale na dni, które nadrobi codzienny bieg,
+// kolejka zaległości, albo nikt (poza oknem i poza kolejką).
+function zaleglosc(t, niepelne, brak) {
   const wpisy = wpisyLogu(t);
   const ost = new Map();
   for (const w of wpisy) if (w.dzien && (!ost.has(w.dzien) || ost.get(w.dzien).ts < w.ts)) ost.set(w.dzien, w);
   const pelne = [...ost.values()].filter(w => w.done && w.total != null);
   // Średnia osobno dla dni roboczych i weekendów (weekend to kilka dok., nie setki).
-  const weekend = d => new Date(d + 'T00:00:00Z').getUTCDay() % 6 === 0;
   const sr = arr => arr.length ? arr.reduce((a, w) => a + w.total, 0) / arr.length : 0;
   const srRob = sr(pelne.filter(w => !weekend(w.dzien))), srWkd = sr(pelne.filter(w => weekend(w.dzien)));
-  const naDzien = d => weekend(d) ? srWkd : srRob;
   const od = addDays(today, -21).toISOString();
   const tempoRuns = wpisy.filter(w => w.ts >= od && w.got >= 20);
   const sGot = tempoRuns.reduce((a, w) => a + w.got, 0), sSec = tempoRuns.reduce((a, w) => a + w.sec, 0);
-  const sekNaDok = sGot ? sSec / sGot : null;
+  const sekNaDok = sGot ? sSec / sGot : 5;
   // Licznik ERP z ostatniego biegu, jeśli bieg go odczytał (> 0); inaczej średnia.
-  const reszta = d => { const w = ost.get(d); return w && w.total > 0 && w.have != null ? Math.max(0, w.total - w.have) : naDzien(d); };
-  const auto = d => d >= ymd(addDays(today, -OKNO[t])) || (t === 'sprzedaz' && zaleglosci && d >= zaleglosci[0] && d <= zaleglosci[1]);
-  let dok = 0, dokRecznie = 0, dniRecznie = 0;
-  for (const d of [...niepelne, ...brak]) { const r = reszta(d); dok += r; if (!auto(d)) { dokRecznie += r; dniRecznie++; } }
-  dok = Math.round(dok);
-  const czesci = ['ok. ' + fmt(dok) + ' dok.'];
-  if (sekNaDok) czesci.push(godz(dok * sekNaDok / 3600) + ' pracy automatu');
-  let kiedy;
-  if (!dniRecznie) {
-    if (t === 'sprzedaz') {
-      // Realne tempo nadrabiania: dokumenty wstawione dziennie w ostatnim tygodniu (dni z biegiem).
-      const odT = addDays(today, -7).toISOString(), perDzien = new Map();
-      for (const w of wpisy) if (w.ts >= odT && w.got) { const k = w.ts.slice(0, 10); perDzien.set(k, (perDzien.get(k) || 0) + w.got); }
-      const tempo = perDzien.size ? [...perDzien.values()].reduce((a, b) => a + b, 0) / perDzien.size : 0;
-      if (tempo > 0) {
-        const n = Math.ceil(dok / tempo);
-        let d = new Date(today), k = 0;
-        while (k < n) { d = addDays(d, 1); if (d.getUTCDay() % 6) k++; }
-        kiedy = 'nadrabia sam (pon–pt do 18:00): ~' + n + (n === 1 ? ' dzień roboczy' : (n < 5 ? ' dni robocze' : ' dni roboczych')) + ', koniec ok. ' + short(ymd(d));
-      } else kiedy = 'nadrabia sam (pon–pt do 18:00)';
-    } else kiedy = 'nadrobi sam w codziennym biegu';
-  } else kiedy = (dniRecznie === niepelne.length + brak.length ? 'automat do tych dni nie wraca' : dniRecznie + ' dni poza zasięgiem automatu') + ' — trzeba uruchomić ręcznie';
-  return { czas: czesci.join(' · '), kiedy, recznie: dniRecznie > 0 };
+  const reszta = d => { const w = ost.get(d); return w && w.total > 0 && w.have != null ? Math.max(0, w.total - w.have) : (weekend(d) ? srWkd : srRob); };
+  const wKolejce = kolejka.find(k => k.t === t);
+  const r = { dok: 0, godz: 0, dokKolejka: 0, dniPoza: 0 };
+  for (const d of [...niepelne, ...brak]) {
+    const n = reszta(d);
+    r.dok += n;
+    if (d >= ymd(addDays(today, -OKNO[t]))) continue;               // codzienny bieg
+    if (wKolejce && d >= wKolejce.od && d <= wKolejce.do) r.dokKolejka += n;
+    else r.dniPoza++;
+  }
+  r.godz = r.dok * sekNaDok / 3600;
+  r.godzKolejka = r.dokKolejka * sekNaDok / 3600;
+  return r;
 }
+
+// Dzienna przepustowość kolejki: godziny pracy zaległości w dniu roboczym, mierzone
+// na biegach sprzedaży z ostatniego tygodnia (jedyny typ, który już nadrabia);
+// gdy brak danych — 6,5 h (pon–pt ok. 11:30–18:00).
+const godzNaDzien = (() => {
+  const odT = addDays(today, -7).toISOString(), perDzien = new Map();
+  for (const w of wpisyLogu('sprzedaz')) if (w.ts >= odT && w.got) { const k = w.ts.slice(0, 10); if (!weekend(k)) perDzien.set(k, (perDzien.get(k) || 0) + w.sec / 3600); }
+  const v = [...perDzien.values()].filter(h => h >= 1);
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : 6.5;
+})();
+
+const zal = {};
 for (const t of Object.keys(scope)) {
   const dir = path.join(AUTO, t, 'state');
   const m = new Map();
@@ -121,9 +131,28 @@ for (const t of Object.keys(scope)) {
   }
   const pct = tot ? Math.round(compl / tot * 100) : 0;
   const nad = (incompl + miss) > 3;
-  const est = szacunek(t, dniNiepelne, dniBrak);
-  bars.push({ typ: etykieta[t], pct, compl, incompl, miss, tot, zakres: short(scope[t][0]) + ' – ' + short(scope[t][1]), status: nad ? 'nadrabia' : (incompl ? 'prawie komplet' : 'aktualny'), nad,
-    niepelne: zakresy(dniNiepelne), brak: zakresy(dniBrak), est });
+  if (incompl + miss) zal[t] = zaleglosc(t, dniNiepelne, dniBrak);
+  bars.push({ t, typ: etykieta[t], pct, compl, incompl, miss, tot, zakres: short(scope[t][0]) + ' – ' + short(scope[t][1]), status: nad ? 'nadrabia' : (incompl ? 'prawie komplet' : 'aktualny'), nad,
+    niepelne: zakresy(dniNiepelne), brak: zakresy(dniBrak), est: null });
+}
+// Szacowana data „aktualny” = koniec zaległości danego typu w kolejce (godziny
+// typów przed nim w kolejce + jego własne) / przepustowość dzienna. Od tej daty
+// typ bierze już tylko nowe dni z codziennego okna.
+let godzSkum = 0;
+const koniecKolejki = {};
+for (const k of kolejka) { if (!zal[k.t]) continue; godzSkum += zal[k.t].godzKolejka; koniecKolejki[k.t] = godzSkum; }
+for (const b of bars) {
+  const z = zal[b.t];
+  if (!z) continue;
+  const czas = 'ok. ' + fmt(Math.round(z.dok)) + ' dok. · ' + godz(z.godz) + ' pracy automatu';
+  let kiedy, recznie = false;
+  if (z.dniPoza) { kiedy = z.dniPoza + ' dni poza oknem automatu i poza kolejką zaległości — trzeba dopisać do kolejki'; recznie = true; }
+  else if (koniecKolejki[b.t] != null && z.dokKolejka > 0) {
+    const n = Math.max(1, Math.ceil(koniecKolejki[b.t] / godzNaDzien));
+    const przed = kolejka.slice(0, kolejka.findIndex(k => k.t === b.t)).filter(k => zal[k.t] && zal[k.t].dokKolejka > 0).map(k => etykieta[k.t]);
+    kiedy = 'aktualny ok. ' + short(poDniachRob(n)) + ' (' + dniRob(n) + (przed.length ? ', w kolejce po: ' + przed.join(', ') : ', pierwszy w kolejce') + ')';
+  } else kiedy = 'aktualny ok. ' + short(poDniachRob(1)) + ' (nadrobi codzienny bieg)';
+  b.est = { czas, kiedy, recznie };
 }
 
 // --- karty: produkty, kontrahenci ---
@@ -193,7 +222,43 @@ const dni = [...grupy.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([
   };
 });
 
-const DANE = { generatedAt: new Date().toISOString(), bars, cards, dni };
+// --- lista kontrolna: ERP vs baza, dzień po dniu ---
+// „W ERP” = licznik listy ERP z ostatniego biegu danego dnia (run-log), „w bazie” =
+// COUNT nagłówków w dbo.csDocsHeaders po DocDate (status/liczniki-bazy.js).
+// MM: ERP minus dokumenty „Do realizacji”, których scraper z założenia nie zapisuje.
+async function listaKontrolna() {
+  const TYPY_K = [['WZ', 'wz'], ['MM', 'mm'], ['PZ', 'pz'], ['FA', 'sprzedaz'], ['PAR', 'sprzedaz']];
+  let baza = null, bladBazy = null;
+  try { baza = await require('./liczniki-bazy').liczniki(Object.values(scope).map(s => s[0]).sort()[0]); }
+  catch (e) { bladBazy = String(e && e.message || e).split('\n')[0].slice(0, 120); }
+  const typy = TYPY_K.map(([kod, t]) => {
+    const ost = new Map();
+    for (const w of wpisyLogu(t)) if (w.dzien && (!ost.has(w.dzien) || ost.get(w.dzien).ts < w.ts)) ost.set(w.dzien, w);
+    const erpDnia = d => {
+      const w = ost.get(d);
+      if (!w) return null;
+      if (kod === 'FA') return w.fa;
+      if (kod === 'PAR') return w.par;
+      // Bieg bez kompletu i z licznikiem 0 = licznik nieodczytany (np. pagination_stuck).
+      if (w.total == null || (!w.done && !w.total)) return null;
+      return w.total - (w.pomin || 0);
+    };
+    const wiersze = [];
+    let zgodne = 0, rozne = 0, bezErp = 0;
+    for (let d = new Date(scope[t][0] + 'T00:00:00Z'), e = new Date(scope[t][1] + 'T00:00:00Z'); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
+      const dz = ymd(d), erp = erpDnia(dz), wb = baza ? (baza[kod + '|' + dz] || 0) : null;
+      if (erp == null) bezErp++; else if (wb != null && wb === erp) zgodne++; else if (wb != null) rozne++;
+      wiersze.push([dz, erp, wb]);
+    }
+    wiersze.reverse();
+    return { kod, zgodne, rozne, bezErp, wiersze };
+  });
+  return { typy, baza: !!baza, bladBazy };
+}
+
+(async () => {
+const kontrola = await listaKontrolna();
+const DANE = { generatedAt: new Date().toISOString(), bars, cards, dni, kontrola };
 
 const SZABLON = `<title>Status scraperów ERP</title>
 <style>
@@ -240,6 +305,15 @@ const SZABLON = `<title>Status scraperów ERP</title>
   .est{margin-top:4px;font-size:12px;color:var(--ink-2)}
   .est .k{color:var(--ink-3)}
   .est .k.r{color:var(--warn-ink)}
+  .ktab{max-height:420px;overflow:auto;border-top:.5px solid var(--line)}
+  .ktab table{width:100%;border-collapse:collapse;font-size:13px}
+  .ktab th{position:sticky;top:0;background:var(--surface);text-align:right;font-weight:500;color:var(--ink-2);padding:6px 14px;border-bottom:.5px solid var(--line)}
+  .ktab td{text-align:right;padding:4px 14px;border-bottom:.5px solid var(--line)}
+  .ktab th:first-child,.ktab td:first-child{text-align:left}
+  .kr-roz td{background:var(--bg-warn);color:var(--warn-ink)}
+  .kr-brak td{color:var(--ink-3)}
+  .roz{font-weight:500;color:var(--warn-ink)}
+  .kopiuj{font:inherit;font-size:12px;padding:5px 12px;margin-bottom:10px;border-radius:8px;border:.5px solid var(--line);background:var(--surface);color:var(--accent);cursor:pointer}
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
   .card{background:var(--surface);border:.5px solid var(--line);border-radius:12px;padding:1rem 1.1rem}
   .ct{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
@@ -277,6 +351,8 @@ const SZABLON = `<title>Status scraperów ERP</title>
   <div class="bars" id="bars"></div>
   <h2>Pozostałe scrapery</h2>
   <div class="cards" id="cards"></div>
+  <h2>Lista kontrolna: ERP vs baza</h2>
+  <div class="days" id="kontrola"></div>
   <h2>Aktywność dzień po dniu</h2>
   <div class="days" id="days"></div>
   <p class="foot" id="foot"></p>
@@ -316,11 +392,42 @@ document.getElementById("days").innerHTML = DANE.dni.map(function(g,i){
    +'<span class="daymeta tnum">'+meta+'</span></summary>'+runs+'</details>';
 }).join("");
 if(!DANE.dni.length) document.getElementById("days").innerHTML = '<div class="card" style="color:var(--ink-2);font-size:13px">Brak aktywności w ostatnich dniach.</div>';
+(function(){
+  var K = DANE.kontrola, el = document.getElementById("kontrola");
+  if (!K) { el.innerHTML = ""; return; }
+  function n(v){ return v == null ? "—" : Number(v).toLocaleString("pl-PL"); }
+  var intro = '<p class="sub" style="margin-bottom:.75rem">„W ERP” to licznik listy dokumentów w ERP z ostatniego biegu danego dnia, „w bazie” to policzone nagłówki w bazie worek po dacie dokumentu.'
+    + (K.baza ? '' : ' <b>Baza niedostępna przy tym odświeżeniu' + (K.bladBazy ? ' (' + esc(K.bladBazy) + ')' : '') + ' — kolumna „w bazie” pusta.</b>')
+    + ' WZ, MM i PZ: ERP filtruje listę po swojej dacie, a baza liczy po dacie dokumentu, więc dokument wystawiony z datą wstecz może dać różnicę ±1 na dwóch dniach.</p>'
+    + '<button type="button" class="kopiuj" id="kopiujK">Kopiuj całą listę (do Excela)</button>';
+  el.innerHTML = intro + K.typy.map(function(t){
+    var meta = t.zgodne + ' zgodnych' + (t.rozne ? ' · <b class="roz">' + t.rozne + ' z różnicą</b>' : '') + (t.bezErp ? ' · ' + t.bezErp + ' bez licznika ERP' : '');
+    var rows = t.wiersze.map(function(w){
+      var r = (w[1] != null && w[2] != null) ? w[2] - w[1] : null;
+      var cls = r ? ' class="kr-roz"' : (w[1] == null ? ' class="kr-brak"' : '');
+      return '<tr' + cls + '><td>' + esc(w[0].slice(8,10) + '.' + w[0].slice(5,7)) + '</td><td>' + n(w[1]) + '</td><td>' + n(w[2]) + '</td><td>' + (r == null ? '' : (r > 0 ? '+' : (r < 0 ? '−' : '')) + Math.abs(r)) + '</td></tr>';
+    }).join("");
+    return '<details class="day"><summary><span class="dl"><span class="chev">›</span>' + esc(t.kod) + '</span><span class="daymeta tnum">' + meta + '</span></summary>'
+      + '<div class="ktab"><table class="tnum"><thead><tr><th>Dzień</th><th>W ERP</th><th>W bazie</th><th>Różnica</th></tr></thead><tbody>' + rows + '</tbody></table></div></details>';
+  }).join("");
+  document.getElementById("kopiujK").onclick = function(){
+    var T = String.fromCharCode(9), N = String.fromCharCode(10);
+    var txt = "Lista kontrolna ERP vs baza — stan na " + fmtGen(DANE.generatedAt) + N + "Typ" + T + "Dzień" + T + "W ERP" + T + "W bazie" + T + "Różnica" + N;
+    K.typy.forEach(function(t){ t.wiersze.forEach(function(w){
+      var r = (w[1] != null && w[2] != null) ? w[2] - w[1] : "";
+      txt += t.kod + T + w[0] + T + (w[1] == null ? "" : w[1]) + T + (w[2] == null ? "" : w[2]) + T + r + N;
+    }); });
+    var b = this;
+    function ok(){ b.textContent = "Skopiowano"; setTimeout(function(){ b.textContent = "Kopiuj całą listę (do Excela)"; }, 2000); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, fallback); else fallback();
+    function fallback(){ var a = document.createElement("textarea"); a.value = txt; document.body.appendChild(a); a.select(); try { document.execCommand("copy"); ok(); } catch(e) {} document.body.removeChild(a); }
+  };
+})();
 document.getElementById("foot").textContent = "Odświeżane automatycznie po każdym biegu. Sprzedaż i produkty mają opóźnienie z założenia (faktury i karty dochodzą z datą wstecz).";
 </script>`;
 
 fs.writeFileSync(OUT, SZABLON.replace('/*__DANE__*/', JSON.stringify(DANE)), 'utf8');
-console.log('[status] zapisano ' + path.relative(AUTO, OUT) + ' (' + bars.length + ' paskow, ' + dni.length + ' dni aktywnosci)');
+console.log('[status] zapisano ' + path.relative(AUTO, OUT) + ' (' + bars.length + ' paskow, ' + dni.length + ' dni aktywnosci, baza: ' + (kontrola.baza ? 'tak' : 'NIE') + ')');
 
 // Commit + push strony (chyba że NO_PUSH=1 — np. przy ręcznym podglądzie).
 if (process.env.NO_PUSH !== '1') {
@@ -329,3 +436,4 @@ if (process.env.NO_PUSH !== '1') {
       'Status scraperów — ' + new Date().toISOString().slice(0, 16).replace('T', ' '));
   } catch (e) { console.warn('[status] push pominięty: ' + (e && e.message)); }
 }
+})();
