@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Savpol ERP -> Zamówienia bota Google (StoreBot)
 // @namespace    savpol-erp-tools
-// @version      1.0.0
-// @description  W tle, co 5 minut, szuka otwartych zamówień ZOID złożonych przez Google StoreBot (John Smith, *@storebotmail.joonix.net) i ostrzega, że trzeba je anulować. Niczego w ERP nie zmienia.
+// @version      2.0.0
+// @description  W tle, co 5 minut, szuka otwartych zamówień ZOID złożonych przez Google StoreBot (John Smith, *@storebotmail.joonix.net), sam je anuluje i powiadamia (Windows + opcjonalnie mail/telefon).
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-storebot.user.js
 // @downloadURL  https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-storebot.user.js
@@ -11,24 +11,38 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_notification
+// @grant        GM_xmlhttpRequest
+// @connect      ntfy.sh
+// @connect      script.google.com
+// @connect      script.googleusercontent.com
 // @run-at       document-start
 // ==/UserScript==
 
 // Google StoreBot (crawler Zakupów Google) przechodzi checkout esavpol.pl i zostawia
 // prawdziwe zamówienia ZOID. Robota nie wolno blokować (ryzyko odrzuceń w Merchant Center),
 // więc trzeba je szybko anulować, zanim magazyn (Synaptic) zacznie kompletować.
-// Ustalenia: esavpol_seo/SEO-NOTES.md, sekcja „Zamówienia John Smith = Google StoreBot”.
+// Anulowanie w ERP dociera do Synaptic. Ustalenia: esavpol_seo/SEO-NOTES.md,
+// sekcja „Zamówienia John Smith = Google StoreBot”.
 //
 // JAK DZIAŁA (sprawdzone 2026-10-13 na sesji Lecha):
 // - Nie loguje się i nie klika. Podsłuchuje zapytania, które ERP i tak wysyła
-//   (koperta z danymi sesji), i wysyła własne zapytanie o listę zamówień tą samą drogą.
-// - Zapytanie o listę wymaga zestawów danych, które strona wysyła przy otwarciu okna
+//   (koperta z danymi sesji), i wysyła własne zapytania tą samą drogą.
+// - Lista: wymaga zestawów danych, które strona wysyła przy otwarciu okna
 //   Sprzedaż → Zamówienia sprzedaży. Skrypt zapamiętuje je przy pierwszym otwarciu tego
 //   okna (GM_setValue, trwale) i od tej pory działa z dowolnego widoku ERP, także po F5.
 //   Sesję (LoginInfo) bierze z bieżącego zapytania strony — tylko w pamięci, bez hasła.
+// - Anulowanie: to samo, co wysyła Więcej → Anuluj (ActionExecute, csDocsHeadersCanceled),
+//   podpatrzone na koszyku bota 2027/ZOID/GLS1/000201. ERP nie pyta o powód.
+//   Rekord wybrany = wiersz z naszej listy + __RowGuid__, wskazany po csDocsHeadersG.
+//   Po wysłaniu skrypt czyta listę jeszcze raz i melduje sukces tylko przy statusie „Anulowany”.
 // - Kilka kart ERP: sprawdza tylko jedna naraz (znacznik czasu w GM_setValue).
 //
-// Wersja 1.x TYLKO OSTRZEGA (powiadomienie + czerwony pasek). Anulowanie dojdzie w 2.0.0.
+// Konsola (wynik diagnostyki idzie do schowka):
+//   savpolStoreBotStatus()             — stan skryptu
+//   savpolStoreBotSprawdzTeraz()       — sprawdzenie od razu
+//   savpolStoreBotAuto(false|true)     — wyłącz/włącz samo anulowanie (domyślnie włączone)
+//   savpolStoreBotPowiadomienia('url') — adres powiadomień zewnętrznych (ntfy.sh albo Google Apps Script)
+//   savpolStoreBotTest()               — próbne powiadomienie (Windows + zewnętrzne), bez ruszania ERP
 
 (function () {
   'use strict';
@@ -39,17 +53,22 @@
   const ZOID_TYP = '14210813631'; // „Zamówienie od odbiorcy - internet detal”
   const CO_ILE_MS = 5 * 60 * 1000;
   const DNI_WSTECZ = 7;
+  const MAX_PROB = 3; // tyle razy próbujemy anulować jedno zamówienie, potem tylko alarm
   // Statusy, w których zamówienie bota już nikomu nie przeszkadza.
   const ZAMKNIETE = ['W koszyku', 'Anulowany', 'Zamknięte', 'Zrealizowane'];
   const K_SZABLON = 'storebot_szablon';
   const K_OSTATNIE = 'storebot_ostatnie_sprawdzenie';
-  const K_ZGLOSZONE = 'storebot_zgloszone';
+  const K_PROBY = 'storebot_proby';         // { id: liczba prób anulowania }
+  const K_ZGLOSZONE = 'storebot_zgloszone'; // id, o których już powiadomiliśmy (alarm „anuluj ręcznie”)
+  const K_AUTO = 'storebot_auto';
+  const K_URL = 'storebot_powiadomienia_url';
+  const K_DZIENNIK = 'storebot_dziennik';   // ostatnie zdarzenia, do paska i diagnostyki
 
   // Ten sam wzorzec co pole `test` w esavpol_analityka/skrypty/erp_zoid.js.
   const toBot = w => /@storebotmail\.joonix\.net/i.test(String(w.EMails || ''))
     || /^john\s+smith$/i.test(((w.Name || '') + ' ' + (w.Surname || '')).trim());
 
-  const stan = { koperta: null, ostatniWynik: null, ostatniBlad: null, ostatnieSprawdzenie: null };
+  const stan = { koperta: null, doAnulowaniaRecznie: [], ostatniBlad: null, ostatnieSprawdzenie: null, wierszy: null };
 
   // ---------- Kodowanie zapytań ERP ----------
   // Input = base64 z ZIP-a (jeden plik JSON) albo samego JSON-a (Compress:false).
@@ -70,6 +89,26 @@
   });
   const odpakuj = v => (v && typeof v === 'object' && !Array.isArray(v)) ? Object.values(v)[0] : v;
 
+  async function wyslij(paczka) {
+    const odp = await fetch(location.origin + ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Requested-With': 'XMLHttpRequest' },
+      body: JSON.stringify({ DictIdent: DICT, Input: base64Utf8(JSON.stringify(paczka)), Compress: false })
+    });
+    const j = await odp.json();
+    if (j.Error) throw new Error(String(j.Error).slice(0, 200));
+    return j.JSONResult ? JSON.parse(await dekoduj(j.JSONResult)) : null;
+  }
+
+  // Koperta z sesji strony: LoginInfo + pola sesji w OperationInvokeInput. Hasła nie wysyłamy.
+  function nowaPaczka() {
+    if (!stan.koperta) throw new Error('brak sesji — ERP jeszcze nic nie wysłało');
+    const p = JSON.parse(JSON.stringify(stan.koperta));
+    p.LoginInfo.Password = '';
+    p.OperationInvokeInput.DelegateIdent = guid();
+    return p;
+  }
+
   // ---------- Podsłuch (bierny) ----------
 
   function zapamietaj(dict, j) {
@@ -81,7 +120,7 @@
     if (String(dict).toLowerCase() !== DICT.toLowerCase() || !lista) return;
     if (!Object.values(lista).some(t => t && t.Refresh && t.DataTableInit)) return;
     const pierwszy = !GM_getValue(K_SZABLON, null);
-    GM_setValue(K_SZABLON, JSON.stringify({ dict, params: oi.Params, parentIdent: oi.RefreshInputObject.ParentIdent, lista }));
+    GM_setValue(K_SZABLON, JSON.stringify({ params: oi.Params, parentIdent: oi.RefreshInputObject.ParentIdent, lista }));
     if (pierwszy) { console.log('[StoreBot] Wzorzec listy zamówień zapamiętany.'); setTimeout(sprawdz, 3000); }
     rysujPasek();
   }
@@ -102,19 +141,16 @@
     };
   }
 
-  // ---------- Zapytanie o listę ----------
+  // ---------- Lista ZOID ----------
+  // Zwraca surową siatkę (FieldDefs + Rows) — potrzebna do anulowania — i wiersze jako obiekty.
 
   async function pobierzZoid() {
     const sz = JSON.parse(GM_getValue(K_SZABLON, 'null'));
     if (!sz) throw new Error('brak wzorca — otwórz raz Sprzedaż → Zamówienia sprzedaży');
-    if (!stan.koperta) throw new Error('brak sesji — ERP jeszcze nic nie wysłało');
-
-    const p = JSON.parse(JSON.stringify(stan.koperta));
-    p.LoginInfo.Password = ''; // serwer go nie sprawdza
+    const p = nowaPaczka();
     const oi = p.OperationInvokeInput;
     oi.OperationName = 'RefreshDataSetSQL_Synchronous';
     oi.Params = sz.params;
-    oi.DelegateIdent = guid();
     // Losowy ParentUniqName: zapytanie nie wymaga otwartego okna listy.
     oi.RefreshInputObject = Object.assign({}, oi.RefreshInputObject || {},
       { ParentUniqName: guid(), ParentIdent: sz.parentIdent, DataTableInitList: sz.lista });
@@ -124,12 +160,13 @@
     const filtr = { WithoutCart: 0, RouteDateFrom: null, RouteDateTo: null, SearchText: 'zoid',
       csDocsHeadersStatusIdType: 0,
       DocDateFrom: iso(new Date(Date.now() - DNI_WSTECZ * 864e5)), DocDateTo: iso(new Date(Date.now() + 864e5)) };
+    const queryUID = guid();
     const l = oi.RefreshInputObject.DataTableInitList;
     Object.keys(l).forEach(k => {
       const t = l[k];
       if (!t || !t.DataTableInit) return;
       // SelectStmType 2 = wiersze (1 = sam licznik).
-      if (t.Refresh) Object.assign(t, { QueryUID: guid(), PageSizeFromClient: 500, PageActual: 0, SelectStmType: 2 });
+      if (t.Refresh) Object.assign(t, { QueryUID: queryUID, PageSizeFromClient: 500, PageActual: 0, SelectStmType: 2 });
       const dt = t.DataTableInit.DataTable;
       const idx = n => dt.FieldDefs.findIndex(f => f.FieldName === n);
       if (idx('DocDateFrom') < 0 || dt.Rows.length !== 1) return;
@@ -140,20 +177,55 @@
       });
     });
 
-    const odp = await fetch(location.origin + ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json; charset=utf-8', 'X-Requested-With': 'XMLHttpRequest' },
-      body: JSON.stringify({ DictIdent: sz.dict, Input: base64Utf8(JSON.stringify(p)), Compress: false })
-    });
-    const j = await odp.json();
-    if (j.Error) throw new Error(String(j.Error).slice(0, 200));
-    const wynik = JSON.parse(await dekoduj(j.JSONResult));
-    const ret = (wynik.Result && wynik.Result.RefreshObjectReturnList || [])
+    const wynik = await wyslij(p);
+    const ret = (wynik && wynik.Result && wynik.Result.RefreshObjectReturnList || [])
       .find(x => String(x.DataSetSQLIdent).toLowerCase() === DICT.toLowerCase());
     const dt = ret && ret.DataTable;
     if (!dt) throw new Error('ERP zwrócił listę bez wierszy');
-    return (dt.Rows || []).map(r => Object.fromEntries(dt.FieldDefs.map((f, i) => [f.FieldName, odpakuj(r[i])])));
+    const wiersze = (dt.Rows || []).map((r, i) => Object.assign(
+      Object.fromEntries(dt.FieldDefs.map((f, k) => [f.FieldName, odpakuj(r[k])])), { __idx: i }));
+    return { dt, wiersze, queryUID };
   }
+
+  // ---------- Anulowanie (Więcej → Anuluj) ----------
+
+  async function anuluj(lista, w) {
+    const { dt, queryUID } = lista;
+    const ix = n => dt.FieldDefs.findIndex(f => f.FieldName === n);
+    const sel = '<csSelectedRows><row><csDocsHeadersG>' + w.csDocsHeadersG + '</csDocsHeadersG></row></csSelectedRows>';
+    const wiersz = dt.Rows[w.__idx].slice();
+    const ustaw = (n, v) => { const i = ix(n); if (i >= 0) wiersz[i] = { Item: v }; };
+    ustaw('__IsSelected__', 1); ustaw('__SelectedValue__', sel); ustaw('__QueryUID__', queryUID);
+    const aktywny = {
+      DataSetSQLIdent: 'ActiveRecord', SortList: [], Refresh: false,
+      DataTableInit: { DataTable: {
+        FieldDefs: [{ FieldName: '__RowGuid__', FieldType: 'System.String', OriginalFieldType: 'System.String' }]
+          .concat(dt.FieldDefs.map(f => Object.assign({}, f, { OriginalFieldType: f.OriginalFieldType || f.FieldType }))),
+        Rows: [[{ Item: 'rowid_0' }].concat(wiersz)]
+      } }
+    };
+    const p = nowaPaczka();
+    const oi = p.OperationInvokeInput;
+    oi.OperationName = 'ActionExecute';
+    oi.RefreshInputObject = null;
+    oi.DataTableInitList = { '0': aktywny, length: 1 };
+    oi.Params = {
+      DictIdent: DICT, ActionIdent: 'csDocsHeadersCanceled', DataSetTypeIdent: DICT,
+      __StartField__: '__IsSelected__',
+      ExceptionIdent: DICT + '_' + guid() + '_csDocsHeadersCanceled' + guid(),
+      __SelectedRecords__: sel,
+      __PageRecords__: '<csPageRecords><row></row></csPageRecords>',
+      __SortList__: '<SortList><row><FieldName>DocDate</FieldName><DirectSort>0</DirectSort></row><row><FieldName>DocNumber</FieldName><DirectSort>0</DirectSort></row><row><FieldName>csDocsHeadersId</FieldName><DirectSort>0</DirectSort></row></SortList>',
+      HasParams: '0', ActionExecuteType: 1, LoginProviderObject: null
+    };
+    await wyslij(p);
+  }
+
+  // ---------- Główna pętla ----------
+
+  const opisZam = w => w.DocNumber + ' (' + (Number(w.CNAmount) || 0).toFixed(2) + ' zł netto, ' + String(w.DocDate || '').slice(0, 10) + ')';
+  const doAnulowania = wiersze => wiersze.filter(w =>
+    String(w.csDocsTypesId) === ZOID_TYP && !ZAMKNIETE.includes(w.StatusValueTranslatedDesc) && toBot(w));
 
   async function sprawdz() {
     // Jedna karta naraz: inna sprawdzała przed chwilą → pomiń.
@@ -163,24 +235,54 @@
     GM_setValue(K_OSTATNIE, Date.now());
     stan.ostatnieSprawdzenie = new Date();
     try {
-      const wiersze = await pobierzZoid();
-      const boty = wiersze
-        .filter(w => String(w.csDocsTypesId) === ZOID_TYP && !ZAMKNIETE.includes(w.StatusValueTranslatedDesc) && toBot(w))
-        .map(w => ({ id: String(w.csDocsHeadersId), nr: w.DocNumber, status: w.StatusValueTranslatedDesc,
-          data: String(w.DocDate || '').slice(0, 10), netto: Number(w.CNAmount) || 0,
-          dostawa: w.DeliveryMethodTranslatedDesc || '' }));
-      stan.ostatniWynik = { wierszy: wiersze.length, boty };
-      stan.ostatniBlad = null;
-      const zgloszone = JSON.parse(GM_getValue(K_ZGLOSZONE, '[]'));
-      const nowe = boty.filter(b => !zgloszone.includes(b.id));
-      if (nowe.length) {
-        GM_notification({
-          title: 'ERP: zamówienie bota Google — anuluj',
-          text: nowe.map(b => b.nr + ' (' + b.status + ')').join(', ') + '\nJohn Smith / StoreBot. Nie kompletować.',
-          timeout: 0
-        });
-        GM_setValue(K_ZGLOSZONE, JSON.stringify(zgloszone.concat(nowe.map(b => b.id)).slice(-200)));
+      let lista = await pobierzZoid();
+      stan.wierszy = lista.wiersze.length;
+      const boty = doAnulowania(lista.wiersze);
+      if (boty.length && GM_getValue(K_AUTO, true)) {
+        const proby = JSON.parse(GM_getValue(K_PROBY, '{}'));
+        const anulowane = [];
+        for (const w of boty) {
+          const id = String(w.csDocsHeadersId);
+          if ((proby[id] || 0) >= MAX_PROB) continue;
+          proby[id] = (proby[id] || 0) + 1;
+          GM_setValue(K_PROBY, JSON.stringify(proby));
+          try {
+            // Ostatnia kontrola tuż przed zapisem: tylko ZOID bota.
+            if (!toBot(w) || String(w.csDocsTypesId) !== ZOID_TYP) continue;
+            await anuluj(lista, w);
+            anulowane.push(w);
+          } catch (e) {
+            dziennik('błąd anulowania ' + w.DocNumber + ': ' + (e && e.message || e));
+          }
+        }
+        if (anulowane.length) {
+          // Odczyt kontrolny: sukces tylko, gdy ERP pokazuje „Anulowany”.
+          lista = await pobierzZoid();
+          const teraz = Object.fromEntries(lista.wiersze.map(w => [String(w.csDocsHeadersId), w.StatusValueTranslatedDesc]));
+          const ok = anulowane.filter(w => teraz[String(w.csDocsHeadersId)] === 'Anulowany');
+          if (ok.length) {
+            const tekst = 'Anulowano automatycznie zamówienie bota Google (John Smith / StoreBot): '
+              + ok.map(opisZam).join('; ') + '. Nic nie trzeba robić.';
+            dziennik(tekst);
+            GM_notification({ title: 'ERP: anulowano zamówienie bota Google', text: ok.map(w => w.DocNumber).join(', '), timeout: 15000 });
+            powiadomZewnetrznie('Anulowano zamówienie bota Google', tekst);
+          }
+        }
       }
+      // Co zostało nieanulowane (auto wyłączone, błąd, limit prób) → alarm dla człowieka.
+      const zostaly = doAnulowania(lista.wiersze);
+      stan.doAnulowaniaRecznie = zostaly;
+      const zgloszone = JSON.parse(GM_getValue(K_ZGLOSZONE, '[]'));
+      const nowe = zostaly.filter(w => !zgloszone.includes(String(w.csDocsHeadersId)));
+      if (nowe.length) {
+        const tekst = 'Zamówienie bota Google do ANULOWANIA RĘCZNIE (nie kompletować): ' + nowe.map(opisZam).join('; ')
+          + '. Skrypt nie zdołał go anulować sam.';
+        dziennik(tekst);
+        GM_notification({ title: 'ERP: zamówienie bota Google — anuluj ręcznie', text: nowe.map(w => w.DocNumber).join(', '), timeout: 0 });
+        powiadomZewnetrznie('PILNE: zamówienie bota Google do anulowania', tekst);
+        GM_setValue(K_ZGLOSZONE, JSON.stringify(zgloszone.concat(nowe.map(w => String(w.csDocsHeadersId))).slice(-200)));
+      }
+      stan.ostatniBlad = null;
     } catch (e) {
       stan.ostatniBlad = String(e && e.message || e);
       console.warn('[StoreBot] ' + stan.ostatniBlad);
@@ -188,12 +290,37 @@
     rysujPasek();
   }
 
-  // ---------- Widok: czerwony pasek (boty) albo mała plakietka (brak wzorca/błąd) ----------
+  // ---------- Powiadomienia zewnętrzne (mail / telefon) ----------
+  // Jeden adres, POST zwykłym tekstem: ntfy.sh/<temat> (push na telefon) albo Google Apps Script
+  // (mail). Adres ustawia się z konsoli i siedzi tylko w Tampermonkey — repo jest publiczne.
+
+  function powiadomZewnetrznie(tytul, tekst) {
+    const url = GM_getValue(K_URL, '');
+    if (!url) return;
+    GM_xmlhttpRequest({
+      // Nagłówki HTTP muszą być ASCII, więc polski tytuł idzie pierwszą linią treści.
+      method: 'POST', url, data: tytul + '\n' + tekst,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8', Title: 'ERP StoreBot', Priority: 'high' },
+      onerror: () => dziennik('nie wysłano powiadomienia zewnętrznego'),
+      onload: r => { if (r.status >= 400) dziennik('powiadomienie zewnętrzne: HTTP ' + r.status); }
+    });
+  }
+
+  function dziennik(tekst) {
+    const d = JSON.parse(GM_getValue(K_DZIENNIK, '[]'));
+    d.push(new Date().toISOString().slice(0, 16).replace('T', ' ') + ' ' + tekst);
+    GM_setValue(K_DZIENNIK, JSON.stringify(d.slice(-30)));
+    console.log('[StoreBot] ' + tekst);
+  }
+
+  // ---------- Widok ----------
+  // Czerwony pasek: zamówienie bota czeka na ręczne anulowanie. Żółta plakietka: brak wzorca / błąd.
+  // Udane anulowanie nie zostawia paska — zostaje powiadomienie i wpis w dzienniku.
 
   function rysujPasek() {
     if (!document.body) return;
     let el = document.getElementById('savpol-storebot');
-    const boty = stan.ostatniWynik ? stan.ostatniWynik.boty : [];
+    const boty = stan.doAnulowaniaRecznie;
     const bezWzorca = !GM_getValue(K_SZABLON, null);
     if (!boty.length && !bezWzorca && !stan.ostatniBlad) { if (el) el.remove(); return; }
     if (!el) {
@@ -205,8 +332,9 @@
     }
     if (boty.length) {
       el.style.background = '#c62828'; el.style.color = '#fff';
-      el.innerHTML = '<b>Zamówienia bota Google — anulować, nie kompletować:</b><br>'
-        + boty.map(b => escapeHtml(b.nr) + ' · ' + escapeHtml(b.status) + ' · ' + b.data + ' · ' + b.netto.toFixed(2) + ' zł netto').join('<br>')
+      el.innerHTML = '<b>Zamówienia bota Google — anulować ręcznie, nie kompletować:</b><br>'
+        + boty.map(w => escapeHtml(w.DocNumber) + ' · ' + escapeHtml(w.StatusValueTranslatedDesc) + ' · '
+          + String(w.DocDate || '').slice(0, 10) + ' · ' + (Number(w.CNAmount) || 0).toFixed(2) + ' zł netto').join('<br>')
         + '<br><small>John Smith / *@storebotmail.joonix.net. Pasek zniknie po anulowaniu (do 5 min).</small>';
     } else {
       el.style.background = '#fff3cd'; el.style.color = '#333';
@@ -217,21 +345,38 @@
   }
   const escapeHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // ---------- Diagnostyka do konsoli (wynik idzie do schowka) ----------
+  // ---------- Konsola ----------
+
+  function doSchowka(txt) {
+    try { if (typeof W.copy === 'function') { W.copy(txt); return; } } catch (e) { /* dalej */ }
+    if (navigator.clipboard) { navigator.clipboard.writeText(txt).catch(() => {}); return; }
+    const t = document.createElement('textarea'); t.value = txt; document.body.appendChild(t); t.select();
+    document.execCommand('copy'); t.remove();
+  }
 
   W.savpolStoreBotStatus = function () {
-    const txt = ['StoreBot ' + (GM_info && GM_info.script && GM_info.script.version) + ' | ' + location.href + ' | ' + new Date().toISOString(),
+    const txt = ['StoreBot ' + GM_info.script.version + ' | ' + location.href + ' | ' + new Date().toISOString(),
       'wzorzec listy: ' + (GM_getValue(K_SZABLON, null) ? 'jest' : 'BRAK'),
       'sesja: ' + (stan.koperta ? 'jest' : 'BRAK'),
+      'samo anulowanie: ' + (GM_getValue(K_AUTO, true) ? 'włączone' : 'WYŁĄCZONE'),
+      'powiadomienia zewnętrzne: ' + (GM_getValue(K_URL, '') ? 'ustawione' : 'brak'),
       'ostatnie sprawdzenie (ta karta): ' + (stan.ostatnieSprawdzenie ? stan.ostatnieSprawdzenie.toISOString() : '—'),
       'ostatnie sprawdzenie (dowolna karta): ' + new Date(Number(GM_getValue(K_OSTATNIE, 0))).toISOString(),
+      'ZOID na liście (7 dni): ' + stan.wierszy,
+      'do anulowania ręcznie: ' + stan.doAnulowaniaRecznie.map(w => w.DocNumber).join(', '),
       'błąd: ' + (stan.ostatniBlad || '—'),
-      'wynik: ' + JSON.stringify(stan.ostatniWynik)].join('\n');
-    if (typeof W.copy === 'function') W.copy(txt);
-    else if (navigator.clipboard) navigator.clipboard.writeText(txt).catch(() => {});
+      'dziennik:', ...JSON.parse(GM_getValue(K_DZIENNIK, '[]'))].join('\n');
+    doSchowka(txt);
     return 'skopiowano, ' + txt.length + ' znaków';
   };
-  W.savpolStoreBotSprawdzTeraz = () => { GM_setValue(K_OSTATNIE, 0); return sprawdz().then(() => stan.ostatniWynik || stan.ostatniBlad); };
+  W.savpolStoreBotSprawdzTeraz = () => { GM_setValue(K_OSTATNIE, 0); return sprawdz().then(() => stan.ostatniBlad || 'sprawdzone, ZOID: ' + stan.wierszy); };
+  W.savpolStoreBotAuto = wl => { GM_setValue(K_AUTO, wl !== false); return 'samo anulowanie: ' + (wl !== false ? 'włączone' : 'wyłączone'); };
+  W.savpolStoreBotPowiadomienia = url => { GM_setValue(K_URL, String(url || '')); return url ? 'zapisano adres powiadomień' : 'powiadomienia zewnętrzne wyłączone'; };
+  W.savpolStoreBotTest = () => {
+    GM_notification({ title: 'ERP StoreBot: test', text: 'Tak wygląda powiadomienie o zamówieniu bota.', timeout: 10000 });
+    powiadomZewnetrznie('Test: StoreBot', 'Próbne powiadomienie ze skryptu StoreBot w ERP (' + new Date().toLocaleString('pl-PL') + '). Nic nie trzeba robić.');
+    return 'wysłano próbne powiadomienie';
+  };
 
   zainstalujPodsluch();
   // Pierwsze sprawdzenie chwilę po starcie (strona musi wysłać choć jedno zapytanie), potem co 5 min.
