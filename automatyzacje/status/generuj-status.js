@@ -73,7 +73,6 @@ const kolejka = (() => {
   const m = /^\s*set\s+ZALEGLOSCI=(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})/mi.exec(txt);
   return m ? [{ t: 'sprzedaz', od: m[1], do: m[2] }] : [];
 })();
-const godz = h => h < 1 ? 'poniżej 1 h' : '~' + (h < 10 ? h.toFixed(1).replace('.', ',') : Math.round(h)) + ' h';
 const weekend = d => new Date(d + 'T00:00:00Z').getUTCDay() % 6 === 0;
 const dniRob = n => n === 1 ? '1 dzień roboczy' : n + (n < 5 ? ' dni robocze' : ' dni roboczych');
 const poDniachRob = n => { let d = new Date(today), k = 0; while (k < n) { d = addDays(d, 1); if (d.getUTCDay() % 6) k++; } return ymd(d); };
@@ -95,13 +94,13 @@ function zaleglosc(t, niepelne, brak) {
   // Licznik ERP z ostatniego biegu, jeśli bieg go odczytał (> 0); inaczej średnia.
   const reszta = d => { const w = ost.get(d); return w && w.total > 0 && w.have != null ? Math.max(0, w.total - w.have) : (weekend(d) ? srWkd : srRob); };
   const wKolejce = kolejka.find(k => k.t === t);
-  const r = { dok: 0, godz: 0, dokKolejka: 0, dniPoza: 0 };
+  const r = { dok: 0, godz: 0, dokKolejka: 0, dniPoza: 0, poza: [] };
   for (const d of [...niepelne, ...brak]) {
     const n = reszta(d);
     r.dok += n;
     if (d >= ymd(addDays(today, -OKNO[t]))) continue;               // codzienny bieg
     if (wKolejce && d >= wKolejce.od && d <= wKolejce.do) r.dokKolejka += n;
-    else r.dniPoza++;
+    else { r.dniPoza++; r.poza.push(d); }
   }
   r.godz = r.dok * sekNaDok / 3600;
   r.godzKolejka = r.dokKolejka * sekNaDok / 3600;
@@ -143,18 +142,27 @@ for (const t of Object.keys(scope)) {
 let godzSkum = 0;
 const koniecKolejki = {};
 for (const k of kolejka) { if (!zal[k.t]) continue; godzSkum += zal[k.t].godzKolejka; koniecKolejki[k.t] = godzSkum; }
+const dopelniacz = typ => typ === 'Sprzedaż' ? 'sprzedaży' : typ;
 for (const b of bars) {
   const z = zal[b.t];
   if (!z) continue;
-  const czas = 'ok. ' + fmt(Math.round(z.dok)) + ' dok. · ' + godz(z.godz) + ' pracy automatu';
-  let kiedy, recznie = false;
-  if (z.dniPoza) { kiedy = z.dniPoza + ' dni poza oknem automatu i poza kolejką zaległości — trzeba dopisać do kolejki'; recznie = true; }
-  else if (koniecKolejki[b.t] != null && z.dokKolejka > 0) {
-    const n = Math.max(1, Math.ceil(koniecKolejki[b.t] / godzNaDzien));
+  // Linia 1: data. Linia 2: skąd ta data (kolejka / codzienny bieg). Linia 3 (pomarańczowa):
+  // dni, których automat nie nadrobi wcale — do przyjrzenia się.
+  let data = null, wyjasnienie;
+  if (koniecKolejki[b.t] != null && z.dokKolejka > 0) {
+    data = poDniachRob(Math.max(1, Math.ceil(koniecKolejki[b.t] / godzNaDzien)));
     const przed = kolejka.slice(0, kolejka.findIndex(k => k.t === b.t)).filter(k => zal[k.t] && zal[k.t].dokKolejka > 0).map(k => etykieta[k.t]);
-    kiedy = 'aktualny ok. ' + short(poDniachRob(n)) + ' (' + dniRob(n) + (przed.length ? ', w kolejce po: ' + przed.join(', ') : ', pierwszy w kolejce') + ')';
-  } else kiedy = 'aktualny ok. ' + short(poDniachRob(1)) + ' (nadrobi codzienny bieg)';
-  b.est = { czas, kiedy, recznie };
+    wyjasnienie = przed.length
+      ? 'Niepełne i brakujące dni ' + dopelniacz(b.typ) + ' czekają w kolejce zaległości — automat zajmie się nimi po nadrobieniu: ' + przed.join(', ') + '.'
+      : 'Niepełne i brakujące dni ' + dopelniacz(b.typ) + ' są teraz nadrabiane (pierwsze w kolejce zaległości, pon–pt do 18:00).';
+  } else if (z.dniPoza < b.incompl + b.miss) {
+    data = poDniachRob(1);
+    wyjasnienie = 'Braki z ostatnich dni nadrobi codzienny bieg automatu.';
+  }
+  const uwaga = z.dniPoza
+    ? 'Poza automatem, do sprawdzenia: ' + zakresy(z.poza.sort()) + ' — ani codzienny bieg, ani kolejka zaległości tych dni nie obejmują.'
+    : null;
+  b.est = { data: data ? short(data) : null, wyjasnienie, uwaga };
 }
 
 // --- karty: produkty, kontrahenci ---
@@ -336,7 +344,8 @@ const SZABLON = `<title>Status scraperów ERP</title>
   .which p{margin:4px 0 0;line-height:1.45}
   .which b{font-weight:500;color:var(--ink)}
   .est{margin-top:4px;font-size:12px;color:var(--ink-2)}
-  .est .k{color:var(--ink-3)}
+  .est b{font-weight:500;color:var(--ink)}
+  .est .k{display:block;color:var(--ink-3)}
   .est .k.r{color:var(--warn-ink)}
   .ktab{max-height:420px;overflow:auto;border-top:.5px solid var(--line)}
   .ktab table{width:100%;border-collapse:collapse;font-size:13px}
@@ -405,7 +414,9 @@ document.getElementById("bars").innerHTML = DANE.bars.map(function(d){
    +'<i style="width:'+w(d.incompl/d.tot*100)+'%;background:var(--warn)"></i></div>'
    +'<div class="row-foot"><span class="tnum">'+d.compl+' gotowe · '+d.incompl+' niepełne · '+d.miss+' brak <span style="color:var(--ink-3)">(z '+d.tot+' dni)</span></span>'
    +'<span style="color:var(--ink-3)">'+esc(d.zakres)+'</span></div>'
-   +(d.est ? '<div class="est tnum">Do nadrobienia: '+esc(d.est.czas)+' · <span class="k'+(d.est.recznie?' r':'')+'">'+esc(d.est.kiedy)+'</span></div>' : '')
+   +(d.est ? '<div class="est tnum">Szacowane nadrobienie wszystkich zaległości: <b>'+(d.est.data ? esc(d.est.data) : 'brak daty — poza automatem')+'</b>'
+     +(d.est.wyjasnienie ? '<span class="k">'+esc(d.est.wyjasnienie)+'</span>' : '')
+     +(d.est.uwaga ? '<span class="k r">'+esc(d.est.uwaga)+'</span>' : '')+'</div>' : '')
    +((d.niepelne||d.brak) ? '<details class="which"><summary><span class="chev">›</span>&nbsp;które dni</summary>'
      +(d.niepelne ? '<p class="tnum"><b>Niepełne:</b> '+esc(d.niepelne)+'</p>' : '')
      +(d.brak ? '<p class="tnum"><b>Brak:</b> '+esc(d.brak)+'</p>' : '')+'</details>' : '')
