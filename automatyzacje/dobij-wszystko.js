@@ -226,6 +226,43 @@ if (process.env.PRODUKTY !== '0' && !DAYS && TARGET === 'prod') {
   }
 }
 
+// KONTRAHENCI — NOWI codziennie (plan 2026-10-02). lista-nowych.js szuka
+// prefiksami symboli powyżej progu (najwyższy symbol w worku) — tanio, bo tylko
+// „nowy” zakres. Jak są nowi: scrape kart → wgraj --realne. kontrola.js zawsze
+// (bilans ERP vs worek, zasila kartę statusu, sama commituje run-log). ZMIAN
+// istniejących NIE łapiemy codziennie — ERP nie ma filtra po dacie zmiany;
+// od tego jest tygodniowy przeglad.js (dołożony osobno). Pisze do PROD csCustomers.
+//   KONTRAHENCI=0 — wyłącz
+if (process.env.KONTRAHENCI !== '0' && !DAYS && TARGET === 'prod'
+    && fs.existsSync(path.join(AUTO_DIR, 'kontrahenci', 'lista-nowych.js'))) {
+  const kdir = path.join(AUTO_DIR, 'kontrahenci');
+  const koniecTs = parseInt(process.env.KONIEC_TS || '0', 10);
+  if (koniecTs && Date.now() > koniecTs - 30 * 60000) {
+    console.log('\n[dobij-wszystko] Kontrahenci: za blisko godziny końca — dziś pomijam.');
+  } else {
+    console.log('\n[dobij-wszystko] ===== KONTRAHENCI — nowi =====');
+    const idPlik = path.join(kdir, 'wynik', 'lista-nowych-id.txt');
+    try { fs.unlinkSync(idPlik); } catch { /* nie ma = ok */ }
+    const envK = { ...process.env, HEADLESS: 'true' };
+    const lista = spawnSync('node', ['lista-nowych.js'], { cwd: kdir, stdio: 'inherit', env: envK });
+    let idy = [];
+    try { idy = fs.readFileSync(idPlik, 'utf8').split(/\s+/).filter(Boolean); } catch { /* brak = zapytanie padło */ }
+    if (lista.error || lista.status !== 0) {
+      summary.push({ type: 'kontrahenci', targets: ['lista-nowych'], done: [], failed: ['lista-nowych.js'] });
+    } else if (!idy.length) {
+      summary.push({ type: 'kontrahenci', targets: [], done: [], failed: [] });
+    } else {
+      const s1 = spawnSync('node', ['scrape.js', '--plik=' + idPlik], { cwd: kdir, stdio: 'inherit', env: envK });
+      const s2 = s1.status === 0 ? spawnSync('node', ['wgraj-do-worek.js', '--realne'], { cwd: kdir, stdio: 'inherit', env: envK }) : { status: 1 };
+      const ok = s1.status === 0 && s2.status === 0;
+      summary.push({ type: 'kontrahenci', targets: idy, done: ok ? [`${idy.length} nowych`] : [], failed: ok ? [] : ['scrape/wgraj'] });
+    }
+    // Kontrola/bilans zawsze (nie wchodzi na ERP — porównuje pomiary z workiem);
+    // sama commituje run-log + state/kontrola-ostatnia.json (karta statusu).
+    spawnSync('node', ['kontrola.js', '--realne'], { cwd: kdir, stdio: 'inherit', env: envK });
+  }
+}
+
 // ZALEGŁOŚCI SPRZEDAŻY (Tomek 2026-10-06: pon–pt, maks. do 18:00). Po zwykłym
 // biegu ten sam proces nadgania jawny zakres dni, aż minie godzina końca.
 // Dni kompletne są pomijane, więc po nadrobieniu krok sam nic nie robi —
