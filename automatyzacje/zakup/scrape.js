@@ -97,7 +97,7 @@ async function trybDzien() {
       const pierwsze = Object.values(W.TYPY).map(t => brakujace.find(w => w.csDocsTypesId === t)).filter(Boolean);
       brakujace = Array.from(new Set(pierwsze.concat(brakujace))).slice(0, MAX_DOCS);
     }
-    console.log('[zakup] FZ ' + log.fz + ', FZ_KSEF ' + log.fzKsef + '; już w bazie ' + obecne.size + ', niezaksięgowane ' + log.oczekujace.length + ', do pobrania ' + brakujace.length + (MAX_DOCS ? ' (próbka MAX_DOCS=' + MAX_DOCS + ')' : ''));
+    console.log('[zakup] FZ ' + log.fz + ', FZ_KSEF ' + log.fzKsef + '; już w bazie ' + obecne.size + ', niezaksięgowane ' + log.oczekujace.length + ', do pobrania ' + brakujace.length + (MAX_DOCS ? ' (próbka ZAKUP_PROBKA=' + MAX_DOCS + ')' : ''));
 
     const pobierz = podepnijKarte(page);
     const wpisane = Array.from(obecne);
