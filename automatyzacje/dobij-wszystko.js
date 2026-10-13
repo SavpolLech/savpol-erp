@@ -263,6 +263,58 @@ if (process.env.KONTRAHENCI !== '0' && !DAYS && TARGET === 'prod'
   }
 }
 
+// KONTRAHENCI — TYGODNIOWY PRZEGLĄD ZMIAN (plan 2026-10-02, włączony 2026-10-13).
+// ERP nie ma filtra po dacie zmiany, więc raz w tygodniu przechodzimy CAŁĄ listę
+// (~2766 stron) i porównujemy z csCustomers: UPDATE zmienionych (+ historia w
+// csCustomersZmiany) oraz pełne karty nowych, których nie złapał codzienny krok
+// „nowi" (heurystyka prefiksów). Wyjątek od insert-only — decyzja Lecha
+// 2026-10-06 na prośbę Michała. Idzie PRZED zaległościami sprzedaży, bo te
+// zjadają dzień do 18:00.
+// ŚRODA (dzień 3): środek tygodnia. Poniedziałek nadrabia weekend, w piątek leci
+// przegląd sprzedaży — więc dwa ciężkie przeglądy nie spadają na jeden dzień.
+// Raz na dzień: znacznikiem jest data w state/przeglad-ostatni.json (pisze ją sam
+// przeglad.js). Pisze do PROD csCustomers.
+//   KONTR_PRZEGLAD=1 — wymuś dziś;  KONTR_PRZEGLAD_DZIEN=1..7 (pn..nd)
+if (process.env.KONTRAHENCI !== '0' && !DAYS && TARGET === 'prod'
+    && fs.existsSync(path.join(AUTO_DIR, 'kontrahenci', 'przeglad.js'))) {
+  const kdir = path.join(AUTO_DIR, 'kontrahenci');
+  const dzisiaj = new Date();
+  const dzienTyg = dzisiaj.getDay() || 7;
+  const dzisYmd = ymd(new Date(dzisiaj.getTime() - dzisiaj.getTimezoneOffset() * 60000));
+  let ostatniPrzeglad = '';
+  try { ostatniPrzeglad = (JSON.parse(fs.readFileSync(path.join(kdir, 'state', 'przeglad-ostatni.json'), 'utf8')).pobrano || '').slice(0, 10); } catch { /* jeszcze nie było */ }
+  const pora = process.env.KONTR_PRZEGLAD === '1' || dzienTyg === parseInt(process.env.KONTR_PRZEGLAD_DZIEN || '3', 10);
+  const koniecTs = parseInt(process.env.KONIEC_TS || '0', 10);
+  if (pora && ostatniPrzeglad !== dzisYmd) {
+    if (koniecTs && Date.now() > koniecTs - 60 * 60000) {
+      console.log('\n[dobij-wszystko] Przegląd kontrahentów: za blisko godziny końca (~45 min roboty) — dziś pomijam.');
+    } else {
+      console.log('\n[dobij-wszystko] ===== KONTRAHENCI — tygodniowy przegląd =====');
+      const envK = { ...process.env, HEADLESS: 'true' };
+      // Exit 0 = pełny przegląd (zapisano), 2 = niepełny (sam odmówił zapisu), inne = błąd.
+      const p = spawnSync('node', ['przeglad.js', '--zapisz'], { cwd: kdir, stdio: 'inherit', env: envK });
+      const done = [], failed = [];
+      if (p.error || (p.status !== 0 && p.status !== 2)) {
+        failed.push('przeglad.js');
+      } else {
+        if (p.status === 2) failed.push('przegląd niepełny — bez zapisu');
+        else done.push('UPDATE zmienionych');
+        // Pełne karty nowych, których nie złapał codzienny krok „nowi".
+        const nowiPlik = path.join(kdir, 'wynik', 'przeglad-nowi-id.txt');
+        let nowi = [];
+        try { nowi = fs.readFileSync(nowiPlik, 'utf8').split(/\s+/).filter(Boolean); } catch { /* brak = brak nowych */ }
+        if (p.status === 0 && nowi.length) {
+          const s1 = spawnSync('node', ['scrape.js', '--plik=' + nowiPlik], { cwd: kdir, stdio: 'inherit', env: envK });
+          const s2 = s1.status === 0 ? spawnSync('node', ['wgraj-do-worek.js', '--realne'], { cwd: kdir, stdio: 'inherit', env: envK }) : { status: 1 };
+          if (s1.status === 0 && s2.status === 0) done.push(`${nowi.length} nowych kart`);
+          else failed.push('scrape/wgraj nowych');
+        }
+      }
+      summary.push({ type: 'kontrahenci-przeglad', targets: ['przegląd'], done, failed });
+    }
+  }
+}
+
 // ZALEGŁOŚCI SPRZEDAŻY (Tomek 2026-10-06: pon–pt, maks. do 18:00). Po zwykłym
 // biegu ten sam proces nadgania jawny zakres dni, aż minie godzina końca.
 // Dni kompletne są pomijane, więc po nadrobieniu krok sam nic nie robi —
