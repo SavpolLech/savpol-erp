@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Zamówienia bota Google (StoreBot)
 // @namespace    savpol-erp-tools
-// @version      2.0.1
+// @version      2.0.2
 // @description  W tle, co 5 minut, szuka otwartych zamówień ZOID złożonych przez Google StoreBot (John Smith, *@storebotmail.joonix.net), sam je anuluje i powiadamia (Windows + mail).
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-storebot.user.js
@@ -73,7 +73,7 @@
   const toBot = w => /@storebotmail\.joonix\.net/i.test(String(w.EMails || ''))
     || /^john\s+smith$/i.test(((w.Name || '') + ' ' + (w.Surname || '')).trim());
 
-  const stan = { koperta: null, doAnulowaniaRecznie: [], ostatniBlad: null, bledyZRzedu: 0, ostatnieSprawdzenie: null, wierszy: null };
+  const stan = { koperta: null, doAnulowaniaRecznie: [], ostatniBlad: null, bledyZRzedu: 0, zamkniety: null, ostatnieSprawdzenie: null, wierszy: null };
 
   // ---------- Kodowanie zapytań ERP ----------
   // Input = base64 z ZIP-a (jeden plik JSON) albo samego JSON-a (Compress:false).
@@ -336,12 +336,16 @@
     const boty = stan.doAnulowaniaRecznie;
     const bezWzorca = !GM_getValue(K_SZABLON, null);
     const awaria = stan.ostatniBlad && stan.bledyZRzedu >= BLEDY_PLAKIETKA;
-    if (!boty.length && !bezWzorca && !awaria) { if (el) el.remove(); return; }
+    // Klucz tego, co pokazujemy. Zamknięty krzyżykiem komunikat wraca dopiero, gdy klucz się zmieni
+    // (np. nowe zamówienie bota) albo po przeładowaniu strony.
+    const klucz = boty.length ? 'boty:' + boty.map(w => w.csDocsHeadersId).join(',')
+      : bezWzorca ? 'wzorzec' : awaria ? 'awaria' : null;
+    if (!klucz || klucz === stan.zamkniety) { if (el) el.remove(); return; }
     if (!el) {
       el = document.createElement('div');
       el.id = 'savpol-storebot';
       el.style.cssText = 'position:fixed;z-index:2147483647;right:12px;bottom:12px;max-width:420px;'
-        + 'padding:10px 14px;border-radius:6px;font:13px/1.4 Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.35)';
+        + 'padding:10px 30px 10px 14px;border-radius:6px;font:13px/1.4 Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.35)';
       document.body.appendChild(el);
     }
     if (boty.length) {
@@ -356,6 +360,12 @@
         ? 'StoreBot: otwórz raz Sprzedaż → Zamówienia sprzedaży, żeby włączyć pilnowanie zamówień bota.'
         : 'StoreBot: sprawdzanie nie działa (' + stan.ostatniBlad + ').';
     }
+    const x = document.createElement('span');
+    x.textContent = '×';
+    x.title = 'Zamknij';
+    x.style.cssText = 'position:absolute;top:4px;right:9px;cursor:pointer;font-size:18px;line-height:1;opacity:.8';
+    x.onclick = () => { stan.zamkniety = klucz; el.remove(); };
+    el.appendChild(x);
   }
   const escapeHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
