@@ -17,6 +17,17 @@ const ymd = d => d.toISOString().slice(0, 10);
 const addDays = (b, n) => { const d = new Date(b); d.setUTCDate(d.getUTCDate() + n); return d; };
 const today = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00Z');
 const short = iso => iso.slice(8, 10) + '.' + iso.slice(5, 7);
+// Lista dni → zwarte zakresy: ['2026-08-01','2026-08-02','2026-08-03','2026-08-07'] → '01.08–03.08, 07.08'.
+const zakresy = dni => {
+  const out = [];
+  for (let i = 0; i < dni.length; i++) {
+    let j = i;
+    while (j + 1 < dni.length && ymd(addDays(new Date(dni[j] + 'T00:00:00Z'), 1)) === dni[j + 1]) j++;
+    out.push(j > i ? short(dni[i]) + '–' + short(dni[j]) : short(dni[i]));
+    i = j;
+  }
+  return out.join(', ');
+};
 const fmt = n => (n == null ? '—' : Number(n).toLocaleString('pl-PL'));
 
 // --- dni per typ dokumentowy ---
@@ -35,12 +46,15 @@ for (const t of Object.keys(scope)) {
     try { const s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); if (s.dateFrom) m.set(s.dateFrom, !!s.complete); } catch {}
   }
   let tot = 0, compl = 0, incompl = 0, miss = 0;
+  const dniNiepelne = [], dniBrak = [];
   for (let d = new Date(scope[t][0] + 'T00:00:00Z'), e = new Date(scope[t][1] + 'T00:00:00Z'); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
-    const v = m.get(ymd(d)); tot++; if (v === true) compl++; else if (v === false) incompl++; else miss++;
+    const v = m.get(ymd(d)); tot++;
+    if (v === true) compl++; else if (v === false) { incompl++; dniNiepelne.push(ymd(d)); } else { miss++; dniBrak.push(ymd(d)); }
   }
   const pct = tot ? Math.round(compl / tot * 100) : 0;
   const nad = (incompl + miss) > 3;
-  bars.push({ typ: etykieta[t], pct, compl, incompl, miss, tot, zakres: short(scope[t][0]) + ' – ' + short(scope[t][1]), status: nad ? 'nadrabia' : (incompl ? 'prawie komplet' : 'aktualny'), nad });
+  bars.push({ typ: etykieta[t], pct, compl, incompl, miss, tot, zakres: short(scope[t][0]) + ' – ' + short(scope[t][1]), status: nad ? 'nadrabia' : (incompl ? 'prawie komplet' : 'aktualny'), nad,
+    niepelne: zakresy(dniNiepelne), brak: zakresy(dniBrak) });
 }
 
 // --- karty: produkty, kontrahenci ---
@@ -137,6 +151,11 @@ const SZABLON = `<title>Status scraperów ERP</title>
   .track{display:flex;width:100%;height:16px;border-radius:6px;overflow:hidden;background:var(--miss)}
   .track>i{display:block}
   .row-foot{display:flex;justify-content:space-between;gap:8px;margin-top:6px;font-size:13px;color:var(--ink-2)}
+  details.which{margin-top:4px;font-size:13px;color:var(--ink-2)}
+  details.which summary{display:inline-flex;padding:2px 0;font-size:12px;color:var(--accent)}
+  details.which[open] summary .chev{transform:rotate(90deg)}
+  .which p{margin:4px 0 0;line-height:1.45}
+  .which b{font-weight:500;color:var(--ink)}
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
   .card{background:var(--surface);border:.5px solid var(--line);border-radius:12px;padding:1rem 1.1rem}
   .ct{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
@@ -191,7 +210,11 @@ document.getElementById("bars").innerHTML = DANE.bars.map(function(d){
    +'<i style="width:'+w(d.compl/d.tot*100)+'%;background:var(--ok)"></i>'
    +'<i style="width:'+w(d.incompl/d.tot*100)+'%;background:var(--warn)"></i></div>'
    +'<div class="row-foot"><span class="tnum">'+d.compl+' gotowe · '+d.incompl+' niepełne · '+d.miss+' brak <span style="color:var(--ink-3)">(z '+d.tot+' dni)</span></span>'
-   +'<span style="color:var(--ink-3)">'+esc(d.zakres)+'</span></div></div>';
+   +'<span style="color:var(--ink-3)">'+esc(d.zakres)+'</span></div>'
+   +((d.niepelne||d.brak) ? '<details class="which"><summary><span class="chev">›</span>&nbsp;które dni</summary>'
+     +(d.niepelne ? '<p class="tnum"><b>Niepełne:</b> '+esc(d.niepelne)+'</p>' : '')
+     +(d.brak ? '<p class="tnum"><b>Brak:</b> '+esc(d.brak)+'</p>' : '')+'</details>' : '')
+   +'</div>';
 }).join("");
 document.getElementById("cards").innerHTML = DANE.cards.map(function(c){
   return '<div class="card"><div class="ct"><span class="cn">'+esc(c.nm)+'</span><span class="pill">'+esc(c.pill)+'</span></div>'
