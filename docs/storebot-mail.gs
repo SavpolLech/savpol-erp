@@ -7,7 +7,10 @@
 const ODBIORCA = 'l.dutkiewicz@savpol.pl';
 
 function doPost(e) {
-  const tresc = String(e && e.postData && e.postData.contents || '');
+  // Userscript wysyła treść przez encodeURIComponent (sam ASCII) — Apps Script gubił polskie znaki
+  // z surowego UTF-8 w treści POST.
+  let tresc = String(e && e.postData && e.postData.contents || '');
+  try { tresc = decodeURIComponent(tresc); } catch (err) { /* zostaje surowa */ }
   // Przypadkowe wywołania (bez znanego nagłówka) ignorujemy.
   if (!/bota Google|StoreBot/.test(tresc)) return ContentService.createTextOutput('pominięto');
   const [temat, ...reszta] = tresc.split('\n');

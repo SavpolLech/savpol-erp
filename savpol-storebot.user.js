@@ -2,7 +2,7 @@
 // @name         Savpol ERP -> Zamówienia bota Google (StoreBot)
 // @namespace    savpol-erp-tools
 // @version      2.0.0
-// @description  W tle, co 5 minut, szuka otwartych zamówień ZOID złożonych przez Google StoreBot (John Smith, *@storebotmail.joonix.net), sam je anuluje i powiadamia (Windows + opcjonalnie mail/telefon).
+// @description  W tle, co 5 minut, szuka otwartych zamówień ZOID złożonych przez Google StoreBot (John Smith, *@storebotmail.joonix.net), sam je anuluje i powiadamia (Windows + mail).
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-storebot.user.js
 // @downloadURL  https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-storebot.user.js
@@ -12,7 +12,6 @@
 // @grant        GM_setValue
 // @grant        GM_notification
 // @grant        GM_xmlhttpRequest
-// @connect      ntfy.sh
 // @connect      script.google.com
 // @connect      script.googleusercontent.com
 // @run-at       document-start
@@ -41,7 +40,7 @@
 //   savpolStoreBotStatus()             — stan skryptu
 //   savpolStoreBotSprawdzTeraz()       — sprawdzenie od razu
 //   savpolStoreBotAuto(false|true)     — wyłącz/włącz samo anulowanie (domyślnie włączone)
-//   savpolStoreBotPowiadomienia('url') — adres powiadomień zewnętrznych (ntfy.sh albo Google Apps Script)
+//   savpolStoreBotPowiadomienia('url') — adres skryptu Google, który wysyła mail (docs/storebot-mail.gs)
 //   savpolStoreBotTest()               — próbne powiadomienie (Windows + zewnętrzne), bez ruszania ERP
 
 (function () {
@@ -290,17 +289,18 @@
     rysujPasek();
   }
 
-  // ---------- Powiadomienia zewnętrzne (mail / telefon) ----------
-  // Jeden adres, POST zwykłym tekstem: ntfy.sh/<temat> (push na telefon) albo Google Apps Script
-  // (mail). Adres ustawia się z konsoli i siedzi tylko w Tampermonkey — repo jest publiczne.
+  // ---------- Powiadomienie mailem ----------
+  // POST do Google Apps Script (docs/storebot-mail.gs), który wysyła mail do Lecha.
+  // Adres ustawia się z konsoli i siedzi tylko w Tampermonkey — repo jest publiczne.
 
   function powiadomZewnetrznie(tytul, tekst) {
     const url = GM_getValue(K_URL, '');
     if (!url) return;
     GM_xmlhttpRequest({
-      // Nagłówki HTTP muszą być ASCII, więc polski tytuł idzie pierwszą linią treści.
-      method: 'POST', url, data: tytul + '\n' + tekst,
-      headers: { 'Content-Type': 'text/plain; charset=utf-8', Title: 'ERP StoreBot', Priority: 'high' },
+      // Tytuł idzie pierwszą linią treści; całość przez encodeURIComponent, bo Apps Script
+      // gubił polskie znaki z surowego UTF-8 (docs/storebot-mail.gs dekoduje).
+      method: 'POST', url, data: encodeURIComponent(tytul + '\n' + tekst),
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       onerror: () => dziennik('nie wysłano powiadomienia zewnętrznego'),
       onload: r => { if (r.status >= 400) dziennik('powiadomienie zewnętrzne: HTTP ' + r.status); }
     });
