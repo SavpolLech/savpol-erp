@@ -1,0 +1,10 @@
+# Kolejka nadrabiania zaległości — JEDNO źródło dla orkiestratora (dobij-wszystko.js)
+# i strony statusu (status/generuj-status.js).
+# Kolejność linii = kolejność nadrabiania: następny typ rusza dopiero, gdy poprzedni
+# nie ma już niepełnych/brakujących dni w swoim zakresie. Okno: pon–pt, po zwykłym
+# biegu, do 18:00. Dni kompletne są pomijane.
+# Zasada (Lech 2026-10-13): mała zaległość może wskoczyć na początek; duże po kolei.
+# Format: typ:od..do
+wz:2026-07-25..2026-10-06
+sprzedaz:2026-07-01..2026-09-14
+pz:2026-07-25..2026-10-06

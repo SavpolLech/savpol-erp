@@ -60,18 +60,20 @@ function wpisyLogu(t) {
 }
 // Okno codziennego biegu (lib-wspolne/catchup.js: <TYP>_CATCHUP_WINDOW, domyślnie 5;
 // dobij-wszystko.js: minimalny wiek dnia). Starsze dni nadrabia tylko kolejka
-// zaległości z launchera: ZALEGLOSCI_KOLEJKA=wz:od..do,sprzedaz:od..do,... —
-// typy po kolei, następny dopiero po skończeniu poprzedniego, pon–pt do 18:00.
-// Stary format ZALEGLOSCI=od..do = sama sprzedaż.
+// zaległości: automatyzacje/zaleglosci-kolejka.txt — jedno źródło dla orkiestratora
+// i tej strony (linie typ:od..do; typy po kolei, następny dopiero po skończeniu
+// poprzedniego, pon–pt do 18:00).
 const OKNO = { wz: 5 + 1, mm: 5 + 3, pz: 5 + 1, sprzedaz: 21 + 14 };
 const kolejka = (() => {
-  let txt = '';
-  try { txt = fs.readFileSync(path.join(AUTO, 'dobij-wszystko-launcher.bat'), 'utf8'); } catch { return []; }
-  // Zmienna środowiskowa ma pierwszeństwo (podgląd: ZALEGLOSCI_KOLEJKA=... node status/generuj-status.js).
-  const k = process.env.ZALEGLOSCI_KOLEJKA ? [null, process.env.ZALEGLOSCI_KOLEJKA] : /^\s*set\s+ZALEGLOSCI_KOLEJKA=(.+)$/mi.exec(txt);
-  if (k) return k[1].trim().split(',').map(x => /^(\w+):(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(x.trim())).filter(Boolean).map(m => ({ t: m[1].toLowerCase(), od: m[2], do: m[3] }));
-  const m = /^\s*set\s+ZALEGLOSCI=(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})/mi.exec(txt);
-  return m ? [{ t: 'sprzedaz', od: m[1], do: m[2] }] : [];
+  // Zmienna środowiskowa ma pierwszeństwo (podgląd: ZALEGLOSCI_KOLEJKA=wz:od..do,pz:od..do).
+  let wpisy;
+  if (process.env.ZALEGLOSCI_KOLEJKA) wpisy = process.env.ZALEGLOSCI_KOLEJKA.split(',');
+  else {
+    try { wpisy = fs.readFileSync(path.join(AUTO, 'zaleglosci-kolejka.txt'), 'utf8').split(/?
+/).filter(l => !/^s*(#|$)/.test(l)); }
+    catch { return []; }
+  }
+  return wpisy.map(x => /^(w+):(d{4}-d{2}-d{2})..(d{4}-d{2}-d{2})$/.exec(x.trim())).filter(Boolean).map(m => ({ t: m[1].toLowerCase(), od: m[2], do: m[3] }));
 })();
 const weekend = d => new Date(d + 'T00:00:00Z').getUTCDay() % 6 === 0;
 const dniRob = n => n === 1 ? '1 dzień roboczy' : n + (n < 5 ? ' dni robocze' : ' dni roboczych');
