@@ -88,6 +88,8 @@ async function trybDzien() {
     log.juzWBazie = obecne.size;
     // Niezaksięgowane czekają: dzień przechodzi jeszcze raz w przeglądzie
     // 8 tygodni (orkiestrator), aż je zaksięgują.
+    log.statusy = dnia.reduce((m, w) => { m[w.status || '(brak)'] = (m[w.status || '(brak)'] || 0) + 1; return m; }, {});
+    console.log('[zakup] Statusy FZ/FZ_KSEF: ' + JSON.stringify(log.statusy));
     log.oczekujace = dnia.filter(w => !obecne.has(w.csDocsHeadersId) && !zaksiegowana(w)).map(w => w.csDocsHeadersId);
     let brakujace = dnia.filter(w => !obecne.has(w.csDocsHeadersId) && zaksiegowana(w));
     // Próbka: po jednej z każdego typu na początek, reszta do limitu.
