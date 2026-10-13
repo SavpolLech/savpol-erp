@@ -1,0 +1,22 @@
+{
+  "dateFrom": "2026-10-09",
+  "dateTo": "2026-10-09",
+  "processedDocNumbers": [
+    "30977875044",
+    "30977876472",
+    "30979095174"
+  ],
+  "complete": false,
+  "lastUpdated": "2026-10-13T15:58:35.090Z",
+  "runs": [
+    {
+      "ts": "2026-10-13T15:58:35.088Z",
+      "erp": 160,
+      "fz": 2,
+      "fzKsef": 124,
+      "oczekujace": 13,
+      "wstawiono": 3,
+      "complete": false
+    }
+  ]
+}
