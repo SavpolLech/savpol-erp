@@ -39,6 +39,74 @@ const scope = {
 };
 const etykieta = { wz: 'WZ', mm: 'MM', pz: 'PZ', sprzedaz: 'Sprzedaż' };
 const bars = [];
+
+// --- szacunek nadrabiania ---
+// Wpisy run-log sprowadzone do jednego kształtu: dzień, ile dok. w ERP (total),
+// ile już w bazie (have), ile pobrano w tym biegu (got) i ile to trwało (sec).
+function wpisyLogu(t) {
+  const p = path.join(AUTO, t, 'run-log.jsonl');
+  if (!fs.existsSync(p)) return [];
+  const out = [];
+  for (const ln of fs.readFileSync(p, 'utf8').trim().split(String.fromCharCode(10))) {
+    try {
+      const o = JSON.parse(ln);
+      if (t === 'sprzedaz') out.push({ ts: o.ts, dzien: o.dzien, total: o.fa + (o.par || 0), have: (o.juzWBazie || 0) + (o.wstawiono || 0), got: o.wstawiono || 0, sec: o.sekundy || 0, done: o.complete === true });
+      else out.push({ ts: o.ts, dzien: o.filterDateFrom, total: o.expectedTotal, have: o.docsLacznieDlaZakresu, got: o.docsZebraneWTejSesji || 0, sec: (o.czasTrwaniaMs || 0) / 1000, done: o.allPagesExhausted === true });
+    } catch {}
+  }
+  return out;
+}
+// Okno codziennego biegu (lib-wspolne/catchup.js: <TYP>_CATCHUP_WINDOW, domyślnie 5;
+// dobij-wszystko.js: minimalny wiek dnia). Starszych dni automat sam nie ponawia,
+// poza zakresem ZALEGLOSCI z launchera (dziś: tylko sprzedaż).
+const OKNO = { wz: 5 + 1, mm: 5 + 3, pz: 5 + 1, sprzedaz: 21 + 14 };
+const zaleglosci = (() => {
+  try {
+    const m = /ZALEGLOSCI=(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})/.exec(fs.readFileSync(path.join(AUTO, 'dobij-wszystko-launcher.bat'), 'utf8'));
+    return m ? [m[1], m[2]] : null;
+  } catch { return null; }
+})();
+const godz = h => h < 1 ? 'poniżej 1 h' : '~' + (h < 10 ? h.toFixed(1).replace('.', ',') : Math.round(h)) + ' h';
+function szacunek(t, niepelne, brak) {
+  if (!niepelne.length && !brak.length) return null;
+  const wpisy = wpisyLogu(t);
+  const ost = new Map();
+  for (const w of wpisy) if (w.dzien && (!ost.has(w.dzien) || ost.get(w.dzien).ts < w.ts)) ost.set(w.dzien, w);
+  const pelne = [...ost.values()].filter(w => w.done && w.total != null);
+  // Średnia osobno dla dni roboczych i weekendów (weekend to kilka dok., nie setki).
+  const weekend = d => new Date(d + 'T00:00:00Z').getUTCDay() % 6 === 0;
+  const sr = arr => arr.length ? arr.reduce((a, w) => a + w.total, 0) / arr.length : 0;
+  const srRob = sr(pelne.filter(w => !weekend(w.dzien))), srWkd = sr(pelne.filter(w => weekend(w.dzien)));
+  const naDzien = d => weekend(d) ? srWkd : srRob;
+  const od = addDays(today, -21).toISOString();
+  const tempoRuns = wpisy.filter(w => w.ts >= od && w.got >= 20);
+  const sGot = tempoRuns.reduce((a, w) => a + w.got, 0), sSec = tempoRuns.reduce((a, w) => a + w.sec, 0);
+  const sekNaDok = sGot ? sSec / sGot : null;
+  // Licznik ERP z ostatniego biegu, jeśli bieg go odczytał (> 0); inaczej średnia.
+  const reszta = d => { const w = ost.get(d); return w && w.total > 0 && w.have != null ? Math.max(0, w.total - w.have) : naDzien(d); };
+  const auto = d => d >= ymd(addDays(today, -OKNO[t])) || (t === 'sprzedaz' && zaleglosci && d >= zaleglosci[0] && d <= zaleglosci[1]);
+  let dok = 0, dokRecznie = 0, dniRecznie = 0;
+  for (const d of [...niepelne, ...brak]) { const r = reszta(d); dok += r; if (!auto(d)) { dokRecznie += r; dniRecznie++; } }
+  dok = Math.round(dok);
+  const czesci = ['ok. ' + fmt(dok) + ' dok.'];
+  if (sekNaDok) czesci.push(godz(dok * sekNaDok / 3600) + ' pracy automatu');
+  let kiedy;
+  if (!dniRecznie) {
+    if (t === 'sprzedaz') {
+      // Realne tempo nadrabiania: dokumenty wstawione dziennie w ostatnim tygodniu (dni z biegiem).
+      const odT = addDays(today, -7).toISOString(), perDzien = new Map();
+      for (const w of wpisy) if (w.ts >= odT && w.got) { const k = w.ts.slice(0, 10); perDzien.set(k, (perDzien.get(k) || 0) + w.got); }
+      const tempo = perDzien.size ? [...perDzien.values()].reduce((a, b) => a + b, 0) / perDzien.size : 0;
+      if (tempo > 0) {
+        const n = Math.ceil(dok / tempo);
+        let d = new Date(today), k = 0;
+        while (k < n) { d = addDays(d, 1); if (d.getUTCDay() % 6) k++; }
+        kiedy = 'nadrabia sam (pon–pt do 18:00): ~' + n + (n === 1 ? ' dzień roboczy' : (n < 5 ? ' dni robocze' : ' dni roboczych')) + ', koniec ok. ' + short(ymd(d));
+      } else kiedy = 'nadrabia sam (pon–pt do 18:00)';
+    } else kiedy = 'nadrobi sam w codziennym biegu';
+  } else kiedy = (dniRecznie === niepelne.length + brak.length ? 'automat do tych dni nie wraca' : dniRecznie + ' dni poza zasięgiem automatu') + ' — trzeba uruchomić ręcznie';
+  return { czas: czesci.join(' · '), kiedy, recznie: dniRecznie > 0 };
+}
 for (const t of Object.keys(scope)) {
   const dir = path.join(AUTO, t, 'state');
   const m = new Map();
@@ -53,8 +121,9 @@ for (const t of Object.keys(scope)) {
   }
   const pct = tot ? Math.round(compl / tot * 100) : 0;
   const nad = (incompl + miss) > 3;
+  const est = szacunek(t, dniNiepelne, dniBrak);
   bars.push({ typ: etykieta[t], pct, compl, incompl, miss, tot, zakres: short(scope[t][0]) + ' – ' + short(scope[t][1]), status: nad ? 'nadrabia' : (incompl ? 'prawie komplet' : 'aktualny'), nad,
-    niepelne: zakresy(dniNiepelne), brak: zakresy(dniBrak) });
+    niepelne: zakresy(dniNiepelne), brak: zakresy(dniBrak), est });
 }
 
 // --- karty: produkty, kontrahenci ---
@@ -168,6 +237,9 @@ const SZABLON = `<title>Status scraperów ERP</title>
   details.which[open] summary .chev{transform:rotate(90deg)}
   .which p{margin:4px 0 0;line-height:1.45}
   .which b{font-weight:500;color:var(--ink)}
+  .est{margin-top:4px;font-size:12px;color:var(--ink-2)}
+  .est .k{color:var(--ink-3)}
+  .est .k.r{color:var(--warn-ink)}
   .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
   .card{background:var(--surface);border:.5px solid var(--line);border-radius:12px;padding:1rem 1.1rem}
   .ct{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
@@ -224,6 +296,7 @@ document.getElementById("bars").innerHTML = DANE.bars.map(function(d){
    +'<i style="width:'+w(d.incompl/d.tot*100)+'%;background:var(--warn)"></i></div>'
    +'<div class="row-foot"><span class="tnum">'+d.compl+' gotowe · '+d.incompl+' niepełne · '+d.miss+' brak <span style="color:var(--ink-3)">(z '+d.tot+' dni)</span></span>'
    +'<span style="color:var(--ink-3)">'+esc(d.zakres)+'</span></div>'
+   +(d.est ? '<div class="est tnum">Do nadrobienia: '+esc(d.est.czas)+' · <span class="k'+(d.est.recznie?' r':'')+'">'+esc(d.est.kiedy)+'</span></div>' : '')
    +((d.niepelne||d.brak) ? '<details class="which"><summary><span class="chev">›</span>&nbsp;które dni</summary>'
      +(d.niepelne ? '<p class="tnum"><b>Niepełne:</b> '+esc(d.niepelne)+'</p>' : '')
      +(d.brak ? '<p class="tnum"><b>Brak:</b> '+esc(d.brak)+'</p>' : '')+'</details>' : '')
