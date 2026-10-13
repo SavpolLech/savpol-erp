@@ -171,9 +171,19 @@ try {
 try {
   const s = JSON.parse(fs.readFileSync(path.join(AUTO, 'kontrahenci/state/kontrola-ostatnia.json'), 'utf8'));
   const b = s.roznicaBilansu;
-  // Od 2026-10-14 krok KONTRAHENCI w orkiestratorze: codziennie tylko NOWI kontrahenci.
-  // Zmiany istniejących (przeglad.js) jeszcze ręcznie — nie obiecuj tu tygodniowego przeglądu.
-  cards.push({ nm: 'Kontrahenci', pill: 'codziennie (nowi)', rows: [['W bazie', fmt(s.wWorku)], ['W ERP', fmt(s.erpWszyscy)], ['Bilans', (b > 0 ? '+' : (b < 0 ? '−' : '')) + Math.abs(b || 0)], ['Ostatni bieg', s.ts ? short(s.ts.slice(0, 10)) : '—']] });
+  // Krok KONTRAHENCI w orkiestratorze: codziennie NOWI kontrahenci, w środę pełny przegląd
+  // (przeglad.js --zapisz: UPDATE zmienionych + historia csCustomersZmiany).
+  const rows = [['W bazie', fmt(s.wWorku)], ['W ERP', fmt(s.erpWszyscy)], ['Bilans', (b > 0 ? '+' : (b < 0 ? '−' : '')) + Math.abs(b || 0)], ['Ostatni bieg', s.ts ? short(s.ts.slice(0, 10)) : '—']];
+  const pp = path.join(AUTO, 'kontrahenci/state/przeglad-ostatni.json');
+  if (fs.existsSync(pp)) {
+    try {
+      const pr = JSON.parse(fs.readFileSync(pp, 'utf8'));
+      const kiedy = String(pr.ts || pr.data || fs.statSync(pp).mtime.toISOString()).slice(0, 10);
+      rows.push(['Przegląd zmian', short(kiedy) + (pr.pelny === false ? ' (niepełny)' : '')]);
+      rows.push(['Zmienionych / nowych', fmt(pr.zmienionych) + ' / ' + fmt(pr.nowych)]);
+    } catch {}
+  } else rows.push(['Przegląd zmian', 'pierwszy w środę']);
+  cards.push({ nm: 'Kontrahenci', pill: 'codziennie + śr. przegląd', rows });
 } catch {}
 
 // --- aktywność: ostatnie DNI, pogrupowane po lokalnej dacie biegu ---
