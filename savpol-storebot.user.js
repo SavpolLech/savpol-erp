@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Zamówienia bota Google (StoreBot)
 // @namespace    savpol-erp-tools
-// @version      2.0.0
+// @version      2.0.1
 // @description  W tle, co 5 minut, szuka otwartych zamówień ZOID złożonych przez Google StoreBot (John Smith, *@storebotmail.joonix.net), sam je anuluje i powiadamia (Windows + mail).
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-storebot.user.js
@@ -51,7 +51,13 @@
   const DICT = 'csDocsHeaders4SalesOrders';
   const ZOID_TYP = '14210813631'; // „Zamówienie od odbiorcy - internet detal”
   const CO_ILE_MS = 5 * 60 * 1000;
-  const DNI_WSTECZ = 7;
+  // 3 dni obejmują weekend z wyłączonym komputerem; dłuższe okno zapytania ERP potrafi
+  // przekroczyć limit czasu SQL („Przekroczono limit czasu semafora”, 14.10).
+  const DNI_WSTECZ = 3;
+  // Pojedynczy błąd ERP (timeout przy obciążeniu) nie jest powodem do alarmu: plakietka
+  // dopiero po 3 nieudanych sprawdzeniach z rzędu (15 min), mail po 12 (godzina).
+  const BLEDY_PLAKIETKA = 3;
+  const BLEDY_MAIL = 12;
   const MAX_PROB = 3; // tyle razy próbujemy anulować jedno zamówienie, potem tylko alarm
   // Statusy, w których zamówienie bota już nikomu nie przeszkadza.
   const ZAMKNIETE = ['W koszyku', 'Anulowany', 'Zamknięte', 'Zrealizowane'];
@@ -67,7 +73,7 @@
   const toBot = w => /@storebotmail\.joonix\.net/i.test(String(w.EMails || ''))
     || /^john\s+smith$/i.test(((w.Name || '') + ' ' + (w.Surname || '')).trim());
 
-  const stan = { koperta: null, doAnulowaniaRecznie: [], ostatniBlad: null, ostatnieSprawdzenie: null, wierszy: null };
+  const stan = { koperta: null, doAnulowaniaRecznie: [], ostatniBlad: null, bledyZRzedu: 0, ostatnieSprawdzenie: null, wierszy: null };
 
   // ---------- Kodowanie zapytań ERP ----------
   // Input = base64 z ZIP-a (jeden plik JSON) albo samego JSON-a (Compress:false).
@@ -282,8 +288,15 @@
         GM_setValue(K_ZGLOSZONE, JSON.stringify(zgloszone.concat(nowe.map(w => String(w.csDocsHeadersId))).slice(-200)));
       }
       stan.ostatniBlad = null;
+      stan.bledyZRzedu = 0;
     } catch (e) {
       stan.ostatniBlad = String(e && e.message || e);
+      stan.bledyZRzedu++;
+      if (stan.bledyZRzedu === BLEDY_MAIL) {
+        powiadomZewnetrznie('StoreBot nie sprawdza zamówień od godziny',
+          'Skrypt StoreBot w ERP od godziny nie może pobrać listy zamówień. Ostatni błąd: ' + stan.ostatniBlad
+          + '. Zamówienia bota nie są w tym czasie anulowane.');
+      }
       console.warn('[StoreBot] ' + stan.ostatniBlad);
     }
     rysujPasek();
@@ -322,7 +335,8 @@
     let el = document.getElementById('savpol-storebot');
     const boty = stan.doAnulowaniaRecznie;
     const bezWzorca = !GM_getValue(K_SZABLON, null);
-    if (!boty.length && !bezWzorca && !stan.ostatniBlad) { if (el) el.remove(); return; }
+    const awaria = stan.ostatniBlad && stan.bledyZRzedu >= BLEDY_PLAKIETKA;
+    if (!boty.length && !bezWzorca && !awaria) { if (el) el.remove(); return; }
     if (!el) {
       el = document.createElement('div');
       el.id = 'savpol-storebot';
@@ -362,9 +376,9 @@
       'powiadomienia zewnętrzne: ' + (GM_getValue(K_URL, '') ? 'ustawione' : 'brak'),
       'ostatnie sprawdzenie (ta karta): ' + (stan.ostatnieSprawdzenie ? stan.ostatnieSprawdzenie.toISOString() : '—'),
       'ostatnie sprawdzenie (dowolna karta): ' + new Date(Number(GM_getValue(K_OSTATNIE, 0))).toISOString(),
-      'ZOID na liście (7 dni): ' + stan.wierszy,
+      'ZOID na liście (' + DNI_WSTECZ + ' dni): ' + stan.wierszy,
       'do anulowania ręcznie: ' + stan.doAnulowaniaRecznie.map(w => w.DocNumber).join(', '),
-      'błąd: ' + (stan.ostatniBlad || '—'),
+      'błąd: ' + (stan.ostatniBlad || '—') + (stan.bledyZRzedu ? ' (' + stan.bledyZRzedu + ' z rzędu)' : ''),
       'dziennik:', ...JSON.parse(GM_getValue(K_DZIENNIK, '[]'))].join('\n');
     doSchowka(txt);
     return 'skopiowano, ' + txt.length + ' znaków';
