@@ -21,7 +21,9 @@ const TYPY = {
 // ROZBIEZNOSCI.md), więc nie liczymy ich do porównania z ERP.
 const MM_DO_REALIZACJI = '213217726';
 
-async function liczniki(od) {
+// numery = { WZ: [DocNumber...], MM: [...], PZ: [...] } — dokumenty zebrane przez scraper
+// (state/processedDocNumbers); wynik.obecne[typ] = Set tych, które są w bazie.
+async function liczniki(od, numery = {}) {
   const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD } = process.env;
   if (!DB_HOST || !DB_USER || !DB_PASSWORD) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(od)) throw new Error('zła data: ' + od);
@@ -41,7 +43,19 @@ async function liczniki(od) {
     const kod = Object.fromEntries(Object.entries(TYPY).map(([k, v]) => [v, k]));
     const out = {};
     for (const r of rs.recordset) out[kod[r.typ] + '|' + r.dzien] = r.n;
-    return out;
+    const obecne = {};
+    for (const [typ, lista] of Object.entries(numery)) {
+      obecne[typ] = new Set();
+      // Numery typu 2027/WZ/WLS1/000642 — tylko bezpieczne znaki, bez parametrów (do 1000 na zapytanie).
+      // Litery z polskimi znakami (np. 2027/WZ/SERV_MŻ/000003), stąd \p{L} i N'...' w SQL.
+      const ok = [...new Set(lista)].filter(n => /^[\p{L}\p{N}_\/ .-]+$/u.test(n));
+      for (let i = 0; i < ok.length; i += 1000) {
+        const r2 = await pool.request().query('SELECT DocNumber FROM dbo.csDocsHeaders WHERE csDocsTypesId = ' + TYPY[typ] +
+          " AND DocNumber IN (N'" + ok.slice(i, i + 1000).join("',N'") + "')");
+        r2.recordset.forEach(x => obecne[typ].add(x.DocNumber));
+      }
+    }
+    return { dzien: out, obecne };
   } finally {
     await pool.close();
   }
@@ -52,6 +66,6 @@ module.exports = { liczniki, TYPY };
 if (require.main === module) {
   liczniki(process.argv[2] || '2026-07-01').then(o => {
     if (!o) return console.log('brak konfiguracji bazy (.env)');
-    for (const k of Object.keys(o).sort()) console.log(k, o[k]);
+    for (const k of Object.keys(o.dzien).sort()) console.log(k, o.dzien[k]);
   }).catch(e => { console.error(e.message); process.exit(1); });
 }

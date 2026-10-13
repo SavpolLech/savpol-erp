@@ -51,7 +51,9 @@ function wpisyLogu(t) {
     try {
       const o = JSON.parse(ln);
       if (t === 'sprzedaz') out.push({ ts: o.ts, dzien: o.dzien, fa: o.fa, par: o.par || 0, total: o.fa + (o.par || 0), have: (o.juzWBazie || 0) + (o.wstawiono || 0), got: o.wstawiono || 0, sec: o.sekundy || 0, done: o.complete === true });
-      else out.push({ ts: o.ts, dzien: o.filterDateFrom, pomin: (o.pominieteDoRealizacji || []).length, total: o.expectedTotal, have: o.docsLacznieDlaZakresu, got: o.docsZebraneWTejSesji || 0, sec: (o.czasTrwaniaMs || 0) / 1000, done: o.allPagesExhausted === true });
+      // Wpisy zakresowe (wczesne backfille, filterDateTo ≠ filterDateFrom) liczą wiele dni naraz —
+      // liczą się do tempa, ale nie przypisujemy ich licznika ERP żadnemu dniowi.
+      else out.push({ ts: o.ts, dzien: (!o.filterDateTo || o.filterDateTo === o.filterDateFrom) ? o.filterDateFrom : null, pomin: (o.pominieteDoRealizacji || []).length, total: o.expectedTotal, have: o.docsLacznieDlaZakresu, got: o.docsZebraneWTejSesji || 0, sec: (o.czasTrwaniaMs || 0) / 1000, done: o.allPagesExhausted === true });
     } catch {}
   }
   return out;
@@ -230,9 +232,22 @@ const dni = [...grupy.entries()].sort((a, b) => b[0].localeCompare(a[0])).map(([
 // MM: ERP minus dokumenty „Do realizacji”, których scraper z założenia nie zapisuje.
 async function listaKontrolna() {
   const TYPY_K = [['WZ', 'wz'], ['MM', 'mm'], ['PZ', 'pz'], ['FA', 'sprzedaz'], ['PAR', 'sprzedaz']];
+  // WZ/MM/PZ: ERP filtruje listę po swojej dacie, a dokument ma własny DocDate, więc
+  // COUNT po DocDate nie zejdzie się 1:1. Test kompletności = czy numery zebrane dla
+  // dnia-filtra (state/processedDocNumbers) są w bazie. FA/PAR: filtr = DocDate, COUNT wystarcza.
+  const zebrane = {};
+  for (const [kod, t] of TYPY_K.slice(0, 3)) {
+    zebrane[kod] = new Map();
+    const dir = path.join(AUTO, t, 'state');
+    if (fs.existsSync(dir)) for (const f of fs.readdirSync(dir).filter(f => /^\w+_(\d{4}-\d{2}-\d{2})_\1\.json$/.test(f))) {
+      try { const s = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')); zebrane[kod].set(s.dateFrom, s.processedDocNumbers || []); } catch {}
+    }
+  }
   let baza = null, bladBazy = null;
-  try { baza = await require('./liczniki-bazy').liczniki(Object.values(scope).map(s => s[0]).sort()[0]); }
-  catch (e) { bladBazy = String(e && e.message || e).split('\n')[0].slice(0, 120); }
+  try {
+    const numery = Object.fromEntries(Object.entries(zebrane).map(([k, m]) => [k, [...m.values()].flat()]));
+    baza = await require('./liczniki-bazy').liczniki(Object.values(scope).map(s => s[0]).sort()[0], numery);
+  } catch (e) { bladBazy = String(e && e.message || e).split('\n')[0].slice(0, 120); }
   const typy = TYPY_K.map(([kod, t]) => {
     const ost = new Map();
     for (const w of wpisyLogu(t)) if (w.dzien && (!ost.has(w.dzien) || ost.get(w.dzien).ts < w.ts)) ost.set(w.dzien, w);
@@ -245,15 +260,21 @@ async function listaKontrolna() {
       if (w.total == null || (!w.done && !w.total)) return null;
       return w.total - (w.pomin || 0);
     };
+    const poNumerach = !!zebrane[kod];
     const wiersze = [];
     let zgodne = 0, rozne = 0, bezErp = 0;
     for (let d = new Date(scope[t][0] + 'T00:00:00Z'), e = new Date(scope[t][1] + 'T00:00:00Z'); d <= e; d.setUTCDate(d.getUTCDate() + 1)) {
-      const dz = ymd(d), erp = erpDnia(dz), wb = baza ? (baza[kod + '|' + dz] || 0) : null;
+      const dz = ymd(d), erp = erpDnia(dz);
+      let wb = null;
+      if (baza) {
+        if (poNumerach) { const nr = zebrane[kod].get(dz); wb = nr ? nr.filter(n => baza.obecne[kod].has(n)).length : 0; }
+        else wb = baza.dzien[kod + '|' + dz] || 0;
+      }
       if (erp == null) bezErp++; else if (wb != null && wb === erp) zgodne++; else if (wb != null) rozne++;
       wiersze.push([dz, erp, wb]);
     }
     wiersze.reverse();
-    return { kod, zgodne, rozne, bezErp, wiersze };
+    return { kod, poNumerach, zgodne, rozne, bezErp, wiersze };
   });
   return { typy, baza: !!baza, bladBazy };
 }
@@ -398,9 +419,9 @@ if(!DANE.dni.length) document.getElementById("days").innerHTML = '<div class="ca
   var K = DANE.kontrola, el = document.getElementById("kontrola");
   if (!K) { el.innerHTML = ""; return; }
   function n(v){ return v == null ? "—" : Number(v).toLocaleString("pl-PL"); }
-  var intro = '<p class="sub" style="margin-bottom:.75rem">„W ERP” to licznik listy dokumentów w ERP z ostatniego biegu danego dnia, „w bazie” to policzone nagłówki w bazie worek po dacie dokumentu.'
+  var intro = '<p class="sub" style="margin-bottom:.75rem">„W ERP” to licznik listy dokumentów w ERP z ostatniego jednodniowego biegu. „W bazie”: dla WZ, MM i PZ — ile dokumentów zebranych z listy ERP tego dnia faktycznie jest w bazie worek (sprawdzane po numerze); dla FA i PAR — liczba nagłówków w bazie z tą datą dokumentu.'
     + (K.baza ? '' : ' <b>Baza niedostępna przy tym odświeżeniu' + (K.bladBazy ? ' (' + esc(K.bladBazy) + ')' : '') + ' — kolumna „w bazie” pusta.</b>')
-    + ' WZ, MM i PZ: ERP filtruje listę po swojej dacie, a baza liczy po dacie dokumentu, więc dokument wystawiony z datą wstecz może dać różnicę ±1 na dwóch dniach.</p>'
+    + ' FA w bazie więcej niż w ERP = dokument skasowany w ERP po zapisie (do bazy tylko dopisujemy).</p>'
     + '<button type="button" class="kopiuj" id="kopiujK">Kopiuj całą listę (do Excela)</button>';
   el.innerHTML = intro + K.typy.map(function(t){
     var meta = t.zgodne + ' zgodnych' + (t.rozne ? ' · <b class="roz">' + t.rozne + ' z różnicą</b>' : '') + (t.bezErp ? ' · ' + t.bezErp + ' bez licznika ERP' : '');
