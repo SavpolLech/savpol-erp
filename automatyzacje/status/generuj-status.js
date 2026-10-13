@@ -74,9 +74,11 @@ for (const t of ['wz', 'mm', 'pz', 'sprzedaz']) {
       const o = JSON.parse(ln);
       if (new Date(o.ts).getTime() < since) continue;
       wpisy.push({
-        ts: o.ts, typ: etykieta[t], dzien: o.filterDateFrom || o.filterDateTo || null,
-        docs: o.docsLacznieDlaZakresu ?? o.docsZebraneWTejSesji ?? null, expected: o.expectedTotal ?? null,
-        done: o.allPagesExhausted === true, blad: o.blad ? String(o.blad).split('\n')[0].slice(0, 60) : null
+        // Sprzedaż ma własny format logu: dzien, juzWBazie+wstawiono, fa+par, complete.
+        ts: o.ts, typ: etykieta[t], dzien: o.filterDateFrom || o.filterDateTo || o.dzien || null,
+        docs: o.docsLacznieDlaZakresu ?? o.docsZebraneWTejSesji ?? (o.wstawiono != null ? (o.juzWBazie || 0) + o.wstawiono : null),
+        expected: o.expectedTotal ?? (o.fa != null ? o.fa + (o.par || 0) : null),
+        done: o.allPagesExhausted === true || o.complete === true, blad: o.blad ? String(o.blad).split('\n')[0].slice(0, 60) : null
       });
     } catch {}
   }
