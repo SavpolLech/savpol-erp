@@ -36,7 +36,8 @@ function podsluchListy(page) {
       if (k && String(k.dataSetIdent || '').toLowerCase() === 'csdocsheaders4purchase' && k.fieldNames.includes('csDocsTypesId')) {
         s.ostatnia = k.records.map(r => ({
           csDocsHeadersId: String(r.csDocsHeadersId), csDocsTypesId: String(r.csDocsTypesId),
-          DocNumber: r.DocNumber, DocReceiptDate: String(r.DocReceiptDate || '').slice(0, 10)
+          DocNumber: r.DocNumber, DocReceiptDate: String(r.DocReceiptDate || '').slice(0, 10),
+          status: String(r.StatusValueTranslatedDesc || '')
         }));
         s.odpowiedzi++;
       }

@@ -61,3 +61,18 @@ Wniosek do decyzji Michała: faktura KSeF wpada do ERP przed rejestracją,
 a rejestracja zmienia jej dane (łącznie z datą Wpływu). Do bazy tylko
 dopisujemy, więc trzeba ustalić, od jakiego statusu (np. tylko ZAKSIĘGOWANE)
 i po ilu dniach bierzemy fakturę.
+
+## Decyzja Michała: co i kiedy bierzemy
+
+- **2026-10-09:** tylko faktury **ZAKSIĘGOWANE** (status 213217724). Na liście
+  status jest tekstem (`StatusValueTranslatedDesc`), przed zapisem sprawdzamy
+  go jeszcze raz na karcie.
+- **2026-10-13** (po uzgodnieniu z szefem): „pobieramy do n-2 i skanujemy
+  8 tygodni wstecz” — dzień wpływu pobieramy 2 dni później
+  (`ZAKUP_MIN_AGE_DAYS=2`, okno zwykłego biegu 9 dni), a przegląd w
+  orkiestratorze przechodzi jeszcze raz dni z ostatnich 8 tygodni:
+  codziennie te, na których coś czekało na zaksięgowanie, w czwartki wszystkie
+  (faktury z datą wpływu wstecz, zmiana Wpływu przy rejestracji KSeF).
+- Do bazy tylko dopisujemy. Zmiana faktury już pobranej (odksięgowanie
+  i poprawka w otwartym okresie) do bazy nie trafi — lista nie ma daty
+  modyfikacji, a ponowne otwieranie kart z całego okna byłoby za drogie.

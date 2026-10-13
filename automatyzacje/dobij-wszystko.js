@@ -1,5 +1,5 @@
 // ORKIESTRATOR — jedno wejście, które nadgania WSZYSTKIE scrapery ERP po kolei:
-// [wz, mm, pz, sprzedaz], potem brakujące kartoteki produktów z tych
+// [wz, mm, pz, sprzedaz, zakup], potem brakujące kartoteki produktów z tych
 // dokumentów (krok PRODUKTY). Uruchamiane na serwerze przez wz/serwer/uruchom.bat
 // (git pull + node dobij-wszystko.js), raz dziennie w dni robocze.
 //
@@ -49,7 +49,7 @@ const LOCK_STALE_MS = parseInt(process.env.LOCK_STALE_MS || String(12 * 60 * 60 
 const { acquire: acquireLock, release: releaseLock } = require('./lib-wspolne/lock')(LOCK_PATH, { staleMs: LOCK_STALE_MS });
 
 // Domyślna kolejność. ERP jeden na raz — nie zmieniaj na równoległe.
-const ALL = ['wz', 'mm', 'pz', 'sprzedaz'];
+const ALL = ['wz', 'mm', 'pz', 'sprzedaz', 'zakup'];
 const SCRAPERS = (process.env.SCRAPERS || ALL.join(','))
   .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 
@@ -61,7 +61,10 @@ const SCRAPERS = (process.env.SCRAPERS || ALL.join(','))
 // SPRZEDAZ=14 (Michał 2026-10-06, „bufor 14 dni”): faktury dochodzą z datą
 // wstecz (1.07: 591 FA w ERP, 590 w kopii bazy z 27.07), a płatności
 // dopisują się po wystawieniu.
-const DEFAULT_MIN_AGE = { mm: '3', sprzedaz: '14' };
+// ZAKUP=2 (Michał 2026-10-13, „pobieramy do n-2, skanujemy 8 tygodni wstecz”):
+// faktury zakupu bierzemy 2 dni po wpływie, tylko zaksięgowane; resztę
+// dobiera przegląd zakupu niżej.
+const DEFAULT_MIN_AGE = { mm: '3', sprzedaz: '14', zakup: '2' };
 for (const [typ, val] of Object.entries(DEFAULT_MIN_AGE)) {
   const key = typ.toUpperCase() + '_MIN_AGE_DAYS';
   if (process.env[key] === undefined) process.env[key] = val;
@@ -69,7 +72,7 @@ for (const [typ, val] of Object.entries(DEFAULT_MIN_AGE)) {
 // Okno wsteczne per typ (<TYP>_CATCHUP_WINDOW) — musi objąć opóźnienie i mieć
 // zapas na przegapione biegi. Dni kompletne wg state/ i tak są pomijane.
 // Jawne CATCHUP_WINDOW (np. backfill) ma pierwszeństwo przed tym domyślnym.
-const DEFAULT_WINDOW = { sprzedaz: '21' };
+const DEFAULT_WINDOW = { sprzedaz: '21', zakup: '9' };
 for (const [typ, val] of Object.entries(DEFAULT_WINDOW)) {
   const key = typ.toUpperCase() + '_CATCHUP_WINDOW';
   if (process.env[key] === undefined && process.env.CATCHUP_WINDOW === undefined) process.env[key] = val;
@@ -183,6 +186,53 @@ if (SCRAPERS.includes('sprzedaz') && !DAYS) {
     } else {
       console.log('\n[dobij-wszystko] Przegląd sprzedaży: brak skompletowanych dni w zakresie (zaległości jeszcze nienadrobione).');
     }
+  }
+}
+
+// PRZEGLĄD ZAKUPU 8 TYGODNI (Michał 2026-10-13): faktury zakupu bierzemy tylko
+// zaksięgowane, a część księguje się dopiero po tygodniach; po rejestracji
+// faktura KSeF potrafi też zmienić datę wpływu. Dlatego dni z zakresu
+// dziś-56..dziś-3, już raz skompletowane, przechodzą jeszcze raz (lista
+// ~1 min, karty tylko dla brakujących zaksięgowanych):
+//   - codziennie: dni, na których po ostatnim biegu coś czekało na zaksięgowanie,
+//   - raz w tygodniu (domyślnie w czwartek): wszystkie — łapie faktury, które
+//     doszły z datą wpływu wstecz.
+// Tylko zwykły bieg (bez FROM/TO), raz dziennie (znacznik w zakup/state/).
+//   ZAKUP_PRZEGLAD=0 — wyłącz;  ZAKUP_PRZEGLAD_DZIEN=1..7 (pn..nd);  ZAKUP_PRZEGLAD_ZAKRES=56
+if (SCRAPERS.includes('zakup') && !DAYS && process.env.ZAKUP_PRZEGLAD !== '0') {
+  const dzisiaj = new Date();
+  const dzienTyg = dzisiaj.getDay() || 7;
+  const lokalnie = d => ymd(new Date(d.getTime() - d.getTimezoneOffset() * 60000));
+  const znacznik = path.join(AUTO_DIR, 'zakup', 'state', 'przeglad-ostatni.txt');
+  let ostatni = '';
+  try { ostatni = fs.readFileSync(znacznik, 'utf8').trim(); } catch { /* pierwszy raz */ }
+  const dzisYmd = lokalnie(dzisiaj);
+  if (ostatni !== dzisYmd) {
+    const pelny = dzienTyg === parseInt(process.env.ZAKUP_PRZEGLAD_DZIEN || '4', 10);
+    const zakres = parseInt(process.env.ZAKUP_PRZEGLAD_ZAKRES || '56', 10);
+    const minWiek = parseInt(process.env.ZAKUP_MIN_AGE_DAYS || '2', 10) + 1;
+    const { loadState } = require('./lib-wspolne/state')(path.join(AUTO_DIR, 'zakup'), 'zakup');
+    const dni = [];
+    for (let back = zakres; back >= minWiek; back--) {
+      const d = new Date(dzisiaj); d.setDate(d.getDate() - back);
+      const dzien = lokalnie(d);
+      const st = loadState(dzien, dzien);
+      if (!st.complete) continue; // niepobrany dzień to robota zwykłego biegu / zaległości
+      const ost = st.runs[st.runs.length - 1] || {};
+      if (pelny || ost.oczekujace > 0) dni.push(dzien);
+    }
+    if (dni.length) {
+      console.log(`\n[dobij-wszystko] ===== ZAKUP — przegląd ${pelny ? 'tygodniowy' : 'czekających'} ${dni[0]}..${dni[dni.length - 1]} (${dni.length} dni) =====`);
+      const wynik = runCatchup({
+        dir: path.join(AUTO_DIR, 'zakup'), prefix: 'zakup', label: 'ZAKUP-przegląd', target: TARGET,
+        days: dni, przeglad: true
+      });
+      summary.push({ type: 'zakup-przeglad', ...wynik });
+    } else {
+      console.log('\n[dobij-wszystko] Przegląd zakupu: brak dni do przejrzenia.');
+    }
+    try { fs.mkdirSync(path.dirname(znacznik), { recursive: true }); fs.writeFileSync(znacznik, dzisYmd + '\n'); } catch { /* znacznik to dodatek */ }
+    require('./lib-wspolne/git-log-push').pushLogs('zakup', 'przegląd ' + (dni[0] || dzisYmd) + '..' + (dni[dni.length - 1] || dzisYmd));
   }
 }
 

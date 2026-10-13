@@ -5,13 +5,19 @@
 // TRYB DZIEŃ: FILTER_DATE=RRRR-MM-DD
 //   1. lista „Dokumenty zakupu” z Wpływ (DocReceiptDate) = dzień
 //      (lib/lista-dnia.js), kontrola: zebrane wiersze = licznik ERP,
-//   2. z listy tylko FZ i FZ_KSEF; te, których csDocsHeadersId już jest
-//      w bazie, pomijamy (tylko dopisujemy, ROZBIEZNOSCI.md),
-//   3. brakujące: karta → INSERT nagłówka i pozycji w jednej transakcji,
+//   2. z listy tylko FZ i FZ_KSEF w statusie ZAKSIĘGOWANE (Michał 2026-10-09);
+//      te, których csDocsHeadersId już jest w bazie, pomijamy (tylko
+//      dopisujemy, ROZBIEZNOSCI.md); niezaksięgowane czekają,
+//   3. brakujące: karta (status sprawdzony jeszcze raz na karcie) → INSERT
+//      nagłówka i pozycji w jednej transakcji,
 //   4. state/zakup_<dzień>.json: complete=true, gdy lista pełna i każda
-//      FZ/FZ_KSEF z dnia jest w bazie; run-log.jsonl + pushLogs na koniec.
-//   SCRAPE_TARGET=prod → prawdziwe tabele, inaczej *_test (do akceptacji
-//   próbki przez Michała). MAX_DOCS=N — próbka: najwyżej N nowych dokumentów.
+//      zaksięgowana FZ/FZ_KSEF z dnia jest w bazie; liczba czekających
+//      (runs[].oczekujace) mówi orkiestratorowi, który dzień przejrzeć
+//      jeszcze raz w oknie 8 tygodni. run-log.jsonl + pushLogs na koniec.
+//   Rytm (Michał 2026-10-13): dzień pobieramy 2 dni po wpływie, skanujemy
+//   8 tygodni wstecz — ustawia orkiestrator (ZAKUP_MIN_AGE_DAYS, przegląd).
+//   SCRAPE_TARGET=prod → prawdziwe tabele, inaczej *_test.
+//   ZAKUP_PROBKA=N — próbka: najwyżej N nowych dokumentów, dzień niekompletny.
 //   Sesja kończy się sama po SESJA_MIN minut (domyślnie 60).
 //
 // TRYB RĘCZNY (kalibracja): zapis kart do wynik/<typ>_<id>.json.
@@ -39,7 +45,13 @@ const SESJA_MS = parseInt(process.env.SESJA_MIN || '60', 10) * 60000;
 // Godzina końca z orkiestratora (DO_GODZINY → KONIEC_TS); zapas na zapis stanu i push.
 const KONIEC_TS = parseInt(process.env.KONIEC_TS || '0', 10);
 const TYPY_DNIA = new Set([W.TYPY.FZ, W.TYPY.FZ_KSEF]);
-const MAX_DOCS = parseInt(process.env.MAX_DOCS || '0', 10);
+// Próbka do weryfikacji: najwyżej N nowych dokumentów (własna nazwa — MAX_DOCS
+// ustawiają scrapery WZ/MM/PZ i mógłby przyjść z wspólnego .env).
+const MAX_DOCS = parseInt(process.env.ZAKUP_PROBKA || '0', 10);
+// Bierzemy tylko zaksięgowane (Michał 2026-10-09). Na liście status jest tekstem,
+// na karcie — id; karta rozstrzyga.
+const STATUS_ZAKSIEGOWANE = '213217724';
+const zaksiegowana = w => /^ZAKSI[ĘE]GOWANE$/i.test(w.status.trim());
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const przerwa = () => sleep(PRZERWA_MS[0] + Math.random() * (PRZERWA_MS[1] - PRZERWA_MS[0]));
@@ -57,7 +69,7 @@ async function trybDzien() {
   const start = Date.now();
   const cel = REALNE ? 'prod' : 'test';
   console.log('[zakup] Dzień ' + DZIEN + ' → ' + (REALNE ? 'PRODUKCJA' : 'tabele _test'));
-  const log = { tryb: process.env.PRZEGLAD === '1' ? 'przeglad' : 'dzien', dzien: DZIEN, cel, erpRekordow: null, fz: 0, fzKsef: 0, juzWBazie: 0, wstawiono: 0, pozycji: 0, bezKarty: [], bledyZapisu: [], complete: false };
+  const log = { tryb: process.env.PRZEGLAD === '1' ? 'przeglad' : 'dzien', dzien: DZIEN, cel, erpRekordow: null, fz: 0, fzKsef: 0, juzWBazie: 0, oczekujace: [], wstawiono: 0, pozycji: 0, bezKarty: [], bledyZapisu: [], complete: false };
 
   const pool = await W.polacz();
   const { browser, page } = await otworzPrzegladarke();
@@ -74,13 +86,16 @@ async function trybDzien() {
     log.fzKsef = dnia.filter(w => w.csDocsTypesId === W.TYPY.FZ_KSEF).length;
     const obecne = await z.obecneId(dnia.map(w => w.csDocsHeadersId));
     log.juzWBazie = obecne.size;
-    let brakujace = dnia.filter(w => !obecne.has(w.csDocsHeadersId));
+    // Niezaksięgowane czekają: dzień przechodzi jeszcze raz w przeglądzie
+    // 8 tygodni (orkiestrator), aż je zaksięgują.
+    log.oczekujace = dnia.filter(w => !obecne.has(w.csDocsHeadersId) && !zaksiegowana(w)).map(w => w.csDocsHeadersId);
+    let brakujace = dnia.filter(w => !obecne.has(w.csDocsHeadersId) && zaksiegowana(w));
     // Próbka: po jednej z każdego typu na początek, reszta do limitu.
     if (MAX_DOCS > 0) {
       const pierwsze = Object.values(W.TYPY).map(t => brakujace.find(w => w.csDocsTypesId === t)).filter(Boolean);
       brakujace = Array.from(new Set(pierwsze.concat(brakujace))).slice(0, MAX_DOCS);
     }
-    console.log('[zakup] FZ ' + log.fz + ', FZ_KSEF ' + log.fzKsef + '; już w bazie ' + obecne.size + ', do pobrania ' + brakujace.length + (MAX_DOCS ? ' (próbka MAX_DOCS=' + MAX_DOCS + ')' : ''));
+    console.log('[zakup] FZ ' + log.fz + ', FZ_KSEF ' + log.fzKsef + '; już w bazie ' + obecne.size + ', niezaksięgowane ' + log.oczekujace.length + ', do pobrania ' + brakujace.length + (MAX_DOCS ? ' (próbka MAX_DOCS=' + MAX_DOCS + ')' : ''));
 
     const pobierz = podepnijKarte(page);
     const wpisane = Array.from(obecne);
@@ -94,6 +109,12 @@ async function trybDzien() {
       if (String(k.naglowek.csDocsTypesId) !== w.csDocsTypesId) {
         log.bezKarty.push(w.csDocsHeadersId);
         console.warn(tag + ': karta ma typ ' + k.naglowek.csDocsTypesId + ', lista ' + w.csDocsTypesId + ' — pomijam');
+        continue;
+      }
+      if (String(k.naglowek.csDocsHeadersStatusId) !== STATUS_ZAKSIEGOWANE) {
+        // Lista mówiła „zaksięgowane”, karta już nie (odksięgowana w międzyczasie).
+        log.oczekujace.push(w.csDocsHeadersId);
+        console.warn(tag + ': karta ma status ' + k.naglowek.csDocsHeadersStatusDesc + ' — czeka');
         continue;
       }
       try {
@@ -110,16 +131,19 @@ async function trybDzien() {
       await przerwa();
     }
 
-    // Kompletny = lista pełna, bez limitu próbki i każda FZ/FZ_KSEF z dnia jest w bazie (sprawdzone
+    // Kompletny = lista pełna, bez limitu próbki i każda FZ/FZ_KSEF z dnia jest
+    // w bazie albo czeka na zaksięgowanie (sprawdzone
     // w bazie, nie z pamięci przebiegu).
     const poZapisie = await z.obecneId(dnia.map(w => w.csDocsHeadersId));
-    log.complete = lista.pelne && !przerwanoLimitem && !MAX_DOCS && poZapisie.size === dnia.length;
+    const czeka = new Set(log.oczekujace);
+    log.complete = lista.pelne && !przerwanoLimitem && !MAX_DOCS &&
+      dnia.every(w => poZapisie.has(w.csDocsHeadersId) || czeka.has(w.csDocsHeadersId));
     saveState(DZIEN, DZIEN, {
       newDocNumbers: Array.from(poZapisie), complete: log.complete,
-      runSummary: { ts: new Date().toISOString(), erp: lista.erp, fz: log.fz, fzKsef: log.fzKsef, wstawiono: log.wstawiono, complete: log.complete }
+      runSummary: { ts: new Date().toISOString(), erp: lista.erp, fz: log.fz, fzKsef: log.fzKsef, oczekujace: log.oczekujace.length, wstawiono: log.wstawiono, complete: log.complete }
     });
     console.log('[zakup] ' + DZIEN + ': wstawiono ' + log.wstawiono + ' dok. (' + log.pozycji + ' poz.), w bazie ' +
-      poZapisie.size + '/' + dnia.length + ', complete=' + log.complete);
+      poZapisie.size + '/' + dnia.length + ', czeka na zaksięgowanie ' + log.oczekujace.length + ', complete=' + log.complete);
   } catch (e) {
     log.blad = e.message;
     throw e;
