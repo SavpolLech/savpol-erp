@@ -143,29 +143,20 @@ for (const t of Object.keys(scope)) {
 let godzSkum = 0;
 const koniecKolejki = {};
 for (const k of kolejka) { if (!zal[k.t]) continue; godzSkum += zal[k.t].godzKolejka; koniecKolejki[k.t] = godzSkum; }
-const dopelniacz = typ => typ === 'Sprzedaż' ? 'sprzedaży' : typ;
 for (const b of bars) {
   const z = zal[b.t];
   if (!z) continue;
-  // Linia 1: data. Linia 2: skąd ta data (kolejka / codzienny bieg). Linia 3 (pomarańczowa):
-  // dni, których automat nie nadrobi wcale — do przyjrzenia się.
-  let data = null, wyjasnienie;
-  if (koniecKolejki[b.t] != null && z.dokKolejka > 0) {
-    data = poDniachRob(Math.max(1, Math.ceil(koniecKolejki[b.t] / godzNaDzien)));
-    const przed = kolejka.slice(0, kolejka.findIndex(k => k.t === b.t)).filter(k => zal[k.t] && zal[k.t].dokKolejka > 0).map(k => etykieta[k.t]);
-    wyjasnienie = przed.length
-      ? 'Niepełne i brakujące dni ' + dopelniacz(b.typ) + ' czekają w kolejce zaległości — automat zajmie się nimi po nadrobieniu: ' + przed.join(', ') + '. Nadrabianie tylko pon–pt do 18:00.'
-      : 'Niepełne i brakujące dni ' + dopelniacz(b.typ) + ' są teraz nadrabiane (pierwsze w kolejce zaległości, tylko pon–pt do 18:00).';
-  } else if (z.dniPoza < b.incompl + b.miss) {
-    data = poDniachRob(1);
-    wyjasnienie = 'Braki z ostatnich dni nadrobi codzienny bieg automatu.';
-  }
+  // Linia 1: data (koniec zaległości wg kolejki). Linia 2 (pomarańczowa): dni, których
+  // automat nie nadrobi wcale — do przyjrzenia się.
+  let data = null;
+  if (koniecKolejki[b.t] != null && z.dokKolejka > 0) data = poDniachRob(Math.max(1, Math.ceil(koniecKolejki[b.t] / godzNaDzien)));
+  else if (z.dniPoza < b.incompl + b.miss) data = poDniachRob(1);
   const uwaga = z.dniPoza
     ? 'Poza automatem, do sprawdzenia: ' + zakresy(z.poza.sort()) + ' — ani codzienny bieg, ani kolejka zaległości tych dni nie obejmują.'
     : null;
   // Nadrabianie tylko pon–pt — dzień tygodnia przy dacie, żeby było widać, że weekend pominięty.
   const DT = ['niedz.', 'pon.', 'wt.', 'śr.', 'czw.', 'pt.', 'sob.'];
-  b.est = { data: data ? short(data) + ' (' + DT[new Date(data + 'T00:00:00Z').getUTCDay()] + ')' : null, wyjasnienie, uwaga };
+  b.est = { data: data ? short(data) + ' (' + DT[new Date(data + 'T00:00:00Z').getUTCDay()] + ')' : null, uwaga };
 }
 
 // --- karty: produkty, kontrahenci ---
@@ -418,7 +409,6 @@ document.getElementById("bars").innerHTML = DANE.bars.map(function(d){
    +'<div class="row-foot"><span class="tnum">'+d.compl+' gotowe · '+d.incompl+' niepełne · '+d.miss+' brak <span style="color:var(--ink-3)">(z '+d.tot+' dni)</span></span>'
    +'<span style="color:var(--ink-3)">'+esc(d.zakres)+'</span></div>'
    +(d.est ? '<div class="est tnum">Szacowane nadrobienie wszystkich zaległości: <b>'+(d.est.data ? esc(d.est.data) : 'brak daty — poza automatem')+'</b>'
-     +(d.est.wyjasnienie ? '<span class="k">'+esc(d.est.wyjasnienie)+'</span>' : '')
      +(d.est.uwaga ? '<span class="k r">'+esc(d.est.uwaga)+'</span>' : '')+'</div>' : '')
    +((d.niepelne||d.brak) ? '<details class="which"><summary><span class="chev">›</span>&nbsp;które dni</summary>'
      +(d.niepelne ? '<p class="tnum"><b>Niepełne:</b> '+esc(d.niepelne)+'</p>' : '')
