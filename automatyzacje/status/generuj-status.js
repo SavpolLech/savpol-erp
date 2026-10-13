@@ -69,11 +69,10 @@ const kolejka = (() => {
   let wpisy;
   if (process.env.ZALEGLOSCI_KOLEJKA) wpisy = process.env.ZALEGLOSCI_KOLEJKA.split(',');
   else {
-    try { wpisy = fs.readFileSync(path.join(AUTO, 'zaleglosci-kolejka.txt'), 'utf8').split(/?
-/).filter(l => !/^s*(#|$)/.test(l)); }
+    try { wpisy = fs.readFileSync(path.join(AUTO, 'zaleglosci-kolejka.txt'), 'utf8').split(/\r?\n/).filter(l => !/^\s*(#|$)/.test(l)); }
     catch { return []; }
   }
-  return wpisy.map(x => /^(w+):(d{4}-d{2}-d{2})..(d{4}-d{2}-d{2})$/.exec(x.trim())).filter(Boolean).map(m => ({ t: m[1].toLowerCase(), od: m[2], do: m[3] }));
+  return wpisy.map(x => /^(\w+):(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(x.trim())).filter(Boolean).map(m => ({ t: m[1].toLowerCase(), od: m[2], do: m[3] }));
 })();
 const weekend = d => new Date(d + 'T00:00:00Z').getUTCDay() % 6 === 0;
 const dniRob = n => n === 1 ? '1 dzień roboczy' : n + (n < 5 ? ' dni robocze' : ' dni roboczych');
