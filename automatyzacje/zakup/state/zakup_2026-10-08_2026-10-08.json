@@ -120,7 +120,7 @@
     "31032499953"
   ],
   "complete": true,
-  "lastUpdated": "2026-10-14T09:24:29.251Z",
+  "lastUpdated": "2026-10-14T09:50:13.294Z",
   "runs": [
     {
       "ts": "2026-10-14T09:24:29.250Z",
@@ -130,6 +130,15 @@
       "oczekujace": 8,
       "wstawiono": 116,
       "complete": true
+    },
+    {
+      "ts": "2026-10-14T09:50:13.291Z",
+      "erp": 0,
+      "fz": 1,
+      "fzKsef": 63,
+      "oczekujace": 3,
+      "wstawiono": 0,
+      "complete": false
     }
   ]
 }
