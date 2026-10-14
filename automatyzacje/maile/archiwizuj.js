@@ -103,14 +103,14 @@ async function main() {
       return out;
     });
 
-    const zmienne = {}, spis = [], teraz = new Date().toISOString().slice(0, 16).replace('T', ' ');
+    const zmienne = {}, spis = [];
     for (const o of szablony.values()) {
       const opis = o.MailTemplateDesc || o.MailTemplateTypeTranslated || String(o.csB2BPortalsMailsTemplatesId);
       const plik = slug(opis) + '.html';
       const naglowek = '<!-- ERP → Portale B2B → esavpol.pl → Mailing (archiwum, savpol-erp/automatyzacje/maile/archiwizuj.js)\n' +
         '  Typ operacji: ' + o.MailTemplateType_PL + '\n  Opis: ' + opis + '\n  Temat: ' + (o.Subject_PL || '') + '\n' +
         '  Nadawca: ' + (o.ProfileName || '') + (o.BlindCopyRecipients ? ' · UDW: ' + o.BlindCopyRecipients : '') +
-        (o.IsActive === 0 ? ' · NIEAKTYWNY' : '') + '\n  Pobrano: ' + teraz + ' (pole Body_PL = „ZMIEŃ ŹRÓDŁO HTML”) -->\n';
+        (o.IsActive === 0 ? ' · NIEAKTYWNY' : '') + '\n  Źródło = pole Body_PL („ZMIEŃ ŹRÓDŁO HTML”). Data pobrania: historia git. -->\n';
       fs.writeFileSync(path.join(OUT, plik), naglowek + (o.Body_PL || '') + '\n');
       if (o.TransformedBody_PL) fs.writeFileSync(path.join(OUT, '_przetworzone', plik), o.TransformedBody_PL + '\n');
       for (const m of ((o.Body_PL || '') + (o.Subject_PL || '')).match(/\{:[A-Za-z0-9_]+\}/g) || []) (zmienne[m] = zmienne[m] || new Set()).add(plik);
