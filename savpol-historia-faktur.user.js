@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.5.0
+// @version      4.5.1
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -2076,9 +2076,9 @@
   // Załączniki, podmieniając wyłącznie jednorazowe identyfikatory. Składanie
   // takiego zapytania od zera kończyło się serią odmów („Brakujący: …"), a po
   // dołożeniu kompletu zestawów — wyjątkiem po stronie serwera.
-  async function erpCzytajZalaczniki(sku) {
+  async function erpCzytajZalaczniki(sku, wymusWzorzec) {
     // Wzorzec cudzy i nie ma z czego go przestawić — idziemy po własny.
-    if (!erpPodsluch.szablonZalacznikow
+    if (wymusWzorzec || !erpPodsluch.szablonZalacznikow
         || (erpPodsluch.szablonSku !== String(sku) && !erpPodsluch.produkty[sku])) {
       console.log('[Specyfikacja] Otwieram kartę ' + sku + ', żeby wziąć jego załączniki.');
       const auto = await erpOtworzZakladkeDlaSku(sku, ZAKLADKI.ZALACZNIKI,
@@ -2151,6 +2151,41 @@
       wiersze: wiersze,
       wersje: wersje ? erpNaObiekty(wersje) : []
     };
+  }
+
+  // Wzorzec z poprzedniego produktu: jedna powtórka, nie porażka.
+  //
+  // Wzorzec wolno przejąć od innego produktu, bo podmieniamy w nim kartotekę
+  // (patrz wyżej). Zwykle to działa i oszczędza otwieranie karty. Ale ten ERP
+  // trzyma stan widoku u siebie, więc czasem oddaje listę załączników tego
+  // produktu, na którym wzorzec powstał — i wtedy nasze dwie kontrole słusznie
+  // odmawiają wysyłki, żeby nie podstawić cudzej specyfikacji.
+  //
+  // Dotąd kończyło się to komunikatem „nie udało się pobrać specyfikacji", choć
+  // produkt specyfikację ma i wystarczyło wziąć wzorzec jeszcze raz, z jego
+  // własnej karty. Zdarza się to przy pracy w kilku oknach naraz i jest
+  // niepowtarzalne — 0023555, 14.10.2026: ten sam produkt minutę później
+  // przeszedł bez problemu. Dlatego ponawiamy sami, zamiast prosić człowieka,
+  // żeby kliknął drugi raz.
+  //
+  // Tylko RAZ i tylko dla odmów, które mówią „to wzorzec jest nie ten".
+  // Reszta błędów (brak karty, padnięte żądanie) ma inne przyczyny i druga
+  // próba niczego by w nich nie zmieniła.
+  function toWinaWzorca(blad) {
+    return /wzorzec dotyczy|innej kartoteki|o który produkt pyta/i.test(String(blad || ''));
+  }
+
+  async function erpZalacznikiZDrugaSzansa(sku) {
+    const pierwsza = await erpCzytajZalaczniki(sku);
+    if (pierwsza.ok || !toWinaWzorca(pierwsza.blad)) return pierwsza;
+
+    console.warn('[Specyfikacja] ' + sku + ': ' + pierwsza.blad
+      + ' — biorę wzorzec z karty tego produktu i próbuję jeszcze raz.');
+    const druga = await erpCzytajZalaczniki(sku, true);
+    if (!druga.ok) {
+      console.warn('[Specyfikacja] ' + sku + ': druga próba też nie wyszła — ' + druga.blad);
+    }
+    return druga;
   }
 
   // ---------- Opisy produktu dla portalu B2B ----------
@@ -3575,11 +3610,18 @@
     try {
       if (!erpPodsluch.koperta) return { ok: false, powod: 'brak danych sesji ERP' };
 
-      const lista = await erpCzytajZalaczniki(sku);
-      if (!lista.ok) return { ok: false, powod: lista.blad };
+      const lista = await erpZalacznikiZDrugaSzansa(sku);
+      if (!lista.ok) {
+        console.warn('[Specyfikacja] ' + sku + ': nie odczytałem załączników — ' + lista.blad);
+        return { ok: false, powod: lista.blad };
+      }
 
       const wiersz = erpWybierzSpecyfikacje(lista.wiersze);
-      if (!wiersz) return { ok: false, powod: 'ten produkt nie ma specyfikacji' };
+      if (!wiersz) {
+        console.warn('[Specyfikacja] ' + sku + ': wśród ' + lista.wiersze.length
+          + ' załączników nie ma specyfikacji.');
+        return { ok: false, powod: 'ten produkt nie ma specyfikacji' };
+      }
 
       // Pre-check: gdy apka ma już ten sam załącznik w tej samej wersji, nie ma
       // po co przesyłać megabajta. Klucz to PARA (załącznik, wersja) — sam numer
