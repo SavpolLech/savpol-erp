@@ -293,7 +293,10 @@ if (process.env.KONTRAHENCI !== '0' && !DAYS && TARGET === 'prod'
     console.log('\n[dobij-wszystko] ===== KONTRAHENCI — nowi =====');
     const idPlik = path.join(kdir, 'wynik', 'lista-nowych-id.txt');
     try { fs.unlinkSync(idPlik); } catch { /* nie ma = ok */ }
-    const envK = { ...process.env, HEADLESS: 'true' };
+    // SCRAPERY_LOCK_RODZIC=1: orkiestrator JUŻ trzyma globalny lock, więc skrypty
+    // kontrahentów (zajmijErp) nie mają go brać ponownie — inaczej odmówią wejścia
+    // na ERP, bo lock „zajęty" przez własnego rodzica.
+    const envK = { ...process.env, HEADLESS: 'true', SCRAPERY_LOCK_RODZIC: '1' };
     const lista = spawnSync('node', ['lista-nowych.js'], { cwd: kdir, stdio: 'inherit', env: envK });
     let idy = [];
     try { idy = fs.readFileSync(idPlik, 'utf8').split(/\s+/).filter(Boolean); } catch { /* brak = zapytanie padło */ }
@@ -340,7 +343,10 @@ if (process.env.KONTRAHENCI !== '0' && !DAYS && TARGET === 'prod'
       console.log('\n[dobij-wszystko] Przegląd kontrahentów: za blisko godziny końca (~45 min roboty) — dziś pomijam.');
     } else {
       console.log('\n[dobij-wszystko] ===== KONTRAHENCI — tygodniowy przegląd =====');
-      const envK = { ...process.env, HEADLESS: 'true' };
+      // SCRAPERY_LOCK_RODZIC=1: orkiestrator JUŻ trzyma globalny lock, więc skrypty
+    // kontrahentów (zajmijErp) nie mają go brać ponownie — inaczej odmówią wejścia
+    // na ERP, bo lock „zajęty" przez własnego rodzica.
+    const envK = { ...process.env, HEADLESS: 'true', SCRAPERY_LOCK_RODZIC: '1' };
       // Exit 0 = pełny przegląd (zapisano), 2 = niepełny (sam odmówił zapisu), inne = błąd.
       const p = spawnSync('node', ['przeglad.js', '--zapisz'], { cwd: kdir, stdio: 'inherit', env: envK });
       const done = [], failed = [];
