@@ -156,7 +156,7 @@
     "30978178170"
   ],
   "complete": true,
-  "lastUpdated": "2026-10-14T09:02:47.690Z",
+  "lastUpdated": "2026-10-14T09:49:14.663Z",
   "runs": [
     {
       "ts": "2026-10-14T09:02:47.690Z",
@@ -165,6 +165,15 @@
       "fzKsef": 158,
       "oczekujace": 11,
       "wstawiono": 152,
+      "complete": true
+    },
+    {
+      "ts": "2026-10-14T09:49:14.662Z",
+      "erp": 249,
+      "fz": 5,
+      "fzKsef": 158,
+      "oczekujace": 11,
+      "wstawiono": 0,
       "complete": true
     }
   ]
