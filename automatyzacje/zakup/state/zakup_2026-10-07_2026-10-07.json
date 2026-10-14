@@ -125,7 +125,7 @@
     "30959454879"
   ],
   "complete": true,
-  "lastUpdated": "2026-10-14T09:13:53.050Z",
+  "lastUpdated": "2026-10-14T09:49:46.339Z",
   "runs": [
     {
       "ts": "2026-10-14T09:13:53.049Z",
@@ -134,6 +134,15 @@
       "fzKsef": 122,
       "oczekujace": 5,
       "wstawiono": 121,
+      "complete": true
+    },
+    {
+      "ts": "2026-10-14T09:49:46.338Z",
+      "erp": 165,
+      "fz": 4,
+      "fzKsef": 122,
+      "oczekujace": 5,
+      "wstawiono": 0,
       "complete": true
     }
   ]
