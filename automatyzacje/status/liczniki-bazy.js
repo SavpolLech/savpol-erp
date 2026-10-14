@@ -1,4 +1,4 @@
-// Liczba nagłówków w bazie worek (dbo.csDocsHeaders) per typ i dzień DocDate —
+// Liczba nagłówków w bazie worek (dbo.csDocsHeaders) per typ i dzień DocDate (FZ: DocReceiptDate) —
 // kolumna „w bazie” listy kontrolnej na stronie statusu. Tylko SELECT.
 //
 // Ręcznie (podgląd):  node status/liczniki-bazy.js 2026-10-01
@@ -17,6 +17,9 @@ const TYPY = {
   FA: '267302594',
   PAR: '218693742'
 };
+// Faktury zakupu (FZ + FZ_KSEF) liczone razem jako „FZ”, dzień po dacie wpływu
+// (DocReceiptDate) — tak filtruje lista ERP i scraper zakup/.
+const TYPY_ZAKUP = ['213217937', '27484898580'];
 // MM „Do realizacji” scraper pomija od 2026-10-01 (starsze 37 zostały w tabeli —
 // ROZBIEZNOSCI.md), więc nie liczymy ich do porównania z ERP.
 const MM_DO_REALIZACJI = '213217726';
@@ -43,6 +46,11 @@ async function liczniki(od, numery = {}) {
     const kod = Object.fromEntries(Object.entries(TYPY).map(([k, v]) => [v, k]));
     const out = {};
     for (const r of rs.recordset) out[kod[r.typ] + '|' + r.dzien] = r.n;
+    const rz = await pool.request().query(
+      "SELECT CONVERT(char(10), DocReceiptDate, 23) AS dzien, COUNT(*) AS n FROM dbo.csDocsHeaders " +
+      'WHERE csDocsTypesId IN (' + TYPY_ZAKUP.join(',') + ") AND DocReceiptDate >= '" + od + "' " +
+      'GROUP BY CONVERT(char(10), DocReceiptDate, 23)');
+    for (const r of rz.recordset) out['FZ|' + r.dzien] = r.n;
     const obecne = {};
     for (const [typ, lista] of Object.entries(numery)) {
       obecne[typ] = new Set();
@@ -61,7 +69,7 @@ async function liczniki(od, numery = {}) {
   }
 }
 
-module.exports = { liczniki, TYPY };
+module.exports = { liczniki, TYPY, TYPY_ZAKUP };
 
 if (require.main === module) {
   liczniki(process.argv[2] || '2026-07-01').then(o => {
