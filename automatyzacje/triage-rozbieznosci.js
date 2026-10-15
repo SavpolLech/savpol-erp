@@ -10,6 +10,9 @@
 // Bez ERP, bez locka, bez bazy — czyta wyłącznie plik w repo, więc nie
 // koliduje z orkiestratorem. Nic nie zmienia w ROZBIEZNOSCI.md.
 //
+// Harmonogram: zadanie Windows „Savpol - triage rozbieznosci (piatek)”,
+// piątek 7:30, przez triage-launcher.bat (log: triage-rozbieznosci.log).
+//
 // Użycie:
 //   node triage-rozbieznosci.js          — zapisz DO-SPRAWDZENIA.md + commit/push
 //   node triage-rozbieznosci.js --dry    — tylko wypisz na ekran
