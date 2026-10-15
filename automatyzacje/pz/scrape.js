@@ -843,18 +843,21 @@ async function setDocTypeFilter(page, label) {
   const pagerCountBefore = await readPagerCount(page);
   await applyBtn.click();
 
-  await page.waitForFunction((before) => {
-    const p = Array.from(document.querySelectorAll('.csDataPager')).find(el => el.offsetParent !== null);
-    const e = p && p.querySelector('.ResultsCountValue');
-    const now = e ? (e.value || e.textContent || '').trim() : null;
-    return now !== null && now !== before;
-  }, pagerCountBefore, { timeout: 15000 }).catch(() => {
-    console.warn('[filtr-typ] Licznik rekordów nie zmienił się w 15s po "Zastosuj" — możliwe, że filtr "' + label + '" się nie zastosował.');
-  });
-  await page.waitForTimeout(500);
-
-  const pagerCountAfter = await readPagerCount(page);
+  // Czekamy na STABILNY, niezerowy licznik (nie na pierwszą zmianę → 0, która
+  // jest przejściowa ~10 s). Patrz waitForStableCount.
+  const pagerCountAfter = await waitForStableCount(page);
   console.log('[filtr-typ] Zastosowano zapisany filtr "' + label + '". Rekordów: przed=' + pagerCountBefore + ', po=' + pagerCountAfter);
+
+  // STRAŻNIK: pełna lista typu NIGDY nie jest pusta w zdrowym ERP. Jeśli PO
+  // USTABILIZOWANIU (do 30 s) licznik nadal 0/nieczytelny — realny problem, nie
+  // "brak dokumentów". Rzucamy — w main() łapie try/catch i jedzie bez filtra
+  // typu (odsiew po stronie skryptu). (Pierwotny fałszywy 0 = za wczesny odczyt,
+  // naprawione przez waitForStableCount.)
+  const afterNum = parseInt(String(pagerCountAfter == null ? '' : pagerCountAfter).replace(/[\s ]/g, ''), 10);
+  if (!(afterNum > 0)) {
+    throw new Error('Zapisany filtr typu "' + label + '" dał pustą listę po ustabilizowaniu (licznik="' + pagerCountAfter +
+      '") — pełna lista ' + label + ' nie może być pusta. Łapane wyżej → jadę bez filtra typu.');
+  }
 }
 
 // ---------- Filtr daty (Od/Do) ----------
@@ -888,25 +891,30 @@ async function setDateFilter(page, isoDateFrom, isoDateTo) {
   }
 
   await humanClickDelay(page);
-  const pagerCountBefore = await readPagerCount(page);
+  // Licznik PRZED filtrem daty = pełna lista (po filtrze typu). Stabilny odczyt,
+  // bo też ładuje się wolno (0 -> realna liczba po ~10 s).
+  const pagerCountBefore = await waitForStableCount(page);
 
   const refreshBtn = page.locator('.ButtonRefresh:visible').first();
   await refreshBtn.waitFor({ timeout: 10000 });
   await refreshBtn.click();
 
-  await page.waitForFunction((before) => {
-    const p = Array.from(document.querySelectorAll('.csDataPager')).find(el => el.offsetParent !== null);
-    const e = p && p.querySelector('.ResultsCountValue');
-    const now = e ? (e.value || e.textContent || '').trim() : null;
-    return now !== null && now !== before;
-  }, pagerCountBefore, { timeout: 15000 }).catch(() => {
-    console.warn('[filtr] Licznik rekordów nie zmienił się w 15s po kliknięciu ".ButtonRefresh" — możliwe, że filtr się nie zastosował.');
-  });
-  await page.waitForTimeout(500);
-
-  const pagerCountAfter = await readPagerCount(page);
+  // Po ButtonRefresh licznik znów idzie 0 -> realna liczba po ~10 s. Czekamy na
+  // stabilny wynik (albo 30 s → wtedy 0 znaczy realnie pusty dzień).
+  const pagerCountAfter = await waitForStableCount(page);
   console.log('[filtr] Ustawiono zakres ' + isoDateFrom + '..' + isoDateTo + ', kliknięto ".ButtonRefresh". ' +
     'Rekordów: przed=' + pagerCountBefore + ', po=' + pagerCountAfter);
+
+  // STRAŻNIK ZASTOSOWANIA FILTRA: licznik PRZED filtrem daty to pełna lista. Jeśli
+  // po ustabilizowaniu jest TAKI SAM jak przed (i to realna, niezerowa liczba),
+  // filtr daty został ZIGNOROWANY — rzucamy, by catchup ponowił. Gdy "przed" było
+  // 0/puste (brak pewnego punktu odniesienia) — guard się nie uruchamia.
+  const normaln = (v) => String(v == null ? '' : v).replace(/[\s ]/g, '');
+  const nb = normaln(pagerCountBefore), na = normaln(pagerCountAfter);
+  if (nb !== '' && nb !== '0' && na === nb) {
+    throw new Error('Filtr daty ' + isoDateFrom + '..' + isoDateTo + ' nie zmienił licznika (przed="' +
+      pagerCountBefore + '", po="' + pagerCountAfter + '") — filtr daty zignorowany. Ponawiam.');
+  }
 }
 
 async function readPagerCount(page) {
@@ -915,6 +923,25 @@ async function readPagerCount(page) {
     const e = p && p.querySelector('.ResultsCountValue');
     return e ? (e.value || e.textContent || '').trim() : null;
   });
+}
+
+// Licznik rekordów ładuje się WOLNO i W DWÓCH KROKACH: po zastosowaniu filtra
+// pokazuje 0 (~10 s), potem skacze na realną liczbę (test Lecha 2026-10-15:
+// 0 -> 9019 po ~10 s). NIE wolno ufać pierwszej zmianie ani odczytowi po 0,5 s.
+// Czekamy, aż licznik ustabilizuje się na wartości > 0 (niezmieniony przez
+// stableMs); jeśli po maxMs nadal 0 — DOPIERO wtedy 0 znaczy realnie pusto.
+async function waitForStableCount(page, { maxMs = 30000, stableMs = 2500, intervalMs = 500 } = {}) {
+  const start = Date.now();
+  let last = null;
+  let lastChangeTs = Date.now();
+  while (Date.now() - start < maxMs) {
+    const now = await readPagerCount(page);
+    if (now !== last) { last = now; lastChangeTs = Date.now(); }
+    const n = parseInt(String(now == null ? '' : now).replace(/[\s ]/g, ''), 10);
+    if (n > 0 && (Date.now() - lastChangeTs) >= stableMs) return now;
+    await page.waitForTimeout(intervalMs);
+  }
+  return last;
 }
 
 async function readPagerCountStable(page, { tries = 15, intervalMs = 400 } = {}) {
@@ -1000,8 +1027,22 @@ async function main() {
 
     await navigateToPzList(page);
 
+    // Zapisany filtr typu to OPTYMALIZACJA — filtr csDocsTypes/DocType w skrypcie
+    // i tak odsiewa obce podtypy. Od 2026-10-14 zapisane filtry w ERP zwracają
+    // pustą listę (po=0 mimo tysięcy dokumentów). Tolerujemy to i jedziemy DALEJ
+    // bez zapisanego filtra (jak MM/WZ). Gdy filtr NIE zadziałał, expectedTotal
+    // liczy wszystkie podtypy PZ*, więc kompletność opiera się na wyczerpaniu
+    // stron, nie na liczniku (patrz typeFilterApplied przy countsMatch/wczesnym
+    // wyjściu).
+    let typeFilterApplied = false;
     if (USE_DOC_TYPE_FILTER) {
-      await setDocTypeFilter(page, PZ_DOC_TYPE_FILTER_LABEL);
+      try {
+        await setDocTypeFilter(page, PZ_DOC_TYPE_FILTER_LABEL);
+        typeFilterApplied = true;
+      } catch (e) {
+        console.warn('[filtr-typ] Zapisany filtr "' + PZ_DOC_TYPE_FILTER_LABEL + '" nie zadziałał (' + e.message +
+          '). Jadę DALEJ bez niego — odsiew typu po stronie skryptu nadal bierze tylko PZ, tylko wolniej (więcej stron).');
+      }
     }
 
     if (dateFrom || dateTo) {
@@ -1023,7 +1064,7 @@ async function main() {
     if (expectedTotal === null) {
       console.warn('[pz] UWAGA: nie udało się odczytać liczby dokumentów z pagera (dostałem "' + expectedRaw + '") — kontrola na koniec przebiegu będzie pominięta.');
     }
-    console.log('[pz] ERP zgłasza ' + (expectedTotal ?? '?') + ' dokumentów dla tego filtra (' + (USE_DOC_TYPE_FILTER ? 'filtr typu "' + PZ_DOC_TYPE_FILTER_LABEL + '" zastosowany' : 'BEZ filtra typu — WSZYSTKIE podtypy PZ*') + ').' +
+    console.log('[pz] ERP zgłasza ' + (expectedTotal ?? '?') + ' dokumentów dla tego filtra (' + (typeFilterApplied ? 'filtr typu "' + PZ_DOC_TYPE_FILTER_LABEL + '" zastosowany' : 'BEZ filtra typu — WSZYSTKIE podtypy PZ*') + ').' +
       (priorState ? ' Mamy już ' + priorState.processedDocNumbers.length + ' z poprzednich sesji.' : ''));
 
     console.log('[pz] Lista załadowana. Startuję zbieranie w paczkach po ' + BATCH_SIZE + ' dok. ' +
@@ -1055,7 +1096,7 @@ async function main() {
     // typu licznik ERP to dokładna liczba PZ dnia. Jeśli ze stanu mamy tyle
     // numerów I wszystkie te dokumenty FAKTYCZNIE są w bazie (stan sam nie
     // dowodzi udanego INSERT-u), dzień jest kompletny — nic do scrapowania.
-    if (!allPagesExhausted && USE_DOC_TYPE_FILTER && expectedTotal > 0 && (dateFrom || dateTo)
+    if (!allPagesExhausted && typeFilterApplied && expectedTotal > 0 && (dateFrom || dateTo)
         && priorState && priorState.processedDocNumbers.length >= expectedTotal) {
       const inDb = await countDocsInDb(priorState.processedDocNumbers);
       if (inDb !== null && inDb >= expectedTotal) {
@@ -1109,7 +1150,12 @@ async function main() {
       // mniej => dzień NIE jest kompletny (stan nie dostaje complete=true).
       allPagesExhausted = !batch.hasNextPage && !!batch.pageDone;
       lastStoppedReason = batch.stoppedReason || null;
-      const countsMatch = !(USE_DOC_TYPE_FILTER && expectedTotal)
+      // Opieramy się na typeFilterApplied (czy zapisany filtr REALNIE zadziałał),
+      // nie na USE_DOC_TYPE_FILTER. Gdy filtr nie zadziałał, expectedTotal liczy
+      // wszystkie podtypy PZ*, a zbieramy tylko PZ — zebrane < expectedTotal jest
+      // wtedy NORMALNE i nie może blokować kompletności (completeness zależy od
+      // wyczerpania stron, jak w MM).
+      const countsMatch = !(typeFilterApplied && expectedTotal)
         || (processedThisRun.size >= expectedTotal);
       const markComplete = allPagesExhausted && countsMatch;
 
@@ -1161,7 +1207,7 @@ async function main() {
       if (haveTotal >= expectedTotal) {
         console.log('[kontrola] ZGADZA SIĘ: mamy ' + haveTotal + ' dok., ERP zgłaszał ' + expectedTotal + '.');
       } else {
-        if (USE_DOC_TYPE_FILTER) {
+        if (typeFilterApplied) {
           // Filtr "PZ" zastosowany => licznik ERP to dokładna liczba PZ. Różnica
           // to BRAKI, nie podtypy; dzień NIE dostał complete (patrz markComplete).
           console.error('[kontrola] BŁĄD KOMPLETNOŚCI: mamy ' + haveTotal + ' z ' + expectedTotal +
