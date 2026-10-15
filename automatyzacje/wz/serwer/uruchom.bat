@@ -10,8 +10,8 @@ REM                   sam podciaga; zero akcji Tomka)
 REM    2) node automatyzacje\dobij-wszystko.js  - przechodzi typy PO
 REM       KOLEI [wz, mm, pz]. Dla kazdego "nadgania" kazdy niekompletny
 REM       dzien z okna wstecz (domyslnie 5 dni) az do kompletu, POTEM
-REM       przechodzi do nastepnego typu. NIGDY dwa naraz - ERP znosi
-REM       tylko jedna sesje logowania. Pisze WPROST do tabel PROD.
+REM       przechodzi do nastepnego typu. NIGDY dwa naraz - nasza zasada
+REM       (maks. jedna sesja automatu w logach Certusoftu). Pisze WPROST do PROD.
 REM
 REM  Weekend: zadanie odpala sie pon-pt, ale okno wstecz sprawia, ze
 REM  poniedzialkowy bieg sam dobiera piatek+sobote+niedziele (sob/nd

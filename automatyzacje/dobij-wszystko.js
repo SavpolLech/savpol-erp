@@ -3,8 +3,10 @@
 // dokumentów (krok PRODUKTY). Uruchamiane na serwerze przez wz/serwer/uruchom.bat
 // (git pull + node dobij-wszystko.js), raz dziennie w dni robocze.
 //
-// DLACZEGO SEKWENCYJNIE: ERP znosi tylko JEDNĄ sesję logowania naraz. Dwa
-// scrapery równolegle = jeden wywala drugiego z sesji. Dlatego typy idą PO
+// DLACZEGO SEKWENCYJNIE: ERP technicznie znosi kilka sesji tego samego konta
+// (Lech pracuje w ERP równolegle do biegu i nikogo nie wywala). To NASZA zasada
+// (Lech 2026-10-15): maks. jedna sesja automatu naraz, żeby w logach Certusoftu
+// nie było kilku równoległych „Lechów Dutkiewiczów". Dlatego typy idą PO
 // KOLEI: każdy nadganiany do kompletu, dopiero potem następny.
 //
 // GLOBALNY LOCK (automatyzacje/.scrapery.lock): dodatkowa siatka na wypadek,

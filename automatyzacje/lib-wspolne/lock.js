@@ -1,6 +1,7 @@
 // GLOBALNY lock dla scraperów ERP — jeden plik dla wszystkich typów, żeby
 // żaden bieg (codzienny orkiestrator dobij-wszystko.js ani ręczny dobij-dzien.js)
-// nie wszedł na ERP równolegle z innym. ERP znosi tylko jedną sesję logowania.
+// nie wszedł na ERP równolegle z innym. Zasada nasza, nie limit ERP: maks. jedna
+// sesja automatu naraz (czyste logi po stronie Certusoftu) — Lech 2026-10-15.
 //
 // Lock trzyma PID + znacznik czasu. Zajęty świeży lock = odmowa (inny bieg
 // trwa). Lock starszy niż staleMs = osierocony (proces padł bez sprzątnięcia) —
