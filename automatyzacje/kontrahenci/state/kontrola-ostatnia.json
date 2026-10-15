@@ -1,40 +1,16 @@
 {
- "ts": "2026-10-14T09:52:58.722Z",
+ "ts": "2026-10-15T09:13:15.226Z",
  "tabela": "csCustomers",
- "prog": "0062971",
- "listaZ": "2026-10-02T12:19:34.035Z",
- "lista": 820,
- "erpWszyscy": 58075,
- "wWorku": 58077,
+ "prog": "0063785",
+ "listaZ": "2026-10-15T09:00:28.315Z",
+ "lista": 157,
+ "erpWszyscy": 58232,
+ "wWorku": 58234,
  "roznicaBilansu": -2,
- "lukiBrakWErp": [
-  "0063102",
-  "0063394",
-  "0063427",
-  "0063435",
-  "0063564"
- ],
+ "lukiBrakWErp": [],
  "bezKarty": [],
  "brakWTabeli": [],
- "docNieobslugiwane": [
-  "30959853969",
-  "30901000368",
-  "30920224887",
-  "30939379206",
-  "31033257756",
-  "31033172976",
-  "30939041241",
-  "30899798181",
-  "30958821399",
-  "30846397986",
-  "30846333210",
-  "30919666404",
-  "30979027800",
-  "30979005771",
-  "30958846401",
-  "30978065274",
-  "30939928869"
- ],
+ "docNieobslugiwane": [],
  "ok": false,
  "sprawdzenia": [
   {
@@ -55,7 +31,7 @@
   },
   {
    "nazwa": "4. kontrahenci z dokumentów WZ/MM/PZ obecni",
-   "ok": false
+   "ok": true
   },
   {
    "nazwa": "5. bilans: worek = licznik ERP \"Wszyscy\"",
