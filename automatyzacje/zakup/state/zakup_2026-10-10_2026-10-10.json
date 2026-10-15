@@ -6,7 +6,7 @@
     "30997213119"
   ],
   "complete": true,
-  "lastUpdated": "2026-10-14T09:36:32.164Z",
+  "lastUpdated": "2026-10-15T08:52:04.228Z",
   "runs": [
     {
       "ts": "2026-10-14T09:36:32.163Z",
@@ -15,6 +15,15 @@
       "fzKsef": 2,
       "oczekujace": 0,
       "wstawiono": 2,
+      "complete": true
+    },
+    {
+      "ts": "2026-10-15T08:52:04.138Z",
+      "erp": 4,
+      "fz": 0,
+      "fzKsef": 2,
+      "oczekujace": 0,
+      "wstawiono": 0,
       "complete": true
     }
   ]
