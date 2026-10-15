@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.6.0
+// @version      4.7.0
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -91,12 +91,21 @@
     // zamiast kolejnego komunikatu o wewnetrznym bledzie ERP dostaje jedno
     // zdanie o tym, co ma zrobic.
     PROBUJ_BEZ_WZORCA: false,
-    // Ile bajtow zada przyjmie apka. Vercel tnie na 4,5 MB CALEGO zadania,
-    // a PDF jedzie w JSON-ie jako base64, czyli puchnie o jedna trzecia —
-    // razem z opisem z ERP realny sufit pliku to okolo 3,3 MB. Liczymy to
-    // PRZED wysylka, bo inaczej wypychamy przez lacze kilka megabajtow po to,
-    // zeby uslyszec 413. Przy wiekszym pliku zostaje droga reczna: apka
-    // wgrany PDF czyta w przegladarce i na serwer idzie sam tekst.
+    // Migawka opisow z ERP idzie OSOBNYM zadaniem i PO pliku.
+    //
+    // Osobnym, bo w naglowku by sie nie zmiescila (bywa kilkadziesiat kB), a
+    // plik jedzie teraz jako surowe bajty. Po pliku, bo zapis PDF-u tworzy po
+    // stronie apki plik towarzyszacy z metadanymi i skasowalby migawke
+    // wyslana wczesniej (ustalone z sesja „Apka", 15.10.2026).
+    ENDPOINT_OPIS: '/api/spec-pdf/erp-opis',
+    // Ile bajtow zada przyjmie apka. Vercel tnie na 4,5 MB CALEGO zadania.
+    //
+    // Do 4.6.0 PDF jechal w JSON-ie jako base64 i puchl o jedna trzecia, co
+    // zbijalo realny sufit pliku do ~3,3 MB — specyfikacja 0006483 (4,2 MB)
+    // nie miala szans. Od 4.7.0 ida surowe bajty, wiec sufit to juz prawie
+    // cale 4,5 MB. Liczymy to PRZED wysylka, bo inaczej wypychamy przez lacze
+    // kilka megabajtow po to, zeby uslyszec 413. Powyzej zostaje droga reczna:
+    // apka wgrany PDF czyta w przegladarce i na serwer idzie sam tekst.
     LIMIT_ZADANIA: 4.5 * 1024 * 1024,
     // „Specyfikacja i wartosc energetyczna produktu" — produkt miewa tez inne
     // zalaczniki (Atest), wiec filtr po typie jest konieczny.
@@ -3576,24 +3585,26 @@
     if (new TextDecoder().decode(bajty.slice(0, 5)).indexOf('%PDF') !== 0) {
       return { ok: false, blad: 'to nie jest PDF' };
     }
-    let bin = '';
-    for (let i = 0; i < bajty.length; i += 8192) {
-      bin += String.fromCharCode.apply(null, bajty.subarray(i, i + 8192));
-    }
-    return { ok: true, base64: btoa(bin), bajtow: bajty.length };
+    return { ok: true, bajty: bajty, bajtow: bajty.length };
   }
 
-  function apkaZadanie(metoda, sciezka, dane) {
+  function apkaZadanie(metoda, sciezka, dane, naglowki) {
     return new Promise(resolve => {
       const origin = generatorOrigin();
       if (!origin || typeof GM_xmlhttpRequest !== 'function') {
         return resolve({ status: 0, body: {} });
       }
+      // Bajty idą jako Blob, reszta jako JSON. Apka rozpoznaje jedno od
+      // drugiego po Content-Type, więc tu tylko pilnujemy, żeby się zgadzał.
+      const surowe = dane instanceof Uint8Array;
+      const naglowkiRazem = Object.assign({}, naglowki || {});
+      if (dane != null && !surowe) naglowkiRazem['Content-Type'] = 'application/json';
       GM_xmlhttpRequest({
         method: metoda,
         url: origin + sciezka,
-        headers: dane ? { 'Content-Type': 'application/json' } : {},
-        data: dane ? JSON.stringify(dane) : undefined,
+        headers: naglowkiRazem,
+        data: dane == null ? undefined
+          : (surowe ? new Blob([dane], { type: 'application/pdf' }) : JSON.stringify(dane)),
         timeout: 60000,
         onload: res => {
           let body = {};
@@ -3615,18 +3626,37 @@
     return (Number(bajtow || 0) / 1024 / 1024).toFixed(1).replace('.', ',');
   }
 
-  function zaDuzaSpecyfikacja(plik, opisZerp, zOdpowiedzi) {
-    const base64 = (plik.base64 || '').length;
-    const reszta = JSON.stringify(opisZerp || '').length + 500;   // meta i nazwy pol
-    if (!zOdpowiedzi && base64 + reszta <= SPEC_PDF.LIMIT_ZADANIA) return null;
+  function zaDuzaSpecyfikacja(plik, zOdpowiedzi) {
+    // Same bajty plus nagłówki — opis z ERP jedzie już osobnym żądaniem.
+    if (!zOdpowiedzi && plik.bajtow + 2048 <= SPEC_PDF.LIMIT_ZADANIA) return null;
     const mb = wMegabajtach(plik.bajtow);
     return {
       ok: false,
       powod: 'specyfikacja ma ' + mb + ' MB — za dużo na jedno żądanie do apki',
       rada: 'Specyfikacja ma ' + mb + ' MB, a automat przeniesie najwyżej około '
-        + '3,3 MB. Pobierz PDF z ERP i wgraj go w apce ręcznie — apka odczyta '
+        + '4,4 MB. Pobierz PDF z ERP i wgraj go w apce ręcznie — apka odczyta '
         + 'z niego tekst u siebie i poradzi sobie z każdym rozmiarem.'
     };
+  }
+
+  // Nazwa pliku w nagłówku: RFC 5987, bo bywa „MLEKO PEŁNE w proszku.pdf".
+  // Nagłówek HTTP nie przeniesie polskich znaków ani spacji inaczej.
+  function naglowekNazwy(nazwa) {
+    return "UTF-8''" + encodeURIComponent(String(nazwa || 'specyfikacja.pdf'));
+  }
+
+  // Migawka opisów z ERP, osobnym żądaniem PO pliku.
+  //
+  // Nie jest krytyczna: bez niej apka wygeneruje opis, tylko nie pokaże, co
+  // w ERP stoi dzisiaj. Dlatego niepowodzenie melduje się w konsoli i nie
+  // przewraca całej wysyłki, która w tym momencie już się udała.
+  async function apkaWyslijOpisZerp(sku, opisZerp) {
+    const r = await apkaZadanie('POST', SPEC_PDF.ENDPOINT_OPIS,
+      { sku: sku, erpOpis: opisZerp });
+    if (r.status === 200 && r.body && r.body.ok) return true;
+    console.warn('[Specyfikacja] ' + sku + ': migawka opisów z ERP nie doszła (HTTP '
+      + r.status + '). Apka wygeneruje opis, ale bez pokazania stanu z ERP.');
+    return false;
   }
 
   // Całość, od SKU do wysłanego pliku.
@@ -3662,6 +3692,9 @@
           && String(juz.body.attachmentId) === String(wiersz.csAttachmentsId)
           && String(juz.body.versionId) === String(wiersz.VersionId)) {
         console.log('[Specyfikacja] Apka ma już aktualną wersję — nie wysyłam.');
+        // Plik ten sam, ale opisy w ERP mogły się w międzyczasie zmienić.
+        // Migawka jest tania, a bez niej apka pokazałaby wczorajszy stan.
+        await apkaWyslijOpisZerp(sku, await migawkaOpisow(sku));
         return { ok: true, pominiete: true };
       }
 
@@ -3686,37 +3719,33 @@
           + ' z ' + wersja.SizeInBytes + ' B)' };
       }
 
-      const opisZerp = await migawkaOpisow(sku);
-      const zaDuzy = zaDuzaSpecyfikacja(plik, opisZerp);
+      const zaDuzy = zaDuzaSpecyfikacja(plik);
       if (zaDuzy) {
         console.warn('[Specyfikacja] ' + sku + ': ' + zaDuzy.powod);
         return zaDuzy;
       }
 
-      const odp = await apkaZadanie('POST', SPEC_PDF.ENDPOINT, {
-        sku: sku,
-        pdfBase64: plik.base64,
-        // Bieżąca treść opisu z ERP. Apka sama do ERP nie wchodzi, a bez tego
-        // nie miałaby czego oddać jako `stanZerp` przy generowaniu.
-        erpOpis: opisZerp,
-        meta: {
-          attachmentId: String(wiersz.csAttachmentsId),
-          versionId: String(wiersz.VersionId),
-          filename: info.info.FileName,
-          erpAddedAt: wiersz.AddDate || null
-        }
+      // Surowe bajty, metadane w nagłówkach. Base64 w JSON-ie zjadało jedną
+      // trzecią limitu Vercela i odcinało specyfikacje powyżej ~3,3 MB.
+      const odp = await apkaZadanie('POST', SPEC_PDF.ENDPOINT, plik.bajty, {
+        'Content-Type': 'application/pdf',
+        'X-Sku': String(sku),
+        'X-Attachment-Id': String(wiersz.csAttachmentsId),
+        'X-Version-Id': String(wiersz.VersionId),
+        'X-Filename': naglowekNazwy(info.info.FileName),
+        'X-Erp-Added-At': String(wiersz.AddDate || '')
       });
       if (odp.status === 413) {
-        // Nasze wyliczenie nie trafilo (dluzszy opis, inny limit po stronie
-        // apki) — komunikat ma byc ten sam, bo i rada jest ta sama.
-        return zaDuzaSpecyfikacja(plik, opisZerp, true);
+        // Nasze wyliczenie nie trafilo — komunikat ma byc ten sam, bo i rada
+        // jest ta sama.
+        return zaDuzaSpecyfikacja(plik, true);
       }
       if (odp.status !== 200 || !odp.body || !odp.body.ok) {
         return { ok: false, powod: 'apka odrzuciła wysyłkę (HTTP ' + odp.status + ')' };
       }
       // SPRAWDZAMY, CZY BAJTY PRZEŻYŁY. Kod 200 mówi tylko tyle, że serwer
       // przyjął żądanie — nie że plik da się potem odczytać. Droga wiedzie
-      // przez base64, GitHub API i z powrotem, a PDF psuje się po cichu:
+      // przez GitHub API i z powrotem, a PDF psuje się po cichu:
       // otworzy się albo i nie, ale nikt tego nie zauważy przy zapisie.
       // Rozmiar jest tanim i wystarczającym świadkiem.
       const kontrola = await apkaZadanie('GET', SPEC_PDF.ENDPOINT + '?sku=' + encodeURIComponent(sku));
@@ -3726,6 +3755,10 @@
           + plik.bajtow + ' B, apka ma ' + zapisane + ' B. Plik może być uszkodzony.');
         return { ok: false, powod: 'plik doszedł uszkodzony (' + zapisane + ' zamiast ' + plik.bajtow + ' B)' };
       }
+
+      // Dopiero teraz migawka opisów: zapis pliku nadpisuje po stronie apki
+      // plik z metadanymi, więc wysłana wcześniej przepadłaby.
+      await apkaWyslijOpisZerp(sku, await migawkaOpisow(sku));
 
       console.log('[Specyfikacja] Wysłana do apki:', info.info.FileName,
         plik.bajtow + ' B', odp.body.unchanged ? '(bez zmian)' : '',
