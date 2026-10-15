@@ -17,6 +17,12 @@
     "2026/PZ/WLS1/004887",
     "2026/PZ/WLS1/004886",
     "2026/PZ/WLS1/004885",
+    "2026/PZ/WLS1/004884",
+    "2026/PZ/WLS1/004883",
+    "2026/PZ/WLS1/004882",
+    "2026/PZ/WLS1/004881",
+    "2026/PZ/WLS1/004880",
+    "2026/PZ/WLS1/004879",
     "2026/PZ/WLS1/004878",
     "2026/PZ/WLS1/004877",
     "2026/PZ/WLS1/004876",
@@ -32,6 +38,12 @@
     "2026/PZ/WAS1/003648",
     "2026/PZ/WAS1/003647",
     "2026/PZ/WAS1/003646",
+    "2026/PZ/WAS1/003645",
+    "2026/PZ/WAS1/003644",
+    "2026/PZ/WAS1/003643",
+    "2026/PZ/WAS1/003642",
+    "2026/PZ/WAS1/003641",
+    "2026/PZ/WAS1/003640",
     "2026/PZ/WAS1/003639",
     "2026/PZ/SZTR/000263",
     "2026/PZ/SZTR/000262",
@@ -47,6 +59,12 @@
     "2026/PZ/RAS1/003544",
     "2026/PZ/RAS1/003543",
     "2026/PZ/RAS1/003542",
+    "2026/PZ/RAS1/003541",
+    "2026/PZ/RAS1/003540",
+    "2026/PZ/RAS1/003539",
+    "2026/PZ/RAS1/003538",
+    "2026/PZ/RAS1/003537",
+    "2026/PZ/RAS1/003536",
     "2026/PZ/RAS1/003535",
     "2026/PZ/RAS1/003534",
     "2026/PZ/RAS1/003533",
@@ -62,6 +80,12 @@
     "2026/PZ/KRS1/005993",
     "2026/PZ/KRS1/005992",
     "2026/PZ/KRS1/005991",
+    "2026/PZ/KRS1/005990",
+    "2026/PZ/KRS1/005989",
+    "2026/PZ/KRS1/005988",
+    "2026/PZ/KRS1/005987",
+    "2026/PZ/KRS1/005986",
+    "2026/PZ/KRS1/005985",
     "2026/PZ/KRS1/005984",
     "2026/PZ/KRS1/005982",
     "2026/PZ/KRS1/005981",
@@ -77,6 +101,12 @@
     "2026/PZ/GLS1/008056",
     "2026/PZ/GLS1/008055",
     "2026/PZ/GLS1/008054",
+    "2026/PZ/GLS1/008053",
+    "2026/PZ/GLS1/008052",
+    "2026/PZ/GLS1/008051",
+    "2026/PZ/GLS1/008050",
+    "2026/PZ/GLS1/008049",
+    "2026/PZ/GLS1/008048",
     "2026/PZ/GLS1/008047",
     "2026/PZ/GLS1/008046",
     "2026/PZ/GLS1/008045",
@@ -92,6 +122,12 @@
     "2026/PZ/GLS1/008035",
     "2026/PZ/GLS1/008034",
     "2026/PZ/GLS1/008033",
+    "2026/PZ/GLS1/008032",
+    "2026/PZ/GLS1/008030",
+    "2026/PZ/GLS1/008029",
+    "2026/PZ/GLS1/008028",
+    "2026/PZ/GLS1/008027",
+    "2026/PZ/GLS1/008026",
     "2026/PZ/GLS1/008025",
     "2026/PZ/GDS1/003373",
     "2026/PZ/GDS1/003372",
@@ -107,13 +143,19 @@
     "2026/PZ/GDS1/003362",
     "2026/PZ/GDS1/003361",
     "2026/PZ/GDS1/003360",
+    "2026/PZ/GDS1/003359",
+    "2026/PZ/GDS1/003358",
+    "2026/PZ/GDS1/003357",
+    "2026/PZ/GDS1/003356",
+    "2026/PZ/GDS1/003355",
+    "2026/PZ/GDS1/003354",
     "2026/PZ/GDS1/003353",
     "2026/PZ/GDS1/003352",
     "2026/PZ/GDS1/003351",
     "2026/PZ/GDS1/003350"
   ],
-  "complete": false,
-  "lastUpdated": "2026-09-30T07:45:02.664Z",
+  "complete": true,
+  "lastUpdated": "2026-10-15T13:48:26.021Z",
   "runs": [
     {
       "ts": "2026-09-30T07:33:10.952Z",
@@ -159,6 +201,96 @@
     },
     {
       "ts": "2026-09-30T07:45:02.663Z",
+      "paczkaDok": 4,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-15T13:34:27.535Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-10-15T13:34:52.916Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-15T13:36:12.318Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-10-15T13:36:41.535Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-15T13:38:30.839Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-10-15T13:38:56.077Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-15T13:40:35.816Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-10-15T13:41:03.014Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-15T13:42:34.403Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-10-15T13:43:03.075Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-15T13:44:51.984Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-10-15T13:45:21.570Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-15T13:46:56.709Z",
+      "paczkaDok": 15,
+      "partial": true,
+      "stoppedReason": "batch_limit"
+    },
+    {
+      "ts": "2026-10-15T13:47:27.184Z",
+      "paczkaDok": 6,
+      "partial": false,
+      "stoppedReason": null
+    },
+    {
+      "ts": "2026-10-15T13:48:26.020Z",
       "paczkaDok": 4,
       "partial": false,
       "stoppedReason": null
