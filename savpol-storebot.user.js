@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Zamówienia bota Google (StoreBot)
 // @namespace    savpol-erp-tools
-// @version      2.0.2
+// @version      2.0.3
 // @description  W tle, co 5 minut, szuka otwartych zamówień ZOID złożonych przez Google StoreBot (John Smith, *@storebotmail.joonix.net), sam je anuluje i powiadamia (Windows + mail).
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-storebot.user.js
@@ -62,6 +62,12 @@
   // Statusy, w których zamówienie bota już nikomu nie przeszkadza.
   const ZAMKNIETE = ['W koszyku', 'Anulowany', 'Zamknięte', 'Zrealizowane'];
   const K_SZABLON = 'storebot_szablon';
+  const K_SZABLON_OK = 'storebot_szablon_ok'; // true = wzorzec dał już poprawną listę
+  // Pola sterujące zapytaniem (odświeżenie jednego rekordu, TOP, WHERE…). W zapytaniu pełnej
+  // listy są puste; wypełnione = strona odświeżała pojedyncze zamówienie po edycji (15.10:
+  // „Must declare the scalar variable @__TOP__csDocsHeadersG_0”).
+  const POLA_STERUJACE = ['__TOP__', '__PAGENEEDED__', '__FIELDS__', '__WHERE__', '__ORDERBY__', '__PARAMS__',
+    '__OFFSET__', '__TOPWHERE__', '__ISREFRESHONERECORD__', '__ISCOUNT__', '__PAGEACTUAL__', '__ISSUM__', '__GROUPBY__'];
   const K_OSTATNIE = 'storebot_ostatnie_sprawdzenie';
   const K_PROBY = 'storebot_proby';         // { id: liczba prób anulowania }
   const K_ZGLOSZONE = 'storebot_zgloszone'; // id, o których już powiadomiliśmy (alarm „anuluj ręcznie”)
@@ -73,7 +79,7 @@
   const toBot = w => /@storebotmail\.joonix\.net/i.test(String(w.EMails || ''))
     || /^john\s+smith$/i.test(((w.Name || '') + ' ' + (w.Surname || '')).trim());
 
-  const stan = { koperta: null, doAnulowaniaRecznie: [], ostatniBlad: null, bledyZRzedu: 0, zamkniety: null, ostatnieSprawdzenie: null, wierszy: null };
+  const stan = { koperta: null, kandydat: null, doAnulowaniaRecznie: [], ostatniBlad: null, bledyZRzedu: 0, zamkniety: null, ostatnieSprawdzenie: null, wierszy: null };
 
   // ---------- Kodowanie zapytań ERP ----------
   // Input = base64 z ZIP-a (jeden plik JSON) albo samego JSON-a (Compress:false).
@@ -110,7 +116,12 @@
     if (!stan.koperta) throw new Error('brak sesji — ERP jeszcze nic nie wysłało');
     const p = JSON.parse(JSON.stringify(stan.koperta));
     p.LoginInfo.Password = '';
-    p.OperationInvokeInput.DelegateIdent = guid();
+    const oi = p.OperationInvokeInput;
+    oi.DelegateIdent = guid();
+    // Z koperty strony bierzemy tylko dane sesji. Resztę ostatniego zapytania strony
+    // (np. parametry odświeżenia jednego zamówienia) czyścimy, żeby nie przeszła do naszego.
+    ['OperationListPrev', 'TransIdent', 'RefreshQueryUID', 'DataSetSQLTypeObject', 'DataTableInitList', 'RefreshInputObject']
+      .forEach(k => { if (k in oi) oi[k] = null; });
     return p;
   }
 
@@ -124,10 +135,25 @@
     const lista = oi.RefreshInputObject && oi.RefreshInputObject.DataTableInitList;
     if (String(dict).toLowerCase() !== DICT.toLowerCase() || !lista) return;
     if (!Object.values(lista).some(t => t && t.Refresh && t.DataTableInit)) return;
+    if (czyOdswiezenieRekordu(lista)) return;
+    const wzorzec = JSON.stringify({ params: oi.Params, parentIdent: oi.RefreshInputObject.ParentIdent, lista });
+    // Sprawdzonego wzorca nie nadpisujemy niesprawdzonym: nowy czeka jako kandydat
+    // i wchodzi dopiero, gdy stary przestanie działać, a nowy da poprawną listę.
+    if (GM_getValue(K_SZABLON_OK, false)) { stan.kandydat = wzorzec; return; }
     const pierwszy = !GM_getValue(K_SZABLON, null);
-    GM_setValue(K_SZABLON, JSON.stringify({ params: oi.Params, parentIdent: oi.RefreshInputObject.ParentIdent, lista }));
+    GM_setValue(K_SZABLON, wzorzec);
     if (pierwszy) { console.log('[StoreBot] Wzorzec listy zamówień zapamiętany.'); setTimeout(sprawdz, 3000); }
     rysujPasek();
+  }
+
+  // Czy któraś tabela ma wypełnione pole sterujące (= odświeżenie pojedynczego rekordu)?
+  function czyOdswiezenieRekordu(lista) {
+    return Object.values(lista).some(t => {
+      const dt = t && t.DataTableInit && t.DataTableInit.DataTable;
+      if (!dt || !dt.Rows || !dt.Rows.length) return false;
+      return dt.FieldDefs.some((f, i) => POLA_STERUJACE.includes(f.FieldName)
+        && dt.Rows.some(r => { const v = odpakuj(r[i]); return v !== null && v !== undefined && v !== ''; }));
+    });
   }
 
   function zainstalujPodsluch() {
@@ -149,16 +175,17 @@
   // ---------- Lista ZOID ----------
   // Zwraca surową siatkę (FieldDefs + Rows) — potrzebna do anulowania — i wiersze jako obiekty.
 
-  async function pobierzZoid() {
-    const sz = JSON.parse(GM_getValue(K_SZABLON, 'null'));
+  async function pobierzZoid(wzorzec = GM_getValue(K_SZABLON, null)) {
+    const sz = JSON.parse(wzorzec || 'null');
     if (!sz) throw new Error('brak wzorca — otwórz raz Sprzedaż → Zamówienia sprzedaży');
     const p = nowaPaczka();
     const oi = p.OperationInvokeInput;
     oi.OperationName = 'RefreshDataSetSQL_Synchronous';
     oi.Params = sz.params;
     // Losowy ParentUniqName: zapytanie nie wymaga otwartego okna listy.
-    oi.RefreshInputObject = Object.assign({}, oi.RefreshInputObject || {},
-      { ParentUniqName: guid(), ParentIdent: sz.parentIdent, DataTableInitList: sz.lista });
+    // InputForDataSetSQL/RecordProps puste — sprawdzone 15.10, lista przychodzi bez nich.
+    oi.RefreshInputObject = { ParentUniqName: guid(), ParentIdent: sz.parentIdent, DataTableInitList: sz.lista,
+      InputForDataSetSQL: null, RecordProps: null };
 
     const iso = d => d.toISOString().slice(0, 10) + ' 00:00:00';
     // Status 0 = „Wszystkie”; resztę odsiewamy niżej (102 „otwarte” gubi np. „Do realizacji”).
@@ -174,6 +201,11 @@
       if (t.Refresh) Object.assign(t, { QueryUID: queryUID, PageSizeFromClient: 500, PageActual: 0, SelectStmType: 2 });
       const dt = t.DataTableInit.DataTable;
       const idx = n => dt.FieldDefs.findIndex(f => f.FieldName === n);
+      // Wzorzec zapamiętany przez 2.0.0–2.0.2 mógł mieć wypełnione pola sterujące — zerujemy.
+      dt.FieldDefs.forEach((f, i) => {
+        if (!POLA_STERUJACE.includes(f.FieldName)) return;
+        dt.Rows.forEach(r => { const c = r[i]; r[i] = (c && typeof c === 'object' && !Array.isArray(c)) ? { [Object.keys(c)[0] || 'Item']: null } : null; });
+      });
       if (idx('DocDateFrom') < 0 || dt.Rows.length !== 1) return;
       Object.entries(filtr).forEach(([n, v]) => {
         const i = idx(n); if (i < 0) return;
@@ -232,6 +264,35 @@
   const doAnulowania = wiersze => wiersze.filter(w =>
     String(w.csDocsTypesId) === ZOID_TYP && !ZAMKNIETE.includes(w.StatusValueTranslatedDesc) && toBot(w));
 
+  // Błąd przejściowy (serwer zajęty) nie świadczy o złym wzorcu.
+  const bladPrzejsciowy = e => /limit czasu|timeout|transport|semafor|deadlock|zakleszcz|sieci|Failed to fetch/i.test(String(e && e.message || e));
+
+  // Lista z zapamiętanego wzorca; gdy ten nie działa (błąd inny niż przejściowy), próbuje
+  // kandydata podsłuchanego w tej sesji. Działający wzorzec zostaje zapamiętany jako sprawdzony.
+  async function pobierzListeZWzorcem() {
+    try {
+      const lista = await pobierzZoid();
+      GM_setValue(K_SZABLON_OK, true);
+      return lista;
+    } catch (e) {
+      if (bladPrzejsciowy(e)) throw e;
+      const kandydat = stan.kandydat;
+      stan.kandydat = null;
+      if (kandydat) {
+        try {
+          const lista = await pobierzZoid(kandydat);
+          GM_setValue(K_SZABLON, kandydat);
+          GM_setValue(K_SZABLON_OK, true);
+          dziennik('wzorzec listy wymieniony po błędzie: ' + String(e.message || e).slice(0, 120));
+          return lista;
+        } catch (e2) { /* zostaje pierwotny błąd */ }
+      }
+      // Zły wzorzec: następne zapytanie strony o listę zamówień zastąpi go samo.
+      GM_setValue(K_SZABLON_OK, false);
+      throw e;
+    }
+  }
+
   async function sprawdz() {
     // Jedna karta naraz: inna sprawdzała przed chwilą → pomiń.
     const ostatnie = Number(GM_getValue(K_OSTATNIE, 0));
@@ -240,7 +301,7 @@
     GM_setValue(K_OSTATNIE, Date.now());
     stan.ostatnieSprawdzenie = new Date();
     try {
-      let lista = await pobierzZoid();
+      let lista = await pobierzListeZWzorcem();
       stan.wierszy = lista.wiersze.length;
       const boty = doAnulowania(lista.wiersze);
       if (boty.length && GM_getValue(K_AUTO, true)) {
