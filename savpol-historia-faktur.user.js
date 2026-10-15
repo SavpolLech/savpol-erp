@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Savpol ERP -> Historia faktur produktu (CSV)
 // @namespace    savpol-erp-tools
-// @version      4.5.1
+// @version      4.6.0
 // @description  Buduje opis produktu: pobiera z ERP specyfikację produktu i wysyła ją do generatora opisów, a gotowe opisy zapisuje z powrotem do ERP (opisy B2B + SEO w formularzu karty)
 // @homepageURL  https://github.com/SavpolLech/savpol-erp
 // @updateURL    https://raw.githubusercontent.com/SavpolLech/savpol-erp/main/savpol-historia-faktur.user.js
@@ -91,6 +91,13 @@
     // zamiast kolejnego komunikatu o wewnetrznym bledzie ERP dostaje jedno
     // zdanie o tym, co ma zrobic.
     PROBUJ_BEZ_WZORCA: false,
+    // Ile bajtow zada przyjmie apka. Vercel tnie na 4,5 MB CALEGO zadania,
+    // a PDF jedzie w JSON-ie jako base64, czyli puchnie o jedna trzecia —
+    // razem z opisem z ERP realny sufit pliku to okolo 3,3 MB. Liczymy to
+    // PRZED wysylka, bo inaczej wypychamy przez lacze kilka megabajtow po to,
+    // zeby uslyszec 413. Przy wiekszym pliku zostaje droga reczna: apka
+    // wgrany PDF czyta w przegladarce i na serwer idzie sam tekst.
+    LIMIT_ZADANIA: 4.5 * 1024 * 1024,
     // „Specyfikacja i wartosc energetyczna produktu" — produkt miewa tez inne
     // zalaczniki (Atest), wiec filtr po typie jest konieczny.
     TYP_GUID: '1b5d6bfc-8585-4056-c57d-1a89ab4b3fd0'
@@ -3599,6 +3606,29 @@
     });
   }
 
+  // Czy plik zmiesci sie w jednym zadaniu do apki.
+  //
+  // Duze specyfikacje nie sa bledem skryptu ani apki, tylko sufitem platformy,
+  // na ktorej apka stoi. Czlowiek ma z tego wiedziec jedno: ile wazy plik i co
+  // zrobic zamiast klikania drugi raz, bo druga proba skonczy sie tak samo.
+  function wMegabajtach(bajtow) {
+    return (Number(bajtow || 0) / 1024 / 1024).toFixed(1).replace('.', ',');
+  }
+
+  function zaDuzaSpecyfikacja(plik, opisZerp, zOdpowiedzi) {
+    const base64 = (plik.base64 || '').length;
+    const reszta = JSON.stringify(opisZerp || '').length + 500;   // meta i nazwy pol
+    if (!zOdpowiedzi && base64 + reszta <= SPEC_PDF.LIMIT_ZADANIA) return null;
+    const mb = wMegabajtach(plik.bajtow);
+    return {
+      ok: false,
+      powod: 'specyfikacja ma ' + mb + ' MB — za dużo na jedno żądanie do apki',
+      rada: 'Specyfikacja ma ' + mb + ' MB, a automat przeniesie najwyżej około '
+        + '3,3 MB. Pobierz PDF z ERP i wgraj go w apce ręcznie — apka odczyta '
+        + 'z niego tekst u siebie i poradzi sobie z każdym rozmiarem.'
+    };
+  }
+
   // Całość, od SKU do wysłanego pliku.
   //
   // NIC TU NIE JEST KRYTYCZNE. Każde niepowodzenie kończy się wpisem w konsoli
@@ -3656,12 +3686,19 @@
           + ' z ' + wersja.SizeInBytes + ' B)' };
       }
 
+      const opisZerp = await migawkaOpisow(sku);
+      const zaDuzy = zaDuzaSpecyfikacja(plik, opisZerp);
+      if (zaDuzy) {
+        console.warn('[Specyfikacja] ' + sku + ': ' + zaDuzy.powod);
+        return zaDuzy;
+      }
+
       const odp = await apkaZadanie('POST', SPEC_PDF.ENDPOINT, {
         sku: sku,
         pdfBase64: plik.base64,
         // Bieżąca treść opisu z ERP. Apka sama do ERP nie wchodzi, a bez tego
         // nie miałaby czego oddać jako `stanZerp` przy generowaniu.
-        erpOpis: await migawkaOpisow(sku),
+        erpOpis: opisZerp,
         meta: {
           attachmentId: String(wiersz.csAttachmentsId),
           versionId: String(wiersz.VersionId),
@@ -3670,7 +3707,9 @@
         }
       });
       if (odp.status === 413) {
-        return { ok: false, powod: 'plik za duży dla apki (' + plik.bajtow + ' B)' };
+        // Nasze wyliczenie nie trafilo (dluzszy opis, inny limit po stronie
+        // apki) — komunikat ma byc ten sam, bo i rada jest ta sama.
+        return zaDuzaSpecyfikacja(plik, opisZerp, true);
       }
       if (odp.status !== 200 || !odp.body || !odp.body.ok) {
         return { ok: false, powod: 'apka odrzuciła wysyłkę (HTTP ' + odp.status + ')' };
@@ -3843,7 +3882,7 @@
       const spec = await wyslijSpecyfikacjeDoApki(mainSku);
       if (!spec.ok) {
         console.warn('[Specyfikacja] Nie wysłano: ' + spec.powod);
-        if (!erpPodsluch.szablonZalacznikow) spec.rada = RADA_ZALACZNIKI;
+        if (!spec.rada && !erpPodsluch.szablonZalacznikow) spec.rada = RADA_ZALACZNIKI;
       }
 
       if (spec.ok) {
