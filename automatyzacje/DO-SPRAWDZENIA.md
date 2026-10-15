@@ -2,7 +2,7 @@
 
 Generuje `node automatyzacje/triage-rozbieznosci.js` z `ROZBIEZNOSCI.md`. Pokazuje tylko rozbieżności NIESPODZIEWANE — niepasujące do finalizacji dokumentu w ERP (zaksięgowanie, daty/kwoty/ceny/stany). Spodziewane są tylko liczone.
 
-Wygenerowano: 2026-10-15 14:45 UTC
+Wygenerowano: 2026-10-15 15:01 UTC
 
 ## Podsumowanie
 
