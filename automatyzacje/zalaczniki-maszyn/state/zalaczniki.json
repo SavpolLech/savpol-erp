@@ -1,0 +1,1696 @@
+{
+ "zbudowano": "2026-10-16T12:51:01.693Z",
+ "zrodlo": "ERP przez sesję Lecha w Chrome: zakładka Załączniki + akcja csAttachmentsSaveToFileLastVersion",
+ "produkty": {
+  "0011811": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0011811_03_Analogowe_urząd.pdf",
+    "dodano": "2025-12-09 11:28:17",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QUU2Qzk3MUMtMjRFOS00NTNBLTlFNUUtMTY1MDI1N0E2RDcx/0011811_03_Analogowe_urz%C4%85d.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0007848": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_ICB_Tecnologie_Dosicream_2024.pdf",
+    "dodano": "2024-08-13 07:30:48",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QkRBMUI3NUUtODg3NC00QUM3LTNFNkMtNEZGNEIwQTgzRTJC/Specyfikacja_ICB_Tecnologie_Dosicream_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Dosicream_english.pdf",
+    "dodano": "2022-01-05 12:37:03",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RURGMkU0NUUtODgzNS00NzY5LUFCMzMtNjBFMjQyN0M1M0I2/Dosicream_english.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja użytkowania",
+    "nazwa": "instrukcja_DOSICREAM.pdf",
+    "dodano": "2022-12-15 11:17:28",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RURGNkZERUYtRDJGNy00NUU5LTJENkItRTIxNkM3NjI1MzdC/instrukcja_DOSICREAM.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0014221": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Dosicream_english.pdf",
+    "dodano": "2022-01-05 12:10:39",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RThCMDhDREQtODc4OC00QzY2LTdCMjgtQTI0ODNFQjdFQzFE/Dosicream_english.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja użytkowania",
+    "nazwa": "instrukcja_DOSICREAM.pdf",
+    "dodano": "2022-12-15 11:18:08",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODFCMDY5QzktQUMwMy00NUU2LTY5OTQtOTAyNTkwODA0QjQ3/instrukcja_DOSICREAM.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_ICB_Tecnologie_Dosicream_2024.pdf",
+    "dodano": "2024-08-13 07:30:39",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/N0NBMkQwMDUtRkE3RS00QkYyLTE0NEItRDg1MUMwQThFMzdG/Specyfikacja_ICB_Tecnologie_Dosicream_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0013330": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Dosicream_english.pdf",
+    "dodano": "2022-01-05 13:59:57",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODc3NDNBMTQtNTg1Qy00NTEyLTkyOTItMDgxNzMxODIxNjRF/Dosicream_english.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja użytkowania",
+    "nazwa": "20221215_instrukcja_DOSICREAM2.pdf",
+    "dodano": "2022-12-15 11:42:20",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MzE2QkIwNUYtMkFENy00N0Q3LUI3QzctMzlFMTIzMDU5ODNE/20221215_instrukcja_DOSICREAM2.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_ICB_Tecnologie_Dosicream_2024.pdf",
+    "dodano": "2024-08-13 07:30:29",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QUZENzA3RTctRTI4Ni00RUZDLTZBRUUtRENDREMyOUY3QTlD/Specyfikacja_ICB_Tecnologie_Dosicream_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0013579": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0013579_03_Bar_Tetris__mod.pdf",
+    "dodano": "2026-10-08 12:50:52",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RURGNkQyQTctM0I1NC00RENELUM5MjEtQjc1MkE3QTkwQjI5/0013579_03_Bar_Tetris__mod.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0020963": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_ICB_Tecnologie_ICBassina_2024.pdf",
+    "dodano": "2025-03-25 11:47:28",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QUZDNEMxNEUtMkMxNi00NzIyLTgzNTMtRTkzNjY1QUNDNzc0/Specyfikacja_ICB_Tecnologie_ICBassina_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011797": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "SPARE_PART_LIST_Chef_Cream_30_TTi_400V_3ph_50Hz_NO_PRICE.pdf",
+    "dodano": "2021-12-20 16:07:46",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QjIwNUYyRjctQzE1RC00QkNFLUM1OTktOEMyNUI4OTcyMzVF/SPARE_PART_LIST_Chef_Cream_30_TTi_400V_3ph_50Hz_NO_PRICE.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Chef_Cream_TTi_PL.docx",
+    "dodano": "2023-08-11 15:24:05",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QjEyN0EzOTQtNEFBMC00OERELUY0MEUtNzA5MEVGMkYzQ0FF/Chef_Cream_TTi_PL.docx",
+    "sprawdzono": "HTTP 200 \"PK\\u0003\\u0004\\u0014\""
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Valmar_Chef_Cream_2024.pdf",
+    "dodano": "2024-08-23 12:29:51",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MzQ5OEVGMTAtNDVFRi00MzUwLTIxN0YtOTlGQzA2RjAxNkY4/Specyfikacja_Valmar_Chef_Cream_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010590": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Chef_Cream_TTi_PL.pdf",
+    "dodano": "2026-09-15 12:53:12",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/REI4NjYzMjAtNjRFRS00REZBLUFBRUQtNzhBOUQ3OEZENEQ2/Chef_Cream_TTi_PL.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "20170301_CHEF_CREAM_TT_eng_replaced_slider_with_blade.docx",
+    "dodano": "2021-12-20 14:24:07",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RUQzMzUyOTAtQjk5Qy00REE4LTlDOTMtQzY2NDY0OTg1N0Yz/20170301_CHEF_CREAM_TT_eng_replaced_slider_with_blade.docx",
+    "sprawdzono": "HTTP 200 \"PK\\u0003\\u0004\\u0014\""
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Valmar_Chef_Cream_2024.pdf",
+    "dodano": "2024-08-23 12:28:33",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RDE4OTM1RUMtRjdGNy00MDI0LTYwMEYtNTM3RDJDNzJERkUw/Specyfikacja_Valmar_Chef_Cream_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0030823": [
+   {
+    "rodzaj": "Specyfikacja i wartość energetyczna produktu",
+    "nazwa": "0030823_01_Drukarka_Myprin.pdf",
+    "dodano": "2024-07-29 15:27:04",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RkVCRDQwRkMtNEY5OC00MUEzLTYxMzQtMEE0NzY3MzdCNTkz/0030823_01_Drukarka_Myprin.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011433": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "3L_MANUAL.pdf",
+    "dodano": "2022-02-09 13:02:27",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MzI0NDY5RkItNUM3RC00ODczLTU4REEtNUIzRjQ3MThBQ0ZB/3L_MANUAL.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_Scirocco_3.pdf",
+    "dodano": "2022-02-09 13:03:19",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QUU0N0VDMUQtQTlFNy00MkU1LTUzMzAtRjYxNDYxNkNEQTQy/Instrukcja_Scirocco_3.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Bras_Scirocco_2024.pdf",
+    "dodano": "2024-10-14 11:29:24",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MzU2QTU2QTctQzFGMS00QThFLUFDQUMtMUE4MEFFRkRCOUJC/Specyfikacja_Bras_Scirocco_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "3L_SPARE_PARTS_LIST.pdf",
+    "dodano": "2022-02-09 13:02:58",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTBDMzBBNzQtQzEzNy00REJDLTQ3RTItMDE1ODEyMjA2MzIz/3L_SPARE_PARTS_LIST.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0012524": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "3L_SPARE_PARTS_LIST.pdf",
+    "dodano": "2022-02-09 12:17:27",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTdFRkQ1QjAtM0I1Qi00OEUzLTQyOUMtQTE4QjA4RTMxNkM4/3L_SPARE_PARTS_LIST.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Bras_Scirocco_2024.pdf",
+    "dodano": "2024-10-14 11:30:06",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RDk0MUJEREMtM0RGRC00NzNELTYxNUEtODE3QTI2MzkyNTcw/Specyfikacja_Bras_Scirocco_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_Scirocco_3.pdf",
+    "dodano": "2022-02-09 12:17:48",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjM3RTRDREQtNzAwNC00MzFELTQ4MDctM0E2N0E3RDk2Njgx/Instrukcja_Scirocco_3.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "3L_MANUAL.pdf",
+    "dodano": "2022-02-09 12:17:07",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OEE3ODA0MjEtQ0JFNS00NUU3LUZFRTktNkJEM0UyODEyOThC/3L_MANUAL.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010959": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Bras_Scirocco_2024.pdf",
+    "dodano": "2024-10-14 11:29:53",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjYzRTI4QjYtMDFDRC00M0NBLUY1RkQtN0YyQkVDMzVCMjZB/Specyfikacja_Bras_Scirocco_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "5L_SPARE_PARTS_LIST.pdf",
+    "dodano": "2022-02-17 11:37:28",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjIyMDVFNDctMTY5NS00NDJFLTQ4QzYtM0U3MTU5Q0E0Q0RB/5L_SPARE_PARTS_LIST.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "5L_MANUAL.pdf",
+    "dodano": "2022-02-17 11:36:06",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDdCODZFRUItQTYzMC00M0ExLTdGNEItMkI0MEYyM0U3OEYw/5L_MANUAL.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0009369": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "ERCOLINA_PLUS_SA_15_rev_0_1_UK_ZANOLLI.pdf",
+    "dodano": "2022-07-15 15:29:42",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/REE1RjJBNjctNkFEMi00QkFGLUI3QzktMTZGMzA1MTU3NUI0/ERCOLINA_PLUS_SA_15_rev_0_1_UK_ZANOLLI.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0009369_SPECYFIKACJA_Dzielarka_półautomatyczna_ERCOLINA_PLUS_SA___Comida.pdf",
+    "dodano": "2022-04-01 10:55:28",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MUQ3ODE2NEEtOTMwRC00ODhCLTc1M0UtMDM5OUE1N0NBQTA2/0009369_SPECYFIKACJA_Dzielarka_p%C3%B3%C5%82automatyczna_ERCOLINA_PLUS_SA___Comida.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0013868": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_LSM_2020_Plug_play__jedna_grupa_zaparzająca__2024.pdf",
+    "dodano": "2024-08-13 07:38:58",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTFFMTg5NjgtM0Q2Mi00NkMwLTkyRTctNzgwNjIyN0FEODEx/Specyfikacja_LSM_2020_Plug_play__jedna_grupa_zaparzaj%C4%85ca__2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_obsługi_plu_and_play_PL.pdf",
+    "dodano": "2025-12-09 13:35:35",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OTI4RkIxREMtQjU3Mi00OEU3LTBEMTUtNkUzM0JCMkU1M0Q3/Instrukcja_obs%C5%82ugi_plu_and_play_PL.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0031887": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0031887_03_Ekspres_do_kawy.pdf",
+    "dodano": "2025-04-22 12:11:08",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTE5RkY4RjQtRkM4MS00NDJELTczMjEtNjdDMkI0MUEyMDQx/0031887_03_Ekspres_do_kawy.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0015331": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "0015331_2022_SPECYFIKACJA_Ekspres_do_kawy_BE_POD_2_kolbowy___MALONGO.pdf",
+    "dodano": "2022-12-06 13:10:55",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/M0IwODQzRjktNzkxMi00MDg0LUQ0Q0EtMzNGMUU4QzYzQjhG/0015331_2022_SPECYFIKACJA_Ekspres_do_kawy_BE_POD_2_kolbowy___MALONGO.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0020192": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "vue_éclatée_Neoh_Office__005_.PDF",
+    "dodano": "2023-01-12 13:47:12",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODNGRjVDQ0YtRjk3NS00MzIzLUM0QjgtQTM1NUVCQUY5RjA0/vue_%C3%A9clat%C3%A9e_Neoh_Office__005_.PDF",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0013871": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0013871_03_Ekspres_do_kawy.pdf",
+    "dodano": "2024-08-13 07:40:46",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QkE0QTBFNUQtQTRFRC00ODhBLUFGRUYtODlCODJCQkJBOTY4/0013871_03_Ekspres_do_kawy.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0013870": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0013870_03_Ekspres_do_kawy.pdf",
+    "dodano": "2024-08-13 07:39:40",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjA5Q0NDNzktNDQ4RS00MDdBLTczRDQtMTQ2RDdBMUI1Mjk1/0013870_03_Ekspres_do_kawy.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010589": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Valmar_Snowy_M_instrukcja_obsługi.pdf",
+    "dodano": "2021-12-20 14:08:08",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTFGMUM3ODMtM0ZCRi00RURGLTQ0QjYtQzNERkNFOTUyNjFC/Valmar_Snowy_M_instrukcja_obs%C5%82ugi.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Valmar_Snowy_M_2024.pdf",
+    "dodano": "2024-08-13 07:46:28",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTEwNDNCRkQtNDAyQy00MUE2LTg1NzAtNzIxQUFCNTdGNkNG/Specyfikacja_Valmar_Snowy_M_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "SNOWY_M__eng_2010_1.pdf",
+    "dodano": "2021-12-20 14:08:27",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OTcxQkIzM0MtQjIwMi00QjYyLTg0MjYtQ0Y3QTJGQjVBMjRF/SNOWY_M__eng_2010_1.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011798": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Valmar_Snowy_Quick_instrukcja_obsługi.pdf",
+    "dodano": "2021-12-21 09:12:58",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODMzMTk5NjYtOTNFMS00NDNFLThBNzctMjY4NTgwM0MzMDU1/Valmar_Snowy_Quick_instrukcja_obs%C5%82ugi.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Valmar_Snowy_Quick_2024.pdf",
+    "dodano": "2024-08-13 07:46:38",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/REVBMTA5QzMtMTQ1Qi00MzUwLTEyMjAtRTc1QkM4QTdFREE1/Specyfikacja_Valmar_Snowy_Quick_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0012253": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Valmar_Snowy_M_2024.pdf",
+    "dodano": "2024-08-13 07:46:47",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NzAyMTkyNjYtOENGMS00Qjg2LUZGM0MtMEZGMDQxRjNGOTY2/Specyfikacja_Valmar_Snowy_M_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Valmar_Snowy_M_instrukcja_obsługi.pdf",
+    "dodano": "2021-12-21 14:18:27",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MEY5OUQzMzgtMDE2RS00RTkzLUY5QkItQTgyN0Q3Mjg4MDgy/Valmar_Snowy_M_instrukcja_obs%C5%82ugi.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011803": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Valmar_Snowy_Quick_instrukcja_obsługi.pdf",
+    "dodano": "2022-02-21 10:35:33",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NTA3MTQ2NTUtNDlGRS00MTQ2LTk3MDMtQkUzOTI0MDI2RUZF/Valmar_Snowy_Quick_instrukcja_obs%C5%82ugi.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Valmar_Snowy_Quick_2024.pdf",
+    "dodano": "2024-08-13 07:48:17",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NTkzNjIyNzItRDgyQy00M0E1LUI5QUUtMTc3QUNEQTA4MjI0/Specyfikacja_Valmar_Snowy_Quick_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0030211": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0030211_03_Frezer_do_lodów.pdf",
+    "dodano": "2024-09-30 09:35:07",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NjlBRjlFQjQtRkIyOS00MEY4LUVEQjYtNUE0OEQzMDAwRTZG/0030211_03_Frezer_do_lod%C3%B3w.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0030210": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0030210_03_Frezer_do_lodów.pdf",
+    "dodano": "2024-09-30 09:34:32",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/Qzk5QUU4QkEtRkY4Ny00QUU0LTRFOUQtQUM2MkI1MzFCOTE0/0030210_03_Frezer_do_lod%C3%B3w.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011478": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Valmar_Snowy_TTi_instrukcja_obsługi.pdf",
+    "dodano": "2021-12-20 15:10:04",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTM1QUFCOTUtN0MwMS00QjM5LUVCRjAtQjlGMkMzMzA4QTIx/Valmar_Snowy_TTi_instrukcja_obs%C5%82ugi.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Valmar_Simply_Quick_2024.pdf",
+    "dodano": "2024-08-13 07:52:25",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/Mjc3Rjk3RUUtNkU2OS00NjRCLUNBNDEtODMxNTg5MjZDRjFD/Specyfikacja_Valmar_Simply_Quick_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "SNOWY_TT_i_eng.pdf",
+    "dodano": "2021-12-20 15:09:44",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/REM2OUI3Q0QtQjBFQy00RUMwLTVEMjctQzAwOUZBQTAzNDc1/SNOWY_TT_i_eng.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0019091": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Valmar_Snowy_TTi_2024.pdf",
+    "dodano": "2024-08-13 07:48:46",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QUU0MkQ1NkMtMUQyNi00OUIxLThDMUEtNUU4OUZCRjRCRUIx/Specyfikacja_Valmar_Snowy_TTi_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0020088": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "SNOWY_TT_i_eng.pdf",
+    "dodano": "2021-03-15 11:32:32",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTI2NkQwRTAtMTk2RS00QUJFLTlEREUtMDE0M0E3NDRCOUY1/SNOWY_TT_i_eng.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Valmar_Snowy_TTi_instrukcja_obsługi.pdf",
+    "dodano": "2021-11-30 13:45:17",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MzBGRTI5MkEtNjAxQy00OTlELTgyNDQtRjFGNTY3QkYzNDA4/Valmar_Snowy_TTi_instrukcja_obs%C5%82ugi.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0020088_03_Frezer_SNOWY_27.pdf",
+    "dodano": "2024-08-13 07:49:10",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RUUzNDI4OUMtMDk2Ri00MjQzLTg3MzYtOUY1OEMxRjc1NTBE/0020088_03_Frezer_SNOWY_27.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0030930": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0030930_03_Snowy_7_TTi_–_f.pdf",
+    "dodano": "2024-08-30 10:37:05",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTlGRDg2NjMtNEIwRi00QjJDLTU5QzktMzA2RDRDOTMxMDdE/0030930_03_Snowy_7_TTi_%E2%80%93_f.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0009044": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "SMARTY_navodila_F5_4_F6_4_eng.pdf",
+    "dodano": "2021-12-20 13:39:15",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDhFRTY4QkItNTE5Ni00RkY0LTA0ODQtNDMwMzU5QjYzRDBD/SMARTY_navodila_F5_4_F6_4_eng.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Valmar_Smarty_Quick_2024.pdf",
+    "dodano": "2024-08-13 07:49:52",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/N0Q3RDJGNjMtOEYxNC00NkNDLTdDRUYtNzI0MEEwMzlFNDc4/Specyfikacja_Valmar_Smarty_Quick_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "SPARE_PART_LIST_Smarty_7_Quick_400V_3ph_50Hz_NO_PRICE.pdf",
+    "dodano": "2021-12-20 10:41:04",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MDEyMDI4NTYtRTBGOC00RDM4LURBNUItRUU4NTZERjc5REU0/SPARE_PART_LIST_Smarty_7_Quick_400V_3ph_50Hz_NO_PRICE.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011664": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0011664_03_Smarty_7_TTi___.pdf",
+    "dodano": "2024-08-13 07:50:56",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTVFRDJGMjctQzRDQS00RTQwLThERkEtODY0ODM1RjEwNDVC/0011664_03_Smarty_7_TTi___.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0018496": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0018496_03_Nablatowy_mini_.pdf",
+    "dodano": "2026-09-01 14:15:13",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/N0EzNUFBOEEtOEQ0OS00NzA3LUY2OTMtNzNEREM4NDY3RDJC/0018496_03_Nablatowy_mini_.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011660": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_BIG_BIZ_PL.pdf",
+    "dodano": "2022-07-15 13:41:25",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTU0NzA4MzMtMEY4Mi00QjU1LTZEQTgtMjYzQkZDM0UwQ0Iz/Instrukcja_BIG_BIZ_PL.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Elmeco_Big_Biz_2024.pdf",
+    "dodano": "2024-08-13 07:27:33",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjY4ODFFOUQtNEVDMi00MTEwLUFGRDgtRDQyNUJBM0M0Mjk1/Specyfikacja_Elmeco_Big_Biz_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010577": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Elmeco_Big_Biz_2024.pdf",
+    "dodano": "2024-08-13 07:26:07",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTMyOEE0NTktMEM0NS00QTE2LUVCQzMtMEVGOTdERDgwQjhD/Specyfikacja_Elmeco_Big_Biz_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_BIG_BIZ_PL.pdf",
+    "dodano": "2022-05-19 08:51:55",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QUJBMkU1OUEtOTM2QS00RjBELUNBMzAtQjVGMUY3MEE4RTAz/Instrukcja_BIG_BIZ_PL.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010960": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_BIG_BIZ_PL.pdf",
+    "dodano": "2022-05-02 10:25:18",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NzhCRUREMTItMUExNy00NDhDLTY3NkItMUZDMDFCNkZCM0Qz/Instrukcja_BIG_BIZ_PL.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Schemet_techniczny_Big_Bizz_2020_picture.pdf",
+    "dodano": "2022-05-02 10:28:01",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjE5RUEwMTctN0ZCRC00Mzk0LTMyMEItMkE3QTBCQUU1Q0Iy/Schemet_techniczny_Big_Bizz_2020_picture.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Elmeco_Big_Biz_2024.pdf",
+    "dodano": "2024-08-13 07:27:20",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MTdBQkIxREItRUFFNS00MDgyLUYyQzEtNTQzODg3RjlFOEZE/Specyfikacja_Elmeco_Big_Biz_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0013334": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0013334_03_Granitor_FirstC.pdf",
+    "dodano": "2025-05-12 12:32:49",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NzkzN0JEMkUtNDhCMC00NEM4LTUwMUYtMzI1QjAwMDc4NUEx/0013334_03_Granitor_FirstC.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010872": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Elmeco_First_Class_2024.pdf",
+    "dodano": "2024-08-13 07:27:05",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NjU5RUMwMzUtRUQwRi00RTEyLUQwRDEtREIzM0VCOTI1NUVE/Specyfikacja_Elmeco_First_Class_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010871": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0010871_03_Granitor_FirstC.pdf",
+    "dodano": "2024-08-13 07:26:47",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QzA1RDVBNjEtQkExNi00OTUxLTY1MUUtODk3Mzc2OUIyMzU3/0010871_03_Granitor_FirstC.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0014407": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0014407_03_Krajalnica_do_p.pdf",
+    "dodano": "2026-09-23 12:32:04",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjI2QTcwNDYtQkIwMy00OTIyLTI5OUYtNEY1QTUyNjE4QzQ5/0014407_03_Krajalnica_do_p.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0031588": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0031588_03_Maszyna_do_lodó.pdf",
+    "dodano": "2025-03-03 09:47:15",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/M0Y5OEQxMjQtQjMyNy00NTlDLTU0MUUtMkUxQ0MxNjJEQUQ4/0031588_03_Maszyna_do_lod%C3%B3.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0021204": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0021204_03_Maszyna_do_prod.pdf",
+    "dodano": "2024-08-13 07:33:57",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MTkyN0Y3MDQtNjRCMy00QkI4LTU0NjgtODBGRDgxM0JDMkQ1/0021204_03_Maszyna_do_prod.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0012513": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0012513_03_Maszyna_do_prod.pdf",
+    "dodano": "2024-08-13 07:32:02",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MEY0OEU3MEEtMkU4Mi00NEFCLTJBQ0UtQzkxRjEzNjc2MTdC/0012513_03_Maszyna_do_prod.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011022": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "MI_603_inox_rev_08_PL.pdf",
+    "dodano": "2022-12-07 11:21:05",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTI2QjZFQzEtOEQ3Ny00QTNBLTFFQzEtQjc2OTYxNTQyQkQz/MI_603_inox_rev_08_PL.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_IceTeam_603_INOX__Water__2024.pdf",
+    "dodano": "2024-08-13 07:33:08",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODA0RTY5OEItNkJBNC00RDU0LUY3NjMtOUI3MkFGNUVBM0NG/Specyfikacja_IceTeam_603_INOX__Water__2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "extract_603_inox_EN.pdf",
+    "dodano": "2022-12-07 11:20:41",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QUE3OEY2NTUtMDkxQS00MkMxLUEwQjYtRTg1MTBBOUExOEI4/extract_603_inox_EN.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0032575": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0032575_03_Maszyna_do_lodó.pdf",
+    "dodano": "2025-12-09 12:34:48",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NURBMDg4NEMtRTNDNC00NzdELUQwNUMtMjA5Q0VEMjFBM0JF/0032575_03_Maszyna_do_lod%C3%B3.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010742": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_ICB_Tecnologie_ICBelt_2024.pdf",
+    "dodano": "2025-03-04 11:55:48",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NjFGNjU2QUYtRjRGNi00QjMzLTk1NTAtNDhFNzk3MzVCNTk1/Specyfikacja_ICB_Tecnologie_ICBelt_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0007357": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "DOSY_3_VER__2_7_1.pdf",
+    "dodano": "2021-12-17 16:09:49",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTQ0NkJBMzUtQTY4OC00NjdBLTYxNzgtMUIyNjE0RTE3MjlD/DOSY_3_VER__2_7_1.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja użytkowania",
+    "nazwa": "instrukcja_Dosy3_PL.pdf",
+    "dodano": "2023-01-02 15:48:29",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NzBEQTNEMUQtMjI1Mi00NERFLTE4ODctODdCMDAzQ0UxQTZB/instrukcja_Dosy3_PL.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Valmar_DOSY_3_2024.pdf",
+    "dodano": "2024-08-27 11:38:40",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QzIwNkQwODEtRUJGOC00QkE1LTUyNDQtQzJFMzIyQjc1MDVB/Specyfikacja_Valmar_DOSY_3_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010466": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0010466_03_Matryca_Orzech_.pdf",
+    "dodano": "2025-12-09 11:27:22",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTcyNDJDQUQtMzA2QS00QTVGLTg5QUMtRTQ3MDA1RUY5ODYy/0010466_03_Matryca_Orzech_.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0019739": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_obsługi_Turbo_Piccolo_Poti.pdf",
+    "dodano": "2022-03-10 14:25:53",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MjkzNTk3Q0UtNjRBMC00QTY2LUM2RjItQzgzODE1Q0UyNjIz/Instrukcja_obs%C5%82ugi_Turbo_Piccolo_Poti.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Tafec_Turbo_Piccolo_Poti_2024.pdf",
+    "dodano": "2024-11-12 11:41:36",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/Q0MyRUUzNDctMjU5MS00NTMyLTQwRTktQTM4NzI4OEIwQTg5/Specyfikacja_Tafec_Turbo_Piccolo_Poti_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "manual_GmbH_Turbo_Piccolo_Poti_2020.pdf",
+    "dodano": "2022-03-10 14:28:46",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QkEyNjlENjktNTM1Mi00NTZGLTNDNDAtNDI1QTgwNkFGRkQ2/manual_GmbH_Turbo_Piccolo_Poti_2020.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0012814": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "2018_BEAR_Instrukcja_obsługi_5L_TEDDY_oryginał_PL.pdf",
+    "dodano": "2022-01-18 13:45:06",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RDkzQkZDMkEtODJFMy00MTVFLUVGNzYtNUE3RkU0RjI4QjQy/2018_BEAR_Instrukcja_obs%C5%82ugi_5L_TEDDY_orygina%C5%82_PL.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0012814_03_MIKSER_5l_TEDDY.pdf",
+    "dodano": "2022-12-05 11:10:56",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RDdBODM0OUUtODI2Qy00N0Q2LUM5OTItQ0RCQ0REQUY1NzAw/0012814_03_MIKSER_5l_TEDDY.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0021937": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0021937_03_Mikser_planetar.pdf",
+    "dodano": "2026-09-24 10:01:41",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QjYwNzk0MjMtNjRDQy00RkE3LThGQzItRURFNzQ4RjI5REQ2/0021937_03_Mikser_planetar.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0031882": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0031882_03_Mikser_ręczny__.pdf",
+    "dodano": "2025-11-19 14:10:41",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MzUxMjY1ODAtNTI5Mi00OUU1LThBNjItRTc4OTJGQjhCMTgz/0031882_03_Mikser_r%C4%99czny__.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010726": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "MIXER_350VF___450VF___650VF.pdf",
+    "dodano": "2022-07-15 15:34:37",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/N0E0M0QwQjYtMTAzMy00QjQ2LUE5MjEtOUQ4MTA0Q0RDNEVB/MIXER_350VF___450VF___650VF.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "MANUALE_MIXER.pdf",
+    "dodano": "2022-07-15 15:34:21",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MTNBMjJFMzItNjYxQi00NzIzLTY5QzEtMzA1N0ZEMDZBQzVD/MANUALE_MIXER.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_GAM_Mixer___Blender_2024.pdf",
+    "dodano": "2025-11-19 14:10:23",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QzU5Nzg5MkEtMDlFNS00RTU3LTJFMzctNEYyQjlDQjYyNzk0/Specyfikacja_GAM_Mixer___Blender_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010555": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_Galassia_Pizza_ENG.pdf",
+    "dodano": "2026-10-08 09:54:39",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/Qzg1NDAyOTItMTk0OS00MUZDLUEyMzEtNDI1OTAxQkM5OEM4/Instrukcja_Galassia_Pizza_ENG.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Zanolli_Galassia_Pizza_2024.pdf",
+    "dodano": "2024-08-13 07:58:55",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MDJGNDNFQjYtMEU0OC00M0Y1LTg1REMtNzE3MDU4RjFEMjlE/Specyfikacja_Zanolli_Galassia_Pizza_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "ESPLOSO_GALASSIA_18_60_rev_0_3.pdf",
+    "dodano": "2022-07-15 15:16:38",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MDBCQTg3NzUtNkQwOS00RURFLTVGRDMtRDk4OTVGOTVGOTAx/ESPLOSO_GALASSIA_18_60_rev_0_3.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0029658": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0029658_03_Mikser_spiralny.pdf",
+    "dodano": "2024-08-13 08:01:32",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTE2MEYyQTAtRTYxRi00ODUxLUQwNkQtNDYwQTlBNTM1NkUw/0029658_03_Mikser_spiralny.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0031261": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0031261_03_Minibar_S___eks.pdf",
+    "dodano": "2026-09-24 08:52:16",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RTBEMDdDQTAtMDM5Ri00QzkwLUY5M0MtNTUwM0EwNDI5MUJG/0031261_03_Minibar_S___eks.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0013875": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_LSM_92_Smart_Instant_2024.pdf",
+    "dodano": "2024-08-13 07:38:09",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDAxOTg3NkQtMzQ4Ny00OTc1LTREOTItRDhGQjFENjcyQzI1/Specyfikacja_LSM_92_Smart_Instant_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010525": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0010525_03_Multidrop_MINO_.pdf",
+    "dodano": "2022-07-13 12:07:17",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODY1NTRGNkQtMzhBRS00NjU0LTlBRDMtMTVBQTY4Njg4NDVE/0010525_03_Multidrop_MINO_.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0027096": [
+   {
+    "rodzaj": "Instrukcja użytkowania",
+    "nazwa": "instrukcja_STENO_PL7B.pdf",
+    "dodano": "2022-12-12 16:16:07",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NjExNTkzQjgtNEUyQy00NURELTgwOTItM0I3NEUyMDAyQkMy/instrukcja_STENO_PL7B.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja użytkowania",
+    "nazwa": "PL7B_17_ing.pdf",
+    "dodano": "2022-12-01 10:44:50",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTRBMjREN0ItMEFDRS00NzNELTc4M0YtMkI3NUVFMEQ0QjBG/PL7B_17_ing.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Nowość_2022_SPECYFIKACJA_Nablatowa_ubijaczka_planetarna_PL7B___Steno.pdf",
+    "dodano": "2022-12-01 10:41:49",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RENEQUIyMUMtN0M2RS00NDY0LUUzOEEtMkRFQzBGMkE1MEZB/Nowo%C5%9B%C4%87_2022_SPECYFIKACJA_Nablatowa_ubijaczka_planetarna_PL7B___Steno.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010728": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_ICB_Tecnologie_Spraychoc_2024.pdf",
+    "dodano": "2025-12-09 11:29:35",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MEMzNEI5QjEtRjU4MC00OTJFLTU2MDktNkJFRTAxODVBNEI4/Specyfikacja_ICB_Tecnologie_Spraychoc_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0020682": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Valmar_Chef_Cream_2024.pdf",
+    "dodano": "2024-08-23 12:28:49",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/N0ZGNUMyMkQtQTc4MC00REVDLTNDMUQtQUQzNkJGQzYxNTc4/Specyfikacja_Valmar_Chef_Cream_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "SPARE_PART_LIST_Chef_Cream_130_TTi_400V_3ph_50Hz_NO_PRICE.pdf",
+    "dodano": "2022-01-17 12:13:55",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RDJDNERBMkQtQ0JFMS00OEQ2LUNFM0ItRkU5NkY4MDk5NUFE/SPARE_PART_LIST_Chef_Cream_130_TTi_400V_3ph_50Hz_NO_PRICE.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Chef_Cream_TTi_PL.docx",
+    "dodano": "2023-08-11 15:24:45",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QUMxNzZCQzktRTAxNi00QjMyLTNENEQtRkUxMTU0QUJDRUZF/Chef_Cream_TTi_PL.docx",
+    "sprawdzono": "HTTP 200 \"PK\\u0003\\u0004\\u0014\""
+   }
+  ],
+  "0011662": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_Sweety_Quick_PL_2026.pdf",
+    "dodano": "2026-10-12 12:44:37",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/Q0Y4RDQ1NTktRTcxQS00RDIwLTk2QUMtMUQ4RjFFMUI2MkQw/Instrukcja_Sweety_Quick_PL_2026.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Valmar_Sweety_Quick_2024.pdf",
+    "dodano": "2024-08-13 07:45:01",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/N0FGMDAzMzktMTBERS00RkQxLThFRjAtODgwM0REQUVCNDBE/Specyfikacja_Valmar_Sweety_Quick_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010586": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Valmar_Sweety_Quick_2024.pdf",
+    "dodano": "2024-09-02 10:15:00",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MkU4RUU5MEEtNDA2Qi00QkNCLTFGOEUtQUIxOTE4QTFBNDdG/Specyfikacja_Valmar_Sweety_Quick_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_Sweety_Quick_PL_2026.pdf",
+    "dodano": "2026-10-12 12:44:24",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OEREMERDNkMtNkNBRS00ODJELUQ2MTUtMDJFRUU1ODk5QzNB/Instrukcja_Sweety_Quick_PL_2026.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0007330": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Valmar_Sweety_Quick_2024.pdf",
+    "dodano": "2024-08-13 07:44:39",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NjBCRkRGNjItQjQyQS00N0JCLUFDREQtOEZFNTNCMzQxMjE5/Specyfikacja_Valmar_Sweety_Quick_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_Sweety_Quick_PL_2026.pdf",
+    "dodano": "2026-10-12 12:44:15",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDg0QkQ4M0QtNEI2NS00Qzc0LTJDRkEtQUEyOUQ0RDlCRTI2/Instrukcja_Sweety_Quick_PL_2026.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0032661": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0032661_03_Pasteryzator_Sw.pdf",
+    "dodano": "2026-01-29 07:14:24",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OTM2NENDQTItOEEzNS00MkQyLUI2NDUtRUZCNDM1QjJFRDE4/0032661_03_Pasteryzator_Sw.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010375": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "VULCANO_19_rev_0_0_UK_ZANOLLI.pdf",
+    "dodano": "2022-05-24 12:39:43",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MTJEMzgzMjYtRTkxQi00NzkwLUNBNDUtQTAwNTg3QTAyMDVB/VULCANO_19_rev_0_0_UK_ZANOLLI.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Zanolli_Vulcano_40_2024.pdf",
+    "dodano": "2024-08-13 07:59:13",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QUI2RUE2NkEtMzkzMy00NDUzLTFDRjctNjJGNEM4Qjg2OUU0/Specyfikacja_Zanolli_Vulcano_40_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0031883": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0031883_03_Piec_elektryczn.pdf",
+    "dodano": "2025-08-11 09:28:18",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MjM1QTNCQUYtQTM3MC00QkI4LTZCNDEtQTJCMkU2NkJGNTBG/0031883_03_Piec_elektryczn.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0031884": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0031884_03_Piec_elektryczn.pdf",
+    "dodano": "2025-08-11 09:28:37",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODUwNDkzM0ItNDdBMS00NDExLUNFQTgtNjM0NDhFMUE0MEI2/0031884_03_Piec_elektryczn.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010486": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Manual_EN_piece_Digital_64PE.pdf",
+    "dodano": "2021-12-22 11:59:49",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NEUzOEE5M0QtMThFQi00QjUzLTUyMUItMzVFNDE1ODNDNTg0/Manual_EN_piece_Digital_64PE.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0010486_03_Piec_konwekcyjn.pdf",
+    "dodano": "2022-07-13 11:49:40",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OTJCNTg5MTUtMTk2NS00QjdFLUEwRDgtOTQ1MkZDN0UyRTY2/0010486_03_Piec_konwekcyjn.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0020246": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_EXPLORA_PF7916_PL.pdf",
+    "dodano": "2021-03-18 12:19:39",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTkxM0ZDQTktOEEwRC00QTczLTE0NzktRDIzQzA1NUQ5QkZD/Instrukcja_EXPLORA_PF7916_PL.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "schemat_techniczny.pdf",
+    "dodano": "2021-12-17 15:02:16",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QjlDMTg4RkYtODQ2Ri00MjRFLTYyRTEtMEQxMDU1OTA0RTFB/schemat_techniczny.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0015229": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0015229_03_Piec_konwekcyjn.pdf",
+    "dodano": "2026-09-24 09:02:49",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RkQ0MjA1RDYtQTQ1Ni00NkIyLURGNUQtN0QzQjVCRUVGNTRB/0015229_03_Piec_konwekcyjn.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010510": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0010510_2022_SPECYFIKACJA_Piec_wsadowy_Asso_5E___REAL_FORNI.pdf",
+    "dodano": "2023-04-14 12:12:46",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDQxNzg2RDUtMTM0RC00NkExLTg4NDktMzMxQTc2RjJCMDMz/0010510_2022_SPECYFIKACJA_Piec_wsadowy_Asso_5E___REAL_FORNI.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0019009": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0019009_03_Podgrzewacz_do_.pdf",
+    "dodano": "2025-12-09 11:05:30",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODg1MTRDMjUtQjM4QS00OTlDLTQ2MDAtMUY4QUQwNTExRjlD/0019009_03_Podgrzewacz_do_.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0019019": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0019019_03_Podgrzewacz_do_.pdf",
+    "dodano": "2025-12-09 11:13:10",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NjVGMzk3RDMtNDVGMy00RUI1LTQ0NkQtQUM0OEVENTUwNjE0/0019019_03_Podgrzewacz_do_.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011817": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0011817_03_Podwójna_gitara.pdf",
+    "dodano": "2025-12-09 11:30:02",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/Qzk4REM1OUQtNjE2NS00RDg4LTkwRDItNDczRDM2RDgzQTQ3/0011817_03_Podw%C3%B3jna_gitara.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010635": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Elmeco_Quick_Cream_2024.pdf",
+    "dodano": "2025-12-09 10:49:25",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MTdEMjY4RkItMUY0My00NjBDLURCNDEtRjQ5OUFDMzVFODk2/Specyfikacja_Elmeco_Quick_Cream_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0018834": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0018834_03_Rollero_urządze.pdf",
+    "dodano": "2025-12-09 11:24:24",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NjM3NjQ1OTEtMTNBMC00QzUxLTM0RjQtRDhENTAyOEVDMzBF/0018834_03_Rollero_urz%C4%85dze.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0026912": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0026912_03_Shaker_HAMILTON.pdf",
+    "dodano": "2026-09-01 14:19:52",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/M0I5ODQwMkUtQUI2Qi00MzMyLTQ4OUUtQzNFNzJGRDExQkYw/0026912_03_Shaker_HAMILTON.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0028236": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0028236_03_Szafa_chłodnicz.pdf",
+    "dodano": "2025-10-02 10:08:20",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDUwRUFFRjEtQzgzQi00QTc1LUMxRkEtMUQ5OTY3RjY2NzMy/0028236_03_Szafa_ch%C5%82odnicz.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0015237": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0015237_2022_SPECYFIKACJA_Szafę_chłodniczą_HC20_NTV___CASTELMAC.pdf",
+    "dodano": "2022-05-25 15:25:25",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RDM5NzZGQjUtRTNCRi00QzQ1LUI2M0QtRkY1MkE0MzY3Q0NE/0015237_2022_SPECYFIKACJA_Szaf%C4%99_ch%C5%82odnicz%C4%85_HC20_NTV___CASTELMAC.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0023010": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0023010_2022_SPECYFIKACJA_Szafa_mroźnicza_AC_20_NS_do_przechowywania_mrożonek.pdf",
+    "dodano": "2022-05-25 15:52:16",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTZGM0QxNzYtRjg1QS00MkY3LThEMTktRDM1MTU2RjhGOERB/0023010_2022_SPECYFIKACJA_Szafa_mro%C5%BAnicza_AC_20_NS_do_przechowywania_mro%C5%BConek.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0028237": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Tecnomac_CVS_GEL_2024.pdf",
+    "dodano": "2025-05-16 11:47:49",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OUI0OTM0MDctRDdDNi00Qjc5LTVEMjMtOTlCM0NCQ0QwNzk0/Specyfikacja_Tecnomac_CVS_GEL_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja użytkowania",
+    "nazwa": "CM71503181_0_000___Manuale_Uso_Armadi_CVS_CVL_Touch_4_3_PL.pdf",
+    "dodano": "2023-04-04 13:03:29",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RDI4QUQ3NzYtMkM5MS00NDUzLUQwMUEtMUFDNzM0NTA4RTcz/CM71503181_0_000___Manuale_Uso_Armadi_CVS_CVL_Touch_4_3_PL.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0013912": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "dodano": "2022-07-05 10:18:49",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODQ1OTZFRjUtNDY1Qy00MkRGLTkxQTAtNkY5M0E4NzZDMTdD/panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Ucinque_Gourmet_700_NA_2024.pdf",
+    "dodano": "2024-08-13 07:43:23",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OUEyRDdFOUItMTdGNi00QUVBLTBDMkQtQzg1QjQ2NTYyM0RF/Specyfikacja_Ucinque_Gourmet_700_NA_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "instrukcja_szafy_mroźnicze_pionowe.pdf",
+    "dodano": "2021-12-14 12:14:08",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjlFMjA0RUMtNjlERS00QTc5LTNDMjgtMTlDNUJBOTFGRDZE/instrukcja_szafy_mro%C5%BAnicze_pionowe.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0031925": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Szafa_mroźnicza_AlfaPRO.pdf",
+    "dodano": "2025-10-24 08:32:39",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTkwODRDQzMtRTMxQS00NDY2LTUyRUYtMzMxMUNEMEIzMTc4/Specyfikacja_Szafa_mro%C5%BAnicza_AlfaPRO.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0011479": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Valmar_Creamy_2024.pdf",
+    "dodano": "2024-08-13 07:53:44",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QkE3OURCRkMtMTIwQy00NDBDLTlGRDUtODhDODdCNjg3RjRD/Specyfikacja_Valmar_Creamy_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010298": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Valmar_Creamy_instrukcja_obsługi.pdf",
+    "dodano": "2021-12-20 13:15:05",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NUE4NjAxMEEtMDE2Mi00NzMyLTAwNkUtNEYwQ0ZGMUREOTcw/Valmar_Creamy_instrukcja_obs%C5%82ugi.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Valmar_Creamy_2024.pdf",
+    "dodano": "2024-08-13 07:53:35",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MUI4NDRDMzQtNjE4NS00NTQ0LTczMDYtMkFGMEZFQ0VGQTA0/Specyfikacja_Valmar_Creamy_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0023617": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Chocotemper_24_Kg_PL.pdf",
+    "dodano": "2021-01-12 14:43:23",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MkIzQ0VGQkUtRUZFNC00NTExLTVDNEQtOTI4Nzk1MEJBQUMw/Chocotemper_24_Kg_PL.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Chocotemper_24_Kg_ENG.pdf",
+    "dodano": "2021-01-12 14:44:23",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MDY2OEJBMUQtQzM0OC00OTc4LTgxOUUtMDlFNjA0QUJFMjQx/Chocotemper_24_Kg_ENG.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_ICB_Tecnologie_Chocotemper_2024.pdf",
+    "dodano": "2025-03-03 13:25:49",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MEVCQUMyNTMtQzg4My00NTI1LUE5MUEtMDdERjFDMEZEMjBF/Specyfikacja_ICB_Tecnologie_Chocotemper_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010853": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "chocotemper_top_gotowe.pdf",
+    "dodano": "2022-09-13 15:12:40",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDU2RkE4OTItOEQ0OC00QTVFLTFCREEtOUE0NkE3NTg4OUQ0/chocotemper_top_gotowe.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_ICB_Tecnologie_Chocotemper_TOP_2024.pdf",
+    "dodano": "2025-03-03 13:19:27",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RDYyQTVEQzYtRkEwNS00NkQwLTc3MjctNzNGRkVFRjIzQUFF/Specyfikacja_ICB_Tecnologie_Chocotemper_TOP_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0009268": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0009268__2022_SPECYFIKACJA_Ubijaczka_planetarna_TK120___dzieża_120_litrów___TEKNO_STAMAP.pdf",
+    "dodano": "2022-05-24 14:39:46",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjQ5MDg1MTgtMkIzOS00OTkzLTMyNDEtNkYxRDVDMDcwQzND/0009268__2022_SPECYFIKACJA_Ubijaczka_planetarna_TK120___dzie%C5%BCa_120_litr%C3%B3w___TEKNO_STAMAP.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0020971": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0020971_03_Urządzenie_do_p.pdf",
+    "dodano": "2025-03-25 11:47:47",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDZCRjhDQTMtM0E2OS00Njk5LUFGNjgtNDQ4M0QzRjE1REUy/0020971_03_Urz%C4%85dzenie_do_p.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010464": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_ICB_Tecnologie_COOK_MATIC_2024.pdf",
+    "dodano": "2025-12-09 11:26:55",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDk2Njg1Q0QtODNCRC00MDQyLTEyNkYtMDRGQ0E5MDAxMDg5/Specyfikacja_ICB_Tecnologie_COOK_MATIC_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010837": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0010837_03_Wałkownica_Maxi.pdf",
+    "dodano": "2023-01-30 14:15:33",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QjEyQUVGODMtRTRFNC00MEU4LTY1MTMtQUNEMDAxOTZFNTAw/0010837_03_Wa%C5%82kownica_Maxi.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "User_manual.pdf",
+    "dodano": "2022-01-12 13:58:53",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QzA4Mjc4N0ItRTI4RC00RUIzLTUxRDAtNURGQUUyN0Y3QjNG/User_manual.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Schemat_techniczny.pdf",
+    "dodano": "2022-01-12 13:57:34",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODkyMzdBNzAtQ0NFNy00NTEwLTIxNDctRkY3REU5QUJGNkM3/Schemat_techniczny.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0021428": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "SPECIFICHE_TECNICHE_SIRIO_500_BANCO_rev_0_1.pdf",
+    "dodano": "2022-01-18 10:40:40",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjY0MkM5MTItQzBEQS00OENDLUI0NzAtREMxNzkwQjhEMjRC/SPECIFICHE_TECNICHE_SIRIO_500_BANCO_rev_0_1.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "USER_MANUAL_SIR500BANCO_20_rev_0_1_UK_ZANOLLI.pdf",
+    "dodano": "2022-01-18 10:40:02",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDdCMEJDMUUtODIyNi00OUU3LUNFMTEtNUQzRkI4QzBGMEQ5/USER_MANUAL_SIR500BANCO_20_rev_0_1_UK_ZANOLLI.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Zanolli_Sirio_2024.pdf",
+    "dodano": "2024-08-13 07:59:46",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OUY4NUE1NjAtODEyNi00MEFFLTc1MkQtNjJCQUZGQUU1RUQx/Specyfikacja_Zanolli_Sirio_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0017572": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Clabo_Cosmo_2024.pdf",
+    "dodano": "2025-12-09 10:25:16",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MzQ1ODhGMzMtNzE1OC00QzUxLTI5OTEtQUEwN0EyREQ2MTY3/Specyfikacja_Clabo_Cosmo_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0032593": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0032593_03_Witryna_cukiern.pdf",
+    "dodano": "2025-11-19 14:16:16",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/Q0JDMkQ4ODEtOTI2Qi00NEExLTlFMkEtNEUwMTNEN0RBRjRE/0032593_03_Witryna_cukiern.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0022171": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0022171_2022_SPECYFIKACJA_Witryna_cukiernicza_Georgia_Cube_600_–_Unis.pdf",
+    "dodano": "2022-05-18 11:21:40",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/Nzg4ODJBNUQtRkZDMy00QUE5LTJDRjEtQTEwOEVDNzA5OEI1/0022171_2022_SPECYFIKACJA_Witryna_cukiernicza_Georgia_Cube_600_%E2%80%93_Unis.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0020962": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0020962_03_Witryna_cukiern.pdf",
+    "dodano": "2024-03-06 15:20:43",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OUUzRDVFQTEtQjMzMS00MzUwLTNENzQtNkE0QTQwQTU4MUIy/0020962_03_Witryna_cukiern.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0020968": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0020968_2022_SPECYFIKACJA_Witryna_cukiernicza_KUBO_1500mm_–_CLABO.pdf",
+    "dodano": "2022-05-27 08:52:23",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MUM1ODAxMUEtNzE5MC00OTA4LTVCRjMtRUQzM0E1RkU3NDlE/0020968_2022_SPECYFIKACJA_Witryna_cukiernicza_KUBO_1500mm_%E2%80%93_CLABO.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0030170": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0030170_03_Witryna_do_lodó.pdf",
+    "dodano": "2025-11-19 07:43:57",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/M0VBREU2MDktNTlBQy00N0E2LTc4QjQtNDA1QzZFNzc4QTQ4/0030170_03_Witryna_do_lod%C3%B3.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0028369": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Clabo_Deeva_2024.pdf",
+    "dodano": "2025-11-19 07:43:38",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/M0ExN0Y0MjMtODYwMS00OTdFLUFGQkYtQ0VGODNCQzFBNjU2/Specyfikacja_Clabo_Deeva_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0014129": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0014129_2022_SPECYFIKACJA_Witryna_do_lodów_Dolce_Vista_9.pdf",
+    "dodano": "2022-07-15 15:08:45",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/Nzc4N0FCNkQtMDQ3OS00QUM5LThGMzAtNTY3OTIxNzEyMUZE/0014129_2022_SPECYFIKACJA_Witryna_do_lod%C3%B3w_Dolce_Vista_9.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010731": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Manual_Gemma_J_IceCream___rev2014___ENG.pdf",
+    "dodano": "2022-05-23 11:49:18",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QkM1NjRCOTEtMzQyMS00Nzk0LUIxQzUtRkE1ODlDMzk0OEE1/Manual_Gemma_J_IceCream___rev2014___ENG.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0010731_03_Witryna_do_lodó.pdf",
+    "dodano": "2024-03-19 09:45:27",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QkRBMEZDREMtMURERS00RjE0LUI3MzItQUU3RkZDMkM3RkEx/0010731_03_Witryna_do_lod%C3%B3.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Gemma_J___instrukcja.pdf",
+    "dodano": "2022-05-23 11:49:47",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OTRFREZBOUMtQjgwQS00REE5LTk4MkItQUMwRkQ1OUMzODQw/Gemma_J___instrukcja.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0015348": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Ucinque_COMBI_do_zabudowy_2024.pdf",
+    "dodano": "2025-02-26 10:01:06",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODA5M0RDOEQtRTc1Ni00MTU3LTgzNjAtNDM1N0M2NDJGNDhC/Specyfikacja_Ucinque_COMBI_do_zabudowy_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "dodano": "2022-07-05 11:00:24",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MUJGNTQzNzYtODFFNC00NTc0LUU5NDYtQ0E3OTk1RjFEQThE/panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "instrukcja_via_veneto.pdf",
+    "dodano": "2022-03-28 11:19:02",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MDVGQzgyOUEtQTgxQi00OEM5LTBBNjEtRTJBMkM3QTVGRUU5/instrukcja_via_veneto.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0019785": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "instrukcja_via_veneto.pdf",
+    "dodano": "2022-05-26 10:28:52",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OTJEN0YzOTgtMThCMC00NEE1LTVCQTEtQzgyMDdEMjgzNkVD/instrukcja_via_veneto.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "dodano": "2022-07-05 11:09:31",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/REY5OTNEOEYtNzIwOS00MkYyLTNGNzctNUFGREU2ODlFNUQ5/panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Ucinque_COMBI_do_zabudowy_2024.pdf",
+    "dodano": "2025-02-26 10:01:48",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MDlGQTJFNjktREExMC00M0MwLTU3OUQtMzYyRThFQjhERTlE/Specyfikacja_Ucinque_COMBI_do_zabudowy_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0012622": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Ucinque_COMBI_do_zabudowy_2024.pdf",
+    "dodano": "2025-02-26 10:00:39",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RkYxQTQ5M0EtN0FCMi00RTZELTc5NTQtNjU5OUM4NDcwOUZE/Specyfikacja_Ucinque_COMBI_do_zabudowy_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "instrukcja_via_veneto.pdf",
+    "dodano": "2021-12-14 14:20:02",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NTdCNzQxNjktMTk4MS00OUI4LTFDNzAtQjUwMTJDNUU1QkY4/instrukcja_via_veneto.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "dodano": "2022-07-05 11:05:46",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/M0UyNzUwMzYtRkQ0Mi00QTM2LThGMzItRTQ1QUE2QTEyQ0Y3/panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010579": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "dodano": "2022-07-05 11:03:26",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RUJBMjM3ODktQjMzRC00MjZFLUU2NjItNUU4NkQzNTA0MEEy/panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Ucinque_VIA_VENTO_wolnostojąca_2024.pdf",
+    "dodano": "2024-10-02 12:20:23",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RUQyN0EwNkYtRDQxQS00ODVBLTk2NzQtRjUyQzkxRkExRTA0/Specyfikacja_Ucinque_VIA_VENTO_wolnostoj%C4%85ca_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "instrukcja_via_veneto.pdf",
+    "dodano": "2022-05-27 13:32:33",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MzRERTBBNDEtQ0QyRC00RkJELThEMDYtODkzMDRFN0ExRjE3/instrukcja_via_veneto.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0019092": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_POZIOME__IT_EN_DE_FR_ES__REV_08.pdf",
+    "dodano": "2021-12-14 16:05:46",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NjE1OTI3RUMtNkY4Mi00RUU4LTVEREEtOTNDNzEyRjk1MEM0/Instrukcja_POZIOME__IT_EN_DE_FR_ES__REV_08.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "instrukcja_via_veneto.pdf",
+    "dodano": "2021-12-14 16:06:04",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MzRBMkE2NzAtRjEyQS00N0YyLTc0Q0MtMUREQjI5ODVDN0Iy/instrukcja_via_veneto.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "dodano": "2022-07-05 11:07:18",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODM1NDExNDgtQkIyOS00QUMxLTNFRjUtNzRGNjE3MDFDQkRE/panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Ucinque_VIA_VENTO_wolnostojąca_2024.pdf",
+    "dodano": "2024-10-02 12:20:44",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NTI3ODA5ODAtQkE0QS00NkI5LUI3MDQtMjI0ODZCQTdFQjk0/Specyfikacja_Ucinque_VIA_VENTO_wolnostoj%C4%85ca_2024.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0019789": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Ucinque_VIA_VENTO_wolnostojąca_2024.pdf",
+    "dodano": "2024-10-02 12:21:00",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MEE3QzE3MzktMDJEMC00MjVGLUFERjItQzZCRDUyNDQwQTQz/Specyfikacja_Ucinque_VIA_VENTO_wolnostoj%C4%85ca_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "dodano": "2022-07-05 11:10:45",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDJCQTNFQzktRjkyRS00NzlDLUY4NDEtN0U4MjUyNzNDRUVC/panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "instrukcja_via_veneto.pdf",
+    "dodano": "2022-04-19 11:31:55",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RDM2MDhDNUYtOUM0NC00OTg1LUI0RkQtNTEyMkFGNzE0RUI2/instrukcja_via_veneto.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0014510": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0014510_03_Witryna_do_lodó.pdf",
+    "dodano": "2026-09-23 12:34:37",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NENEMjM3NTAtRTM1NC00RkU4LUJFQzgtNkQ4NzkyRUI0QTcw/0014510_03_Witryna_do_lod%C3%B3.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0020249": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "0020249_2022_SPECYFIKACJA_Witryna_do_tortów_lodowych_GLAMOUR_TG___U5.pdf",
+    "dodano": "2022-12-06 11:44:57",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MDc5MUVGMjQtNjRFNS00NURBLUM2NzMtMERGREZDQTczMkE4/0020249_2022_SPECYFIKACJA_Witryna_do_tort%C3%B3w_lodowych_GLAMOUR_TG___U5.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_PIONOWE__IT_EN_DE_FR_ES__REV_04.pdf",
+    "dodano": "2021-12-14 16:21:30",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OEMyNzRGOTItMTAxRS00QUIzLUFBMTMtREIwNDVEQkNDREJB/Instrukcja_PIONOWE__IT_EN_DE_FR_ES__REV_04.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "instrukcja_szafy_mroźnicze_pionowe.pdf",
+    "dodano": "2021-12-14 16:21:51",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjBBQ0Y1NkUtRjY0RC00OTEwLTJFNTEtNzgwODQzMDdDQTRG/instrukcja_szafy_mro%C5%BAnicze_pionowe.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "dodano": "2022-07-05 11:11:19",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OTJEMjdGRDYtN0E2QS00MzNGLTVDNkQtOEIxQUJFRTYzMjlG/panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010968": [
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "0010968_2023_SPECYFIKACJA_Witryna_Fantasia_Buffet_Lux___NEMOX.pdf",
+    "dodano": "2023-03-29 10:58:45",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODdGNkY1NEMtOTUyQy00QzgxLUZENEQtRjQ1NUEyREQ4MDQ4/0010968_2023_SPECYFIKACJA_Witryna_Fantasia_Buffet_Lux___NEMOX.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0031586": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0031586_03_Zamrazarka_szok.pdf",
+    "dodano": "2025-02-26 13:19:43",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/MUQyREIxMzgtNEYzRC00OUM5LTNDMUMtMzREOTk2MTg3NzI1/0031586_03_Zamrazarka_szok.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0031586_03_Zamrazarka_szok.pdf",
+    "dodano": "2025-02-26 13:21:42",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NzIyRTZGNTQtQjBFMS00QjFDLTc3OUUtRkFCOEMyQjA1RDU3/0031586_03_Zamrazarka_szok.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010378": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "instrukcja_szafy_mroźnicze_pionowe.pdf",
+    "dodano": "2021-12-14 13:14:32",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NDVBOThEQ0MtM0IyMS00MDU3LThEOEYtMjc0RUVCQTc5ODNG/instrukcja_szafy_mro%C5%BAnicze_pionowe.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "dodano": "2022-07-05 10:58:27",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QTYyQTEyQ0UtQ0EyRC00QkRBLUM1RjctMkJCREI3NDBDQkMz/panel_sterowania_Via_Veneto_Gourmet_U5.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0010378_2022_SPECYFIKACJA_Zamrażarka_podblatowa_CUBE_48l__zakres_temp____18_do_–_23.pdf",
+    "dodano": "2022-05-24 15:10:27",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/M0I4QjZFRUYtNDhFMC00RTZGLUI0NzUtMjBENzczMDhDQTMw/0010378_2022_SPECYFIKACJA_Zamra%C5%BCarka_podblatowa_CUBE_48l__zakres_temp____18_do_%E2%80%93_23.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Instrukcja_PIONOWE__IT_EN_DE_FR_ES__REV_04.pdf",
+    "dodano": "2021-12-14 13:14:12",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/RjIyQkQ3NzQtMUVFMC00QzI4LUM5RjgtQ0FBQjIyMjhBNjgx/Instrukcja_PIONOWE__IT_EN_DE_FR_ES__REV_04.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0010452": [
+   {
+    "rodzaj": "Instrukcja",
+    "nazwa": "Szkówki_BK5_BK10_i_BK15.pdf",
+    "dodano": "2021-12-21 15:48:20",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/QjgwQ0Y5RTUtQjNENC00MTkzLTc3NzYtM0M1Mzk1N0VGMDYw/Szk%C3%B3wki_BK5_BK10_i_BK15.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "Specyfikacja_Tecnomac_BK___szokówka_2024.pdf",
+    "dodano": "2025-02-05 11:09:54",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NzZGRTI3QTItODU3RC00NjMwLTYwQzktOTZFODQ1M0QxQkU1/Specyfikacja_Tecnomac_BK___szok%C3%B3wka_2024.pdf",
+    "sprawdzono": "ok"
+   },
+   {
+    "rodzaj": "Specyfikacja techniczna",
+    "nazwa": "BK_5_GN_PAST__230V_50HZ___Tecnomac___000___srl.pdf",
+    "dodano": "2021-12-21 15:58:58",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/N0U3QTU0NEMtOTBDQS00RjkyLTIxRDEtQTRBODJGMDdFRjdE/BK_5_GN_PAST__230V_50HZ___Tecnomac___000___srl.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0015236": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0015236_03_Zamrażarka_szok.pdf",
+    "dodano": "2022-11-28 14:06:53",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/ODhBQTdBNjMtNDJEQy00QTVFLUYwNEYtQTlFODgyNTkyNDFE/0015236_03_Zamra%C5%BCarka_szok.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0033332": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "Specyfikacja_Techfrost_MR15_2024__1_.pdf",
+    "dodano": "2026-10-08 09:58:38",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NEZBMTlGMEUtRkU3NC00RjRCLTZBMTktOEZCRDAwMEQ0M0VF/Specyfikacja_Techfrost_MR15_2024__1_.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0014050": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0014050_03_Zmywarka_WD_7__.pdf",
+    "dodano": "2024-08-13 07:56:27",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/NERFQzI3QkEtMkQ5OS00QTg3LTgyNzctNTQ3NzM1NEE0MUQ4/0014050_03_Zmywarka_WD_7__.pdf",
+    "sprawdzono": "ok"
+   }
+  ],
+  "0012145": [
+   {
+    "rodzaj": "Specyfikacja produktu",
+    "nazwa": "0012145_03_Żelazko_do_korp.pdf",
+    "dodano": "2025-12-09 11:28:47",
+    "url": "https://esavpol.pl/api/attachment/get/72203914-A31D-4B25-7735-F18BE44421C2/OpenFileIdent/OUJGQThCQTEtQ0JGQS00Qjc5LUVEQjQtNDVDQkI1RDdEMTND/0012145_03_%C5%BBelazko_do_korp.pdf",
+    "sprawdzono": "ok"
+   }
+  ]
+ }
+}
