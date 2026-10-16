@@ -373,31 +373,55 @@ if (process.env.KONTRAHENCI !== '0' && !DAYS && TARGET === 'prod'
   }
 }
 
-// ZALEGŁOŚCI SPRZEDAŻY (Tomek 2026-10-06: pon–pt, maks. do 18:00). Po zwykłym
-// biegu ten sam proces nadgania jawny zakres dni, aż minie godzina końca.
-// Dni kompletne są pomijane, więc po nadrobieniu krok sam nic nie robi —
-// wtedy usuń ZALEGLOSCI z launchera.
-//   ZALEGLOSCI=2026-07-01..2026-09-14  ZALEGLOSCI_DO_GODZINY=18:00
-if (process.env.ZALEGLOSCI && !DAYS) {
-  const m = /^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(process.env.ZALEGLOSCI);
+// STATUS W ŚRODKU BIEGU (Lech 2026-10-16): zaległości zajmują resztę dnia, a
+// launcher przelicza stronę statusu dopiero na końcu. Tu przeliczamy ją od razu
+// po codziennych krokach, żeby GitHub Pages pokazywał dzisiejsze dni rano.
+if (!DAYS && TARGET === 'prod' && process.env.STATUS_W_TRAKCIE !== '0') {
+  spawnSync('node', [path.join('status', 'generuj-status.js')], { cwd: AUTO_DIR, stdio: 'inherit' });
+}
+
+// KOLEJKA ZALEGŁOŚCI (Lech 2026-10-13): jedno źródło dla orkiestratora i strony
+// statusu — plik zaleglosci-kolejka.txt, linie `typ:od..do`, kolejność linii =
+// kolejność nadrabiania. Po codziennym biegu, pon–pt do ZALEGLOSCI_DO_GODZINY
+// (domyślnie 18:00, Tomek 2026-10-06). Dni kompletne catchup pomija, więc typ bez
+// zaległości przechodzi w sekundę i rusza następny. Parser jak w
+// status/generuj-status.js; ZALEGLOSCI_KOLEJKA w env (po przecinku) ma
+// pierwszeństwo przed plikiem (podgląd/test).
+function wczytajKolejke() {
+  let wpisy;
+  if (process.env.ZALEGLOSCI_KOLEJKA) wpisy = process.env.ZALEGLOSCI_KOLEJKA.split(',');
+  else {
+    try { wpisy = fs.readFileSync(path.join(AUTO_DIR, 'zaleglosci-kolejka.txt'), 'utf8').split(/\r?\n/).filter((l) => !/^\s*(#|$)/.test(l)); }
+    catch { return []; }
+  }
+  return wpisy.map((x) => /^(\w+):(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/.exec(x.trim()))
+    .filter(Boolean).map((m) => ({ t: m[1].toLowerCase(), od: m[2], do: m[3] }));
+}
+if (!DAYS && TARGET === 'prod') {
+  const kolejka = wczytajKolejke();
   const g = /^(\d{1,2}):(\d{2})$/.exec(process.env.ZALEGLOSCI_DO_GODZINY || '18:00');
-  if (!m || !g) {
-    console.error(`[dobij-wszystko] BŁĄD: ZALEGLOSCI='${process.env.ZALEGLOSCI}' (RRRR-MM-DD..RRRR-MM-DD) albo ZALEGLOSCI_DO_GODZINY (GG:MM) w złym formacie — pomijam zaległości.`);
-  } else {
+  if (!g) {
+    console.error(`[dobij-wszystko] BŁĄD: ZALEGLOSCI_DO_GODZINY='${process.env.ZALEGLOSCI_DO_GODZINY}' (GG:MM) — pomijam zaległości.`);
+  } else if (kolejka.length) {
     const koniec = new Date();
     koniec.setHours(parseInt(g[1], 10), parseInt(g[2], 10), 0, 0);
     if (Date.now() >= koniec.getTime()) {
-      console.log(`\n[dobij-wszystko] Zaległości: już po ${process.env.ZALEGLOSCI_DO_GODZINY || '18:00'} — dziś pomijam.`);
+      console.log(`\n[dobij-wszystko] Zaległości: już po ${g[0]} — dziś pomijam.`);
     } else {
       process.env.KONIEC_TS = String(koniec.getTime());
-      console.log(`\n[dobij-wszystko] ===== SPRZEDAŻ — zaległości ${m[1]}..${m[2]}, do ${koniec.toLocaleTimeString('pl-PL')} =====`);
-      const wynik = runCatchup({
-        dir: path.join(AUTO_DIR, 'sprzedaz'), prefix: 'sprzedaz', label: 'SPRZEDAŻ-zaległości', target: TARGET,
-        days: buildDays(m[1], m[2]),
-        onEvent: (kind, title, message) => { if (kind === 'end') toast(title, message); }
-      });
-      // Dzień przerwany godziną końca to nie błąd — dokończy jutro.
-      summary.push({ type: 'sprzedaz-zaleglosci', ...wynik, failed: [] , przerwane: wynik.failed });
+      for (const k of kolejka) {
+        if (Date.now() >= koniec.getTime() - 5 * 60000) break;
+        const dir = path.join(AUTO_DIR, k.t);
+        if (!fs.existsSync(path.join(dir, 'scrape.js'))) { console.warn(`[dobij-wszystko] kolejka: pomijam '${k.t}' — brak ${k.t}/scrape.js`); continue; }
+        console.log(`\n[dobij-wszystko] ===== ZALEGŁOŚCI ${k.t.toUpperCase()} ${k.od}..${k.do}, do ${koniec.toLocaleTimeString('pl-PL')} =====`);
+        const wynik = runCatchup({
+          dir, prefix: k.t, label: k.t.toUpperCase() + '-zaległości', target: TARGET,
+          days: buildDays(k.od, k.do),
+          onEvent: (kind, title, message) => { if (kind === 'end') toast(title, message); }
+        });
+        // Dzień przerwany godziną końca to nie błąd — dokończy następny bieg.
+        if (wynik.targets.length) summary.push({ type: k.t + '-zaleglosci', ...wynik, failed: [], przerwane: wynik.failed });
+      }
     }
   }
 }
