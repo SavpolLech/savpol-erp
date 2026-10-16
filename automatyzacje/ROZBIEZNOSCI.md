@@ -516,3 +516,15 @@ Dokumenty, których dane w ERP różnią się od tego, co JUŻ jest w bazie (wor
 - [ ] 2026/PZ/WAS1/003651 (id=30787980015): pozycja 30787980018 — dFGAmount: 6804 -> 6945.75
 - [ ] 2026/PZ/WAS1/003651 (id=30787980015): pozycja 30787980018 — dFNAmount: 6480 -> 6615
 - [ ] 2026/PZ/WAS1/003651 (id=30787980015): pozycja 30787980018 — dFTAmount: 324 -> 330.75
+
+## 2026-10-16T07:50:20.000Z · SPRZEDAZ · FA bez numeru (DocNumber NULL) · 8 dok.
+
+Znana rozbieżność, czeka na decyzję Michała (Lech 2026-10-16). Szkice FA bez numeru w bazie; jeśli ERP nadał im później numer, w bazie została stara wersja (tylko dopisujemy). Przez to status pokazuje FA 31.07 −2 / 17.07 +2 i 04.08 −1 / 13.07 +1.
+- [ ] (bez numeru) (id=29752187472): DocNumber: NULL -> numer nadany w ERP (lista FA z 2026-07-31; w bazie szkic z kopii 27.07, DocDate 2026-07-17)
+- [ ] (bez numeru) (id=29752187757): DocNumber: NULL -> numer nadany w ERP (lista FA z 2026-07-31; w bazie szkic z kopii 27.07, DocDate 2026-07-17)
+- [ ] (bez numeru) (id=29654917668): DocNumber: NULL -> numer nadany w ERP (lista FA z 2026-08-04; w bazie szkic z kopii 27.07, DocDate 2026-07-13)
+- [ ] (bez numeru) (id=30244872723): DocNumber: NULL -> ? (scraper zapisał szkic z listy 2026-08-24)
+- [ ] (bez numeru) (id=30807851412): DocNumber: NULL -> ? (scraper zapisał szkic z listy 2026-09-30)
+- [ ] (bez numeru) (id=30806807730): DocNumber: NULL -> ? (scraper zapisał szkic z listy 2026-09-30)
+- [ ] (bez numeru) (id=17097565527): DocNumber: NULL -> ? (stary szkic z kopii bazy, DocDate 2023-12-11, poza zakresem scrapera)
+- [ ] (bez numeru) (id=28652472681): DocNumber: NULL -> ? (stary szkic z kopii bazy, DocDate 2026-04-29, poza zakresem scrapera)
