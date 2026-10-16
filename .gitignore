@@ -62,3 +62,6 @@ automatyzacje/opisy-czyszczenie/state/
 automatyzacje/opisy-czyszczenie/sku.txt
 automatyzacje/opisy-czyszczenie/debug-*.png
 automatyzacje/opisy-czyszczenie/*.out
+
+# zalaczniki-maszyn: sonda rodzajów załączników (lokalnie, bez linków)
+automatyzacje/zalaczniki-maszyn/sonda.json
