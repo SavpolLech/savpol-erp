@@ -54,8 +54,10 @@ const KATALOG_SKU = path.join(os.homedir(), 'Documents', 'claude_code', 'esavpol
 const PUBLIC_ORIGIN = 'https://esavpol.pl';
 
 // Rodzaje załączników dla klienta: dopasowanie po nazwie rodzaju (csAttachmentsTypes…Desc).
-// Uzupełniane po sondzie z 16.10.2026.
-const DOZWOLONE = [];
+// Decyzja Lecha 16.10.2026 po sondzie 179 maszyn: tylko specyfikacje i instrukcje.
+// Poza listą świadomie: Protokół wydania, Wydruk etykiety, Oferta, Zaświadczenie o autoryzacji,
+// Schemat połączeń, Atest, Katalog, Broszura, załączniki bez rodzaju.
+const DOZWOLONE = [/^specyfikacja/i, /^instrukcja/i];
 
 const args = process.argv.slice(2);
 const TRYB_SONDA = args.includes('--sonda');
